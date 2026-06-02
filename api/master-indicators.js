@@ -227,10 +227,11 @@ async function getControlledQuote(symbol) {
 
   const details = SYMBOL_DETAILS[symbol];
 
-  // Cascade: TNX→FRED first, then Finnhub → Yahoo → Stooq
+  // Cascade: TNX→FRED, then Finnhub → TwelveData → Yahoo → Stooq
   const result = await cascadeQuote(details.eodhdSymbol, {
-    FINNHUB_API_KEY: isConfiguredSecret(env.FINNHUB_API_KEY) ? env.FINNHUB_API_KEY : null,
-    FRED_API_KEY: isConfiguredSecret(env.FRED_API_KEY) ? env.FRED_API_KEY : null,
+    FINNHUB_API_KEY:     isConfiguredSecret(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
+    FRED_API_KEY:        isConfiguredSecret(env.FRED_API_KEY)        ? env.FRED_API_KEY        : null,
+    TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
   });
 
   if (result.ok) {

@@ -55,6 +55,24 @@ const YAHOO_DIRECT = {
   "MOVE.INDX":   "^MOVE",
 };
 
+// EODHD suffix → Twelve Data exchange suffix
+const EODHD_TO_TWELVEDATA_EXCHANGE = {
+  US:    "",       // AAPL.US → AAPL
+  XETRA: ":XETRA",// SIE.XETRA → SIE:XETRA
+  PA:    ":EURONEXT", // MC.PA → MC:EURONEXT
+  AS:    ":EURONEXT", // ASML.AS → ASML:EURONEXT
+  BR:    ":EURONEXT", // KBC.BR → KBC:EURONEXT
+  LS:    ":EURONEXT", // EDP.LS → EDP:EURONEXT
+  MI:    ":MIL",   // ENI.MI → ENI:MIL
+  SW:    ":SWX",   // NESN.SW → NESN:SWX
+  LSE:   ":LSE",   // SHEL.LSE → SHEL:LSE
+};
+
+const TWELVEDATA_DIRECT = {
+  "VIX.INDX":    "VIX",
+  "US10Y.GBOND": "TNX",
+};
+
 // EODHD suffix → Stooq suffix
 const EODHD_TO_STOOQ_SUFFIX = {
   US:    ".US",
@@ -74,6 +92,17 @@ const STOOQ_DIRECT = {
 };
 
 // ─── Symbol converters ────────────────────────────────────────────────────────
+
+export function toTwelveDataSymbol(eodhdSymbol) {
+  if (TWELVEDATA_DIRECT[eodhdSymbol]) return TWELVEDATA_DIRECT[eodhdSymbol];
+  const parts = eodhdSymbol.split(".");
+  if (parts.length < 2) return null;
+  const ticker = parts[0];
+  const suffix = parts.slice(1).join(".");
+  const exchange = EODHD_TO_TWELVEDATA_EXCHANGE[suffix];
+  if (exchange === undefined) return null;
+  return ticker + exchange;
+}
 
 export function toFinnhubSymbol(eodhdSymbol) {
   return EODHD_TO_FINNHUB[eodhdSymbol] ?? null;
@@ -217,6 +246,60 @@ async function fetchStooqQuote(eodhdSymbol) {
   return { ok: true, provider: "Stooq", price, previousClose: null, changePercent: null };
 }
 
+// ─── Twelve Data ─────────────────────────────────────────────────────────────
+
+async function fetchTwelveDataQuote(eodhdSymbol, apiKey) {
+  const symbol = toTwelveDataSymbol(eodhdSymbol);
+  if (!symbol) return { ok: false, provider: "TwelveData", reason: `No TwelveData mapping for ${eodhdSymbol}` };
+
+  const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetchJson(url);
+  if (!r.ok) return { ok: false, provider: "TwelveData", reason: r.reason };
+
+  if (r.data?.code === 400 || r.data?.status === "error") {
+    return { ok: false, provider: "TwelveData", reason: r.data?.message ?? "API error" };
+  }
+
+  const price = finiteOrNull(r.data?.close ?? r.data?.price);
+  if (!price) return { ok: false, provider: "TwelveData", reason: "No valid price" };
+
+  const previousClose = finiteOrNull(r.data?.previous_close);
+  const changePercent = finiteOrNull(r.data?.percent_change)
+    ?? (previousClose && previousClose !== 0 ? ((price - previousClose) / previousClose) * 100 : null);
+
+  return { ok: true, provider: "TwelveData", price, previousClose, changePercent };
+}
+
+async function fetchTwelveDataHistory(eodhdSymbol, lookbackDays, apiKey) {
+  const symbol = toTwelveDataSymbol(eodhdSymbol);
+  if (!symbol) return { ok: false, provider: "TwelveData", reason: `No TwelveData mapping for ${eodhdSymbol}` };
+
+  const outputsize = Math.min(lookbackDays, 260);
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=${outputsize}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetchJson(url);
+  if (!r.ok) return { ok: false, provider: "TwelveData", reason: r.reason };
+
+  if (r.data?.status === "error") return { ok: false, provider: "TwelveData", reason: r.data?.message ?? "API error" };
+
+  const values = r.data?.values;
+  if (!Array.isArray(values) || values.length === 0) return { ok: false, provider: "TwelveData", reason: "No values" };
+
+  const bars = values
+    .map(v => ({
+      date: v.datetime?.slice(0, 10) ?? "",
+      open:   finiteOrNull(v.open),
+      high:   finiteOrNull(v.high),
+      low:    finiteOrNull(v.low),
+      close:  finiteOrNull(v.close),
+      volume: finiteOrNull(v.volume) ?? 0,
+    }))
+    .filter(b => b.date && b.close && b.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (bars.length === 0) return { ok: false, provider: "TwelveData", reason: "No valid bars" };
+  return { ok: true, provider: "TwelveData", bars };
+}
+
 // ─── Historical bar fetchers ──────────────────────────────────────────────────
 
 async function fetchEodhdHistory(eodhdSymbol, apiKey, fromDate) {
@@ -336,14 +419,15 @@ async function fetchFredTNX(apiKey) {
 const TNX_SYMBOLS = new Set(["US10Y.GBOND", "TNX", "^TNX"]);
 
 /**
- * Cascade quote: Finnhub → Yahoo → Stooq
- * For TNX: FRED (Federal Reserve) → Finnhub → Yahoo → Stooq
+ * Cascade quote:
+ *   TNX: FRED → Finnhub → TwelveData → Yahoo → Stooq
+ *   All: Finnhub → TwelveData → Yahoo → Stooq
  */
 export async function cascadeQuote(eodhdSymbol, env = {}) {
   const tried = [];
   const isTNX = TNX_SYMBOLS.has(eodhdSymbol);
 
-  // TNX special: FRED first (Federal Reserve = most authoritative)
+  // TNX special: FRED first (Federal Reserve = most authoritative source)
   if (isTNX && env.FRED_API_KEY) {
     const r = await fetchFredTNX(env.FRED_API_KEY);
     tried.push({ provider: "FRED", ok: r.ok, reason: r.reason });
@@ -359,12 +443,21 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     tried.push({ provider: "Finnhub", ok: false, reason: "Key not configured" });
   }
 
-  // 2. Yahoo Finance (no key)
+  // 2. Twelve Data (800 req/day free)
+  if (env.TWELVE_DATA_API_KEY) {
+    const r = await fetchTwelveDataQuote(eodhdSymbol, env.TWELVE_DATA_API_KEY);
+    tried.push({ provider: "TwelveData", ok: r.ok, reason: r.reason });
+    if (r.ok) return { ...r, triedProviders: tried };
+  } else {
+    tried.push({ provider: "TwelveData", ok: false, reason: "Key not configured" });
+  }
+
+  // 3. Yahoo Finance (no key)
   const yahoo = await fetchYahooQuote(eodhdSymbol);
   tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
   if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
-  // 3. Stooq (no key, delayed)
+  // 4. Stooq (no key, delayed)
   const stooq = await fetchStooqQuote(eodhdSymbol);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };
@@ -378,22 +471,19 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
 }
 
 /**
- * Cascade historical bars: EODHD → Yahoo → Stooq
+ * Cascade historical bars: TwelveData → Yahoo → Stooq
  * Returns { ok, provider, bars, triedProviders }
  */
 export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) {
-  const fromDate = new Date();
-  fromDate.setDate(fromDate.getDate() - lookbackDays);
-  const fromDateStr = fromDate.toISOString().slice(0, 10);
   const tried = [];
 
-  // 1. EODHD
-  if (env.EODHD_API_KEY) {
-    const r = await fetchEodhdHistory(eodhdSymbol, env.EODHD_API_KEY, fromDateStr);
-    tried.push({ provider: "EODHD", ok: r.ok, reason: r.reason });
+  // 1. Twelve Data (800 req/day free, good EU+US coverage)
+  if (env.TWELVE_DATA_API_KEY) {
+    const r = await fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY);
+    tried.push({ provider: "TwelveData", ok: r.ok, reason: r.reason });
     if (r.ok) return { ...r, triedProviders: tried };
   } else {
-    tried.push({ provider: "EODHD", ok: false, reason: "Key not configured" });
+    tried.push({ provider: "TwelveData", ok: false, reason: "Key not configured" });
   }
 
   // 2. Yahoo Finance (no key)

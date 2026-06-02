@@ -170,29 +170,10 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
     };
   }
 
-  const apiKey = getEnv().EODHD_API_KEY;
-  if (!isConfiguredSecret(apiKey)) {
-    return {
-      ok: false,
-      provider: "EODHD",
-      providerSymbol: normalizedSymbol,
-      cacheStatus: "BYPASS",
-      cachedAtUtc: null,
-      ttlSeconds: CACHE_TTL_SECONDS,
-      bars: [],
-      blockedReason: "EODHD_API_KEY_NOT_CONFIGURED",
-    };
-  }
-
-  const url = `https://eodhd.com/api/eod/${encodeURIComponent(normalizedSymbol)}?api_token=${encodeURIComponent(
-    apiKey,
-  )}&fmt=json&period=d&from=${encodeURIComponent(fromDate)}`;
-  const providerResult = await fetchJson(url);
-
-  // Cascade: EODHD → Yahoo Finance → Stooq
+  // Cascade: TwelveData → Yahoo Finance → Stooq
   const env = getEnv();
   const result = await cascadeHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS, {
-    EODHD_API_KEY: isConfiguredSecret(env.EODHD_API_KEY) ? env.EODHD_API_KEY : null,
+    TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
   });
 
   if (result.ok && result.bars.length > 0) {
