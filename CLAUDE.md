@@ -249,17 +249,17 @@ CLOSED_CONTEXT → was EXEC but market just closed
 
 ## 7. ENVIRONMENT VARIABLES
 
-All 6 must be set in Vercel → Settings → Environment Variables:
+Set in Vercel → Settings → Environment Variables:
 
 ```
 ENABLE_REAL_API_CALLS = true          # Master gate. false = nothing works.
-EODHD_API_KEY         = <real key>    # Primary provider
-FINNHUB_API_KEY       = <real key>    # Secondary provider
+FINNHUB_API_KEY       = <real key>    # Primary provider (EODHD cancelled June 2026)
 VITE_APP_ENV          = production    # Frontend flag
 KV_REST_API_URL       = <upstash>     # Auto-set by Vercel Upstash integration
 KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 ```
 
+**EODHD cancelled June 2026.** No longer needed. Static universe replaces exchange-symbol-list.
 **Rule:** Never commit real keys. `.env.example` contains placeholders only.
 
 ---
