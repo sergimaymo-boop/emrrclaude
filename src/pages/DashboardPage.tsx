@@ -35,7 +35,7 @@ import {
 import type { FearGreed, MasterIndicator, ScanState, SectorLeader, SystemStatus, TimestampPair, Top8Asset } from "../types";
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
-import { formatTop8ForExport } from "../utils/export";
+import { shareTop8 } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 
 interface DashboardPageProps {
@@ -609,15 +609,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   async function handleCopyTop8() {
-    const output = top8.length > 0 ? formatTop8ForExport(top8) : "TOP 8 DATA UNAVAILABLE - no real operational ranking available.";
-    setExportText(output);
-
-    try {
-      await navigator.clipboard.writeText(output);
-      showToast("TOP 8 export copied", "success");
-    } catch {
-      showToast("TOP 8 export ready for manual copy", "info");
-    }
+    const result = await shareTop8(top8, (text) => setExportText(text));
+    if (result === "shared") showToast("Compartido correctamente", "success");
+    else if (result === "copied") showToast("Copiado al portapapeles", "success");
+    else showToast("Listo para copiar manualmente", "info");
   }
 
   function handleBackup() {
