@@ -1,0 +1,642 @@
+import { useEffect, useState } from "react";
+import { ActionButtons } from "../components/ActionButtons";
+import { FearGreedPanel } from "../components/FearGreedPanel";
+import { MasterIndicatorsGrid } from "../components/MasterIndicatorsGrid";
+import { ScanStatusPanel } from "../components/ScanStatusPanel";
+import { SectorLeaders } from "../components/SectorLeaders";
+import { StickyMiniHeader } from "../components/StickyMiniHeader";
+import { SystemStatusCards } from "../components/SystemStatusCards";
+import { TechnicalHeader } from "../components/TechnicalHeader";
+import { Toast } from "../components/Toast";
+import { Top8Grid } from "../components/Top8Grid";
+import { simulateBackupCode } from "../engines";
+import {
+  initialSystemStatus,
+  unavailableFearGreed,
+  unavailableMasterIndicators,
+  unavailableSectors,
+  unavailableTop8,
+} from "../data/emptyDashboardData";
+import {
+  buildDashboardTop8FromScanSnapshot,
+  continueScanSnapshot,
+  deriveDashboardDataMode,
+  deriveIndicatorsDataMode,
+  fetchMasterIndicators,
+  fetchVisibleTop8Quotes,
+  finalizeScanSnapshot,
+  mergeMasterIndicators,
+  mergeScanSnapshotUniverseStatus,
+  mergeVisibleTop8Quotes,
+  startScanSnapshot,
+  updateSystemStatusForDataMode,
+} from "../services/realDataRefresh";
+import type { FearGreed, MasterIndicator, ScanState, SectorLeader, SystemStatus, TimestampPair, Top8Asset } from "../types";
+import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
+import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
+import { formatTop8ForExport } from "../utils/export";
+import { createTimestampPair } from "../utils/time";
+
+interface DashboardPageProps {
+  onLogout: () => void;
+}
+
+interface ToastState {
+  id: number;
+  message: string;
+  tone: "success" | "error" | "info";
+}
+
+const SCAN_STATE_STORAGE_KEY = "emrr_scan_state";
+const SESSION_CACHE_STORAGE_KEY = "emrr_session_cache";
+const SESSION_CACHE_TTL_MS = 4 * 60 * 60 * 1000;
+const MAX_AUTO_BATCH_RETRIES = 2;
+
+interface SessionCache {
+  masterIndicators?: {
+    data: MasterIndicator[];
+    timestamp: TimestampPair;
+    dataMode: SystemStatus["dashboardDataMode"];
+  };
+  scanState?: Partial<ScanState>;
+  top8Result?: {
+    assets: Top8Asset[];
+    timestamp: TimestampPair;
+  };
+  sessionTimestamp: string;
+}
+
+function loadStoredScanState(): Partial<ScanState> | null {
+  try {
+    const raw = window.localStorage.getItem(SCAN_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ScanState>;
+    if (!parsed.scanId || !parsed.snapshotToken) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function storeScanState(scanState: Partial<ScanState>) {
+  if (!scanState.scanId || !scanState.snapshotToken || scanState.coveragePercent === 100) {
+    window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(
+    SCAN_STATE_STORAGE_KEY,
+    JSON.stringify({
+      scanId: scanState.scanId,
+      snapshotToken: scanState.snapshotToken,
+      status: scanState.status,
+      resultScope: scanState.resultScope,
+      coveragePercent: scanState.coveragePercent,
+      batchesTotal: scanState.batchesTotal,
+      batchesCompleted: scanState.batchesCompleted,
+      nextBatchIndex: scanState.nextBatchIndex,
+      estimatedProviderCalls: scanState.estimatedProviderCalls,
+      actualProviderCalls: scanState.actualProviderCalls,
+      candidatesAnalysed: scanState.candidatesAnalysed,
+      recommendedNextAction: scanState.recommendedNextAction,
+    }),
+  );
+}
+
+function loadSessionCache(): SessionCache | null {
+  try {
+    const raw = window.localStorage.getItem(SESSION_CACHE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SessionCache;
+    const timestamp = new Date(parsed.sessionTimestamp);
+    if (Number.isNaN(timestamp.getTime())) return null;
+    if (Date.now() - timestamp.getTime() > SESSION_CACHE_TTL_MS) {
+      window.localStorage.removeItem(SESSION_CACHE_STORAGE_KEY);
+      window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionCache(cache: Partial<SessionCache>) {
+  const current = loadSessionCache() ?? { sessionTimestamp: new Date().toISOString() };
+  window.localStorage.setItem(
+    SESSION_CACHE_STORAGE_KEY,
+    JSON.stringify({
+      ...current,
+      ...cache,
+      sessionTimestamp: new Date().toISOString(),
+    }),
+  );
+}
+
+function clearSessionCacheForNewScan() {
+  window.localStorage.removeItem(SESSION_CACHE_STORAGE_KEY);
+  window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+}
+
+export function DashboardPage({ onLogout }: DashboardPageProps) {
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>(initialSystemStatus);
+  const [fearGreed, setFearGreed] = useState<FearGreed>(unavailableFearGreed);
+  const [masterIndicators, setMasterIndicators] = useState<MasterIndicator[]>(unavailableMasterIndicators);
+  const [sectors, setSectors] = useState<SectorLeader[]>(unavailableSectors);
+  const [top8, setTop8] = useState<Top8Asset[]>(unavailableTop8);
+  const [scanState, setScanState] = useState<ScanState>({
+    label: "Ready for SCAN FULL",
+    isScanning: false,
+    lastRun: initialSystemStatus.lastScan,
+    lastRealDataUpdate: null,
+    lastScanClicked: initialSystemStatus.lastScan,
+    scanExecutionMode: "NO_REAL_DATA",
+    refreshedCount: 0,
+    scanId: null,
+    snapshotToken: null,
+    status: "DATA_UNAVAILABLE",
+    resultScope: "UNAVAILABLE",
+    coveragePercent: 0,
+    batchesTotal: 0,
+    batchesCompleted: 0,
+    nextBatchIndex: null,
+    estimatedProviderCalls: 0,
+    actualProviderCalls: 0,
+    candidatesAnalysed: 0,
+    recommendedNextAction: "SCAN_FULL_REQUIRED",
+  });
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [exportText, setExportText] = useState("");
+
+  function showToast(message: string, tone: ToastState["tone"]) {
+    setToast({ id: Date.now(), message, tone });
+  }
+
+  useEffect(() => {
+    const sessionCache = loadSessionCache();
+    if (sessionCache?.masterIndicators?.data.length) {
+      const cachedIndicators = sessionCache.masterIndicators.data.map((indicator) => ({
+        ...indicator,
+        dataMode: indicator.dataMode === "REAL" ? "LAST_SESSION" as const : indicator.dataMode,
+        operationalBlockReasons: [
+          ...new Set([...indicator.operationalBlockReasons, "LAST_SESSION_CACHE_REQUIRES_REFRESH"]),
+        ],
+      }));
+      setMasterIndicators(cachedIndicators);
+      setSystemStatus((current) =>
+        updateSystemStatusForDataMode(
+          refreshSystemMarketStatus(current),
+          deriveDashboardDataMode([], cachedIndicators),
+          null,
+        ),
+      );
+    }
+
+    if (sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100) {
+      setTop8(sessionCache.top8Result.assets);
+    }
+
+    if (sessionCache?.scanState?.scanId && sessionCache.scanState.snapshotToken) {
+      setScanState((current) => ({
+        ...current,
+        ...sessionCache.scanState,
+        label:
+          sessionCache.scanState.coveragePercent === 100
+            ? "GLOBAL TOP 8 FINAL restored from session"
+            : `Previous scan available - batch ${sessionCache.scanState.nextBatchIndex ?? "?"}/${sessionCache.scanState.batchesTotal ?? "?"}`,
+        scanExecutionMode:
+          sessionCache.scanState.coveragePercent === 100 ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+      }));
+    }
+
+    const storedScan = loadStoredScanState();
+    if (storedScan) {
+      setScanState((current) => ({
+        ...current,
+        ...storedScan,
+        label: `TOP 8 PARTIAL DIAGNOSTIC - coverage ${storedScan.coveragePercent ?? 0}%`,
+        scanExecutionMode: "PARTIAL_BATCH_ONLY",
+      }));
+    }
+
+    fetchMasterIndicators()
+      .then((response) => {
+        const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, response);
+        setMasterIndicators(mergedIndicators.indicators);
+        saveSessionCache({
+          masterIndicators: {
+            data: mergedIndicators.indicators,
+            timestamp: createTimestampPair(),
+            dataMode: deriveIndicatorsDataMode(mergedIndicators.indicators),
+          },
+        });
+        setSystemStatus((current) =>
+          updateSystemStatusForDataMode(
+            refreshSystemMarketStatus(current),
+            deriveDashboardDataMode([], mergedIndicators.indicators, {
+              coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
+            }),
+            mergedIndicators.lastRealDataUpdate ?? current.lastRealDataUpdate,
+          ),
+        );
+      })
+      .catch(() => {
+        setMasterIndicators(unavailableMasterIndicators);
+      });
+  }, []);
+
+  useEffect(() => {
+    function refreshClockAndMarkets() {
+      setSystemStatus((current) => refreshSystemMarketStatus(current));
+      setTop8((current) => refreshTop8MarketStatus(current));
+    }
+
+    refreshClockAndMarkets();
+    const timer = window.setInterval(refreshClockAndMarkets, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function latestTimestamp(...timestamps: Array<TimestampPair | null>): TimestampPair | null {
+    return timestamps
+      .filter((timestamp): timestamp is TimestampPair => Boolean(timestamp))
+      .sort((a, b) => a.utc.localeCompare(b.utc))
+      .at(-1) ?? null;
+  }
+
+  function candidatesAnalysedFromSnapshot(snapshot: Awaited<ReturnType<typeof startScanSnapshot>>) {
+    return snapshot.diagnostics?.processedBatches?.reduce(
+      (total, batch) => total + (batch.evaluationSummary?.analyzed ?? batch.selectedAssets ?? 0),
+      0,
+    ) ?? 0;
+  }
+
+  function snapshotNeedsContinuation(snapshot: Awaited<ReturnType<typeof startScanSnapshot>>) {
+    return Boolean(
+      snapshot.snapshotToken &&
+        snapshot.coveragePercent < 100 &&
+        snapshot.nextBatchIndex &&
+        snapshot.batchesCompleted < snapshot.batchesTotal,
+    );
+  }
+
+  async function applyAndMaybeContinueSnapshot(
+    snapshot: Awaited<ReturnType<typeof startScanSnapshot>>,
+    startedAt: TimestampPair,
+    suppressToast = true,
+  ) {
+    await applySnapshotResult(Promise.resolve(snapshot), startedAt, {
+      keepScanning: snapshotNeedsContinuation(snapshot),
+      suppressToast,
+    });
+  }
+
+  async function runAutoChainedScan(startedAt: TimestampPair) {
+    let snapshot = await startScanSnapshot();
+    await applyAndMaybeContinueSnapshot(snapshot, startedAt, true);
+
+    let guard = 0;
+    while (snapshotNeedsContinuation(snapshot)) {
+      guard += 1;
+      if (guard > Math.max(snapshot.batchesTotal + 2, 10)) {
+        throw new Error("AUTO_SCAN_GUARD_STOPPED");
+      }
+
+      const expectedBatch = snapshot.nextBatchIndex;
+      setScanState((current) => ({
+        ...current,
+        label: `Analizando... batch ${expectedBatch}/${snapshot.batchesTotal} (${snapshot.coveragePercent}%)`,
+        isScanning: true,
+        scanExecutionMode: "SCAN_SNAPSHOT",
+      }));
+
+      let lastError: unknown = null;
+      let advanced = false;
+      for (let attempt = 0; attempt <= MAX_AUTO_BATCH_RETRIES; attempt += 1) {
+        try {
+          const previousCompleted = snapshot.batchesCompleted;
+          const nextSnapshot = await continueScanSnapshot(snapshot.snapshotToken ?? "");
+          if (nextSnapshot.batchesCompleted <= previousCompleted && nextSnapshot.status !== "GLOBAL_TOP8_FINAL") {
+            throw new Error("BATCH_DID_NOT_ADVANCE");
+          }
+          snapshot = nextSnapshot;
+          advanced = true;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (!advanced) {
+        setScanState((current) => ({
+          ...current,
+          label: `Auto scan paused - continue manually from batch ${expectedBatch}/${snapshot.batchesTotal}`,
+          isScanning: false,
+          recommendedNextAction: "CONTINUE_SCAN_MANUALLY_AFTER_BATCH_ERROR",
+        }));
+        showToast(
+          lastError instanceof Error
+            ? `Batch ${expectedBatch} failed after retries: ${lastError.message}`
+            : `Batch ${expectedBatch} failed after retries`,
+          "error",
+        );
+        return;
+      }
+
+      await applyAndMaybeContinueSnapshot(snapshot, startedAt, true);
+    }
+
+    if (snapshot.snapshotToken && snapshot.coveragePercent === 100) {
+      snapshot = await finalizeScanSnapshot(snapshot.snapshotToken);
+      await applySnapshotResult(Promise.resolve(snapshot), startedAt, {
+        keepScanning: false,
+        suppressToast: false,
+      });
+      return;
+    }
+
+    await applySnapshotResult(Promise.resolve(snapshot), startedAt, {
+      keepScanning: false,
+      suppressToast: false,
+    });
+  }
+
+  async function applySnapshotResult(
+    snapshotResult: Promise<Awaited<ReturnType<typeof startScanSnapshot>>>,
+    startedAt: TimestampPair,
+    options: { keepScanning?: boolean; suppressToast?: boolean } = {},
+  ) {
+    const [snapshotSettled, masterIndicatorsResult] = await Promise.allSettled([
+      snapshotResult,
+      fetchMasterIndicators(),
+    ] as const);
+
+    let nextTop8: Top8Asset[] = [];
+    let nextIndicators = masterIndicators;
+    let statusBase = refreshSystemMarketStatus(systemStatus);
+    let quoteRealUpdate: TimestampPair | null = null;
+    let indicatorRealUpdate: TimestampPair | null = null;
+    let nextScanExecutionMode: ScanState["scanExecutionMode"] = "NO_REAL_DATA";
+    let nextSnapshotToken: string | null = null;
+    let nextScanLabel = "TOP 8 DATA UNAVAILABLE";
+    let nextSnapshotFields: Partial<ScanState> = {};
+
+    if (snapshotSettled.status === "fulfilled") {
+      const snapshot = snapshotSettled.value;
+      statusBase = mergeScanSnapshotUniverseStatus(statusBase, snapshot);
+      nextTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
+      nextSnapshotToken = snapshot.snapshotToken ?? null;
+      nextSnapshotFields = {
+        scanId: snapshot.scanId,
+        snapshotToken: nextSnapshotToken,
+        status: snapshot.status,
+        resultScope: snapshot.resultScope,
+        coveragePercent: snapshot.coveragePercent,
+        batchesTotal: snapshot.batchesTotal,
+        batchesCompleted: snapshot.batchesCompleted,
+        nextBatchIndex: snapshot.nextBatchIndex,
+        estimatedProviderCalls: snapshot.estimatedProviderCalls,
+        actualProviderCalls: snapshot.actualProviderCalls,
+        candidatesAnalysed: candidatesAnalysedFromSnapshot(snapshot),
+        recommendedNextAction: snapshot.recommendedNextAction,
+      };
+      storeScanState(nextSnapshotFields);
+      nextScanExecutionMode = snapshot.isGlobalTop8Final
+        ? "GLOBAL_TOP8_FINAL"
+        : snapshot.batchesCompleted > 0
+          ? "PARTIAL_BATCH_ONLY"
+          : snapshot.status === "ERROR"
+            ? "ERROR"
+            : "NO_REAL_DATA";
+      nextScanLabel = snapshot.isGlobalTop8Final
+        ? "GLOBAL TOP 8 FINAL completed"
+        : snapshot.batchesCompleted > 0
+          ? `TOP 8 PARTIAL DIAGNOSTIC - coverage ${snapshot.coveragePercent}%`
+          : "TOP 8 DATA UNAVAILABLE";
+    } else {
+      window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+      statusBase = {
+        ...statusBase,
+        operationalDataStatus: "ERROR",
+        operationalDecisionAllowed: false,
+        operationalBlockReasons: ["SCAN_SNAPSHOT_ENDPOINT_UNAVAILABLE"],
+      };
+      nextScanExecutionMode = "ERROR";
+      nextScanLabel = "Scan snapshot failed";
+    }
+
+    if (nextTop8.length > 0) {
+      try {
+        const visibleQuotes = await fetchVisibleTop8Quotes(nextTop8);
+        const mergedTop8 = mergeVisibleTop8Quotes(nextTop8, visibleQuotes);
+        nextTop8 = mergedTop8.top8;
+        quoteRealUpdate = mergedTop8.lastRealDataUpdate;
+      } catch {
+        nextTop8 = nextTop8.map((asset) => ({
+          ...asset,
+          dataMode: "DATA_UNAVAILABLE",
+          priceDataMode: "DATA_UNAVAILABLE",
+          price: "N/A",
+          priceChangePercent: 0,
+          cacheStatus: "ERROR",
+          operationalDataStatus: "DATA_UNAVAILABLE",
+          operationalDecisionAllowed: false,
+          operationalBlockReasons: ["VISIBLE_QUOTES_ENDPOINT_UNAVAILABLE", "REAL_SCORE_INPUTS_REQUIRED"],
+          scoreInputIntegrity: ERROR_SCORE_INPUT_INTEGRITY,
+          execDisabledReason: "Visible quote refresh failed - DATA UNAVAILABLE; EXEC disabled",
+          action: asset.marketStatus === "OPEN" && (asset.action === "EXEC" || asset.action === "CLOSED_CONTEXT") ? "BLOCKED" : asset.action,
+        }));
+      }
+    }
+
+    if (masterIndicatorsResult.status === "fulfilled") {
+      const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, masterIndicatorsResult.value);
+      nextIndicators = mergedIndicators.indicators;
+      indicatorRealUpdate = mergedIndicators.lastRealDataUpdate;
+    } else {
+      nextIndicators = unavailableMasterIndicators.map((indicator) => ({
+        ...indicator,
+        dataMode: "DATA_UNAVAILABLE",
+        provider: "none",
+        source: "none",
+        cacheStatus: "ERROR",
+        status: "NOT_AVAILABLE",
+      }));
+    }
+
+    const lastRealDataUpdate = latestTimestamp(quoteRealUpdate, indicatorRealUpdate, systemStatus.lastRealDataUpdate);
+    const dashboardDataMode = deriveDashboardDataMode(nextTop8, nextIndicators, {
+      isScanning: options.keepScanning,
+      coveragePercent: nextSnapshotFields.coveragePercent,
+    });
+    const nextSystemStatus = updateSystemStatusForDataMode(
+      statusBase,
+      dashboardDataMode,
+      lastRealDataUpdate,
+    );
+
+    setSystemStatus(nextSystemStatus);
+    setFearGreed({
+      ...unavailableFearGreed,
+      timestamp: startedAt,
+      operationalBlockReasons: ["NO_APPROVED_REAL_FEAR_GREED_SOURCE"],
+    });
+    setMasterIndicators(nextIndicators);
+    setSectors(unavailableSectors);
+    setTop8(nextTop8);
+    const nextCachedScanState = {
+      ...nextSnapshotFields,
+      label: nextScanLabel,
+      lastRealDataUpdate,
+      lastScanClicked: startedAt,
+      scanExecutionMode: nextScanExecutionMode,
+    };
+    saveSessionCache({
+      masterIndicators: {
+        data: nextIndicators,
+        timestamp: createTimestampPair(),
+        dataMode: deriveIndicatorsDataMode(nextIndicators),
+      },
+      scanState: nextCachedScanState,
+      top8Result:
+        (nextSnapshotFields.coveragePercent ?? 0) === 100 && nextTop8.length > 0
+          ? {
+              assets: nextTop8,
+              timestamp: createTimestampPair(),
+            }
+          : undefined,
+    });
+    setScanState((current) => ({
+      ...current,
+      ...nextSnapshotFields,
+      label: nextScanLabel,
+      isScanning: options.keepScanning === true,
+      lastRun: nextSystemStatus.lastScan,
+      lastRealDataUpdate,
+      lastScanClicked: startedAt,
+      scanExecutionMode: nextScanExecutionMode,
+      refreshedCount: current.refreshedCount + 1,
+    }));
+    if (!options.suppressToast) {
+      showToast(
+        nextScanExecutionMode === "ERROR"
+          ? "Scan snapshot failed - DATA UNAVAILABLE"
+          : nextScanExecutionMode === "GLOBAL_TOP8_FINAL"
+            ? "Global TOP 8 final completed"
+            : "Partial diagnostic saved - continue scan to reach 100% coverage",
+        nextScanExecutionMode === "ERROR" ? "error" : "info",
+      );
+    }
+  }
+
+  async function handleScan() {
+    if (scanState.isScanning) return;
+
+    clearSessionCacheForNewScan();
+    const startedAt = createTimestampPair();
+    setScanState((current) => ({
+      ...current,
+      label: "SCAN FULL running...",
+      isScanning: true,
+      lastRun: startedAt,
+      lastScanClicked: startedAt,
+      scanExecutionMode: "SCAN_SNAPSHOT",
+    }));
+    setSystemStatus((current) =>
+      updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "SCANNING", current.lastRealDataUpdate),
+    );
+
+    const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
+    try {
+      await Promise.all([scanDelay, runAutoChainedScan(startedAt)]);
+    } catch (error) {
+      setScanState((current) => ({
+        ...current,
+        label: "Scan snapshot failed - manual retry available",
+        isScanning: false,
+        scanExecutionMode: "ERROR",
+      }));
+      setSystemStatus((current) =>
+        updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "ERROR", current.lastRealDataUpdate),
+      );
+      showToast(error instanceof Error ? error.message : "Scan snapshot failed", "error");
+    }
+  }
+
+  async function handleContinueScan() {
+    if (scanState.isScanning || !scanState.snapshotToken) return;
+
+    const startedAt = createTimestampPair();
+    setScanState((current) => ({
+      ...current,
+      label: "CONTINUE SCAN running...",
+      isScanning: true,
+      lastScanClicked: startedAt,
+      scanExecutionMode: "SCAN_SNAPSHOT",
+    }));
+
+    const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
+    await Promise.all([
+      scanDelay,
+      applySnapshotResult(continueScanSnapshot(scanState.snapshotToken), startedAt, {
+        keepScanning: false,
+        suppressToast: false,
+      }),
+    ]);
+  }
+
+  async function handleCopyTop8() {
+    const output = top8.length > 0 ? formatTop8ForExport(top8) : "TOP 8 DATA UNAVAILABLE - no real operational ranking available.";
+    setExportText(output);
+
+    try {
+      await navigator.clipboard.writeText(output);
+      showToast("TOP 8 export copied", "success");
+    } catch {
+      showToast("TOP 8 export ready for manual copy", "info");
+    }
+  }
+
+  function handleBackup() {
+    const result = simulateBackupCode();
+    showToast(
+      result.ok ? "Technical export prepared" : "Code export error",
+      result.ok ? "success" : "error",
+    );
+  }
+
+  return (
+    <main className="dashboard-shell">
+      <StickyMiniHeader systemStatus={systemStatus} onScan={handleScan} isScanning={scanState.isScanning} />
+      <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
+      <SystemStatusCards systemStatus={systemStatus} />
+      <ActionButtons
+        onScan={handleScan}
+        onContinueScan={handleContinueScan}
+        onCopy={handleCopyTop8}
+        onBackup={handleBackup}
+        isScanning={scanState.isScanning}
+        canContinueScan={Boolean(scanState.snapshotToken && scanState.coveragePercent !== 100)}
+        continueLabel={
+          scanState.nextBatchIndex && scanState.batchesTotal
+            ? `continue scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
+            : "continue scan"
+        }
+      />
+      <ScanStatusPanel scanState={scanState} />
+      <FearGreedPanel fearGreed={fearGreed} />
+      <MasterIndicatorsGrid indicators={masterIndicators} />
+      <SectorLeaders sectors={sectors} />
+      <Top8Grid assets={top8} />
+      {exportText ? (
+        <section className="section-block export-panel">
+          <div className="section-title-row">
+            <h2>exportar resultados</h2>
+            <span>Real-data policy text compatible with ChatGPT</span>
+          </div>
+          <pre>{exportText}</pre>
+        </section>
+      ) : null}
+      {toast ? <Toast key={toast.id} message={toast.message} tone={toast.tone} /> : null}
+    </main>
+  );
+}
