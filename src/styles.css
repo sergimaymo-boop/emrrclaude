@@ -582,11 +582,17 @@ input:focus {
 .indicator-grid,
 .top8-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
+/* Status grid: 3 cols on desktop, 2 on mobile */
 .status-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* Indicator grid: 4 cols on desktop, 2 on mobile — 7 cards */
+.indicator-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .status-card,
@@ -1521,7 +1527,7 @@ input:focus {
   }
 }
 
-/* iPhone 16 Pro Max y móviles grandes */
+/* iPhone 16 Pro Max y móviles */
 @media (max-width: 460px) {
   .market-pill {
     gap: 5px;
@@ -1534,41 +1540,22 @@ input:focus {
     text-overflow: ellipsis;
   }
 
-  .primary-button {
-    min-height: 56px;
-    font-size: 14px;
-  }
-
-  .secondary-button {
-    min-height: 48px;
-    font-size: 11px;
-  }
-
   .section-block {
-    padding: 14px;
-    margin-top: 12px;
+    padding: 12px;
+    margin-top: 10px;
   }
 
-  .section-title-row h2 {
-    font-size: 14px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  /* Grids en móvil: siempre 2 columnas */
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .scan-status {
-    padding: 14px;
+  .indicator-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .scan-status h2 {
-    font-size: 15px;
-  }
-
-  .status-card span {
-    font-size: 10px;
-  }
-
-  .status-card strong {
-    font-size: 13px;
+  .status-card {
+    min-height: 72px;
   }
 
   .indicator-card {
@@ -1581,8 +1568,13 @@ input:focus {
     padding: 20px;
   }
 
+  /* Desktop: status 3 cols, indicator 7 cols (uno por indicador) */
   .status-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .indicator-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 
   .top8-list {

@@ -9,7 +9,6 @@ import { SystemStatusCards } from "../components/SystemStatusCards";
 import { TechnicalHeader } from "../components/TechnicalHeader";
 import { Toast } from "../components/Toast";
 import { Top8Grid } from "../components/Top8Grid";
-import { simulateBackupCode } from "../engines";
 import {
   initialSystemStatus,
   unavailableFearGreed,
@@ -615,14 +614,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     else showToast("Listo para copiar manualmente", "info");
   }
 
-  function handleBackup() {
-    const result = simulateBackupCode();
-    showToast(
-      result.ok ? "Technical export prepared" : "Code export error",
-      result.ok ? "success" : "error",
-    );
-  }
-
   return (
     <main className="dashboard-shell">
       <StickyMiniHeader systemStatus={systemStatus} onScan={handleScan} isScanning={scanState.isScanning} />
@@ -636,25 +627,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         onScan={handleScan}
         onContinueScan={handleContinueScan}
         onCopy={handleCopyTop8}
-        onBackup={handleBackup}
         isScanning={scanState.isScanning}
         canContinueScan={Boolean(scanState.snapshotToken && scanState.coveragePercent !== 100)}
         continueLabel={
           scanState.nextBatchIndex && scanState.batchesTotal
-            ? `continue scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
-            : "continue scan"
+            ? `Continuar scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
+            : "Continuar scan"
         }
       />
       <SystemStatusCards systemStatus={systemStatus} />
-      {exportText ? (
-        <section className="section-block export-panel">
-          <div className="section-title-row">
-            <h2>exportar resultados</h2>
-            <span>Real-data policy text compatible with ChatGPT</span>
-          </div>
-          <pre>{exportText}</pre>
-        </section>
-      ) : null}
       {toast ? <Toast key={toast.id} message={toast.message} tone={toast.tone} /> : null}
     </main>
   );
