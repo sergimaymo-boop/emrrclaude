@@ -1,5 +1,5 @@
 import { PROVIDER_EXCHANGES } from "./universeEngine.js";
-import { fetchYahooHistory } from "./yahooProvider.js";
+import { cascadeHistory } from "./providerCascade.js";
 
 const PROVIDER_TIMEOUT_MS = 8000;
 const CACHE_TTL_SECONDS = 86400;
@@ -189,40 +189,31 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
   )}&fmt=json&period=d&from=${encodeURIComponent(fromDate)}`;
   const providerResult = await fetchJson(url);
 
-  if (providerResult.ok && Array.isArray(providerResult.data)) {
-    const bars = normalizeHistoricalRows(providerResult.data);
-    if (bars.length > 0) {
-      return writeCache(cacheKey, {
-        ok: true,
-        provider: "EODHD",
-        providerSymbol: normalizedSymbol,
-        bars,
-        barCount: bars.length,
-      });
-    }
-  }
+  // Cascade: EODHD → Yahoo Finance → Stooq
+  const env = getEnv();
+  const result = await cascadeHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS, {
+    EODHD_API_KEY: isConfiguredSecret(env.EODHD_API_KEY) ? env.EODHD_API_KEY : null,
+  });
 
-  // Fallback: Yahoo Finance (no API key required)
-  const yahooResult = await fetchYahooHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS);
-  if (yahooResult.ok && yahooResult.bars.length > 0) {
+  if (result.ok && result.bars.length > 0) {
     return writeCache(cacheKey, {
       ok: true,
-      provider: "Yahoo",
+      provider: result.provider,
       providerSymbol: normalizedSymbol,
-      bars: yahooResult.bars.slice(-MAX_BARS),
-      barCount: yahooResult.bars.length,
+      bars: result.bars.slice(-MAX_BARS),
+      barCount: result.bars.length,
     });
   }
 
   return {
     ok: false,
-    provider: "EODHD+Yahoo",
+    provider: "none",
     providerSymbol: normalizedSymbol,
     cacheStatus: "BYPASS",
     cachedAtUtc: null,
     ttlSeconds: CACHE_TTL_SECONDS,
     bars: [],
     blockedReason: "ALL_PROVIDERS_FAILED",
-    message: `EODHD: ${providerResult.reason ?? "no valid bars"} | Yahoo: ${yahooResult.reason ?? "no valid bars"}`,
+    message: result.triedProviders?.map(p => `${p.provider}(${p.reason})`).join(" → ") ?? "All providers failed",
   };
 }

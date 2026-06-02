@@ -1,4 +1,4 @@
-import { fetchYahooQuote } from "./_lib/yahooProvider.js";
+import { cascadeQuote } from "./_lib/providerCascade.js";
 
 const ALLOWED_SYMBOLS = ["SPY", "LQD", "HYG", "VIX", "VVIX", "TNX", "MOVE"];
 
@@ -223,35 +223,26 @@ async function getControlledQuote(symbol) {
 
   const env = getEnv();
   const cached = readCachedQuote(symbol);
+  if (cached?.cacheStatus === "HIT") return withCacheMeta(cached.quote, "HIT", cached.cachedAtUtc);
 
-  if (cached?.cacheStatus === "HIT") {
-    return withCacheMeta(cached.quote, "HIT", cached.cachedAtUtc);
-  }
-
-  if (!isConfiguredSecret(env.EODHD_API_KEY)) {
-    return createQuote(symbol, {
-      cacheStatus: "BYPASS",
-      cachedAtUtc: null,
-      dataQuality: "NOT_CONFIGURED",
-      message: "EODHD_API_KEY is not configured. Provider substitutes are disabled by operational data policy.",
-    });
-  }
-
-  // 1. Try EODHD (primary)
-  const eodhdResult = await fetchEodhdQuote(symbol);
-  if (eodhdResult.ok) return writeCachedQuote(symbol, eodhdResult.quote);
-
-  // 2. Fallback: Yahoo Finance (no API key required)
   const details = SYMBOL_DETAILS[symbol];
-  const yahooResult = await fetchYahooQuote(details.eodhdSymbol);
-  if (yahooResult.ok) {
+
+  // Cascade: EODHD → Finnhub → Yahoo Finance → Stooq
+  const result = await cascadeQuote(details.eodhdSymbol, {
+    EODHD_API_KEY: isConfiguredSecret(env.EODHD_API_KEY) ? env.EODHD_API_KEY : null,
+    FINNHUB_API_KEY: isConfiguredSecret(env.FINNHUB_API_KEY) ? env.FINNHUB_API_KEY : null,
+  });
+
+  if (result.ok) {
+    const dataQuality = result.previousClose !== null && result.changePercent !== null ? "GOOD" : "WARNING";
     return writeCachedQuote(symbol, createQuote(symbol, {
-      price: yahooResult.price,
-      previousClose: yahooResult.previousClose,
-      changePercent: yahooResult.changePercent,
-      providerUsed: "Yahoo",
+      price: result.price,
+      previousClose: result.previousClose,
+      changePercent: result.changePercent,
+      providerUsed: result.provider,
       dataMode: "REAL",
-      dataQuality: yahooResult.dataQuality,
+      dataQuality,
+      message: `Resolved via cascade: ${result.triedProviders.map(p => `${p.provider}:${p.ok ? "OK" : p.reason}`).join(" → ")}`,
     }));
   }
 
@@ -259,7 +250,7 @@ async function getControlledQuote(symbol) {
     cacheStatus: "BYPASS",
     cachedAtUtc: null,
     dataQuality: "NOT_AVAILABLE",
-    message: `All providers failed. EODHD: ${eodhdResult.reason} | Yahoo: ${yahooResult.reason}`,
+    message: `All providers failed: ${result.triedProviders.map(p => `${p.provider}(${p.reason})`).join(", ")}`,
   });
 }
 
