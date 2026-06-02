@@ -1,49 +1,38 @@
-import type { ColorToken, SystemStatus } from "../types";
-import { Badge } from "./Badge";
+import type { SystemStatus } from "../types";
 
 interface SystemStatusCardsProps {
   systemStatus: SystemStatus;
 }
 
+function statusColor(value: string): string {
+  if (value === "REAL" || value === "REAL_READY" || value === "HEALTHY" || value === "ALLOWED") return "#10b981";
+  if (value === "ERROR" || value === "OFFLINE") return "#ef4444";
+  if (value.includes("PARTIAL") || value.includes("SCANNING") || value.includes("LAST")) return "#eab308";
+  return "#9ca3af";
+}
+
 export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
-  const universeStats = systemStatus.technical.universeStats;
-  const dataModeToken: ColorToken =
-    systemStatus.dashboardDataMode === "REAL"
-      ? "GREEN_HARD"
-      : systemStatus.dashboardDataMode === "LAST_CLOSE"
-        ? "YELLOW"
-        : systemStatus.dashboardDataMode === "SCANNING" || systemStatus.dashboardDataMode === "PARTIAL_DATA"
-          ? "YELLOW"
-          : systemStatus.dashboardDataMode === "ERROR"
-            ? "RED"
-            : "WHITE_GREY";
-  const cards = [
+  const u = systemStatus.technical.universeStats;
+  const cards: [string, string][] = [
     ["Data Mode", systemStatus.dashboardDataMode],
-    ["Operational Data", systemStatus.operationalDataStatus],
-    ["Operational Decision", systemStatus.operationalDecisionAllowed ? "ALLOWED" : "BLOCKED"],
     ["API Status", systemStatus.apiStatus],
-    ["Cache Status", systemStatus.cache],
-    ["Source / Scope", `${universeStats.top8Source} / ${universeStats.resultScope}`],
-    ["Universe Discovered", universeStats.universeDiscovered.toLocaleString()],
-    ["Universe Operable", universeStats.universeOperable.toLocaleString()],
-    ["Eligible / Ranked", `${universeStats.universeEligibleForScore.toLocaleString()} / ${universeStats.universeRanked.toLocaleString()}`],
-    ["Final TOP 8", universeStats.finalTop8Count.toLocaleString()],
-    ["Last Real Data", systemStatus.lastRealDataUpdate?.local ?? "No real data yet"],
+    ["Universe", `${u.universeDiscovered.toLocaleString()} assets`],
+    ["Operable", u.universeOperable.toLocaleString()],
+    ["Final TOP 8", u.finalTop8Count.toLocaleString()],
     ["Last Scan", systemStatus.lastScan.local],
-    ["Readiness", `${systemStatus.readiness} / ${systemStatus.operationalBlockReasons[0] ?? "NO_BLOCK"}`],
   ];
 
   return (
     <section className="section-block">
-      <div className="section-title-row">
+      <div className="section-title-row" style={{marginBottom:12}}>
         <h2>System Status</h2>
-        <Badge token={dataModeToken}>{systemStatus.dashboardDataMode}</Badge>
+        <span style={{fontSize:10,color:statusColor(systemStatus.dashboardDataMode),fontWeight:700}}>{systemStatus.dashboardDataMode}</span>
       </div>
       <div className="status-grid">
         {cards.map(([label, value]) => (
           <article className="status-card" key={label}>
             <span>{label}</span>
-            <strong>{value}</strong>
+            <strong style={{color:statusColor(value)}}>{value}</strong>
           </article>
         ))}
       </div>
