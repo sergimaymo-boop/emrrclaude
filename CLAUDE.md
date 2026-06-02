@@ -392,16 +392,18 @@ INV-10  Batch provider calls ≤ 150 ← stay within 10s Vercel timeout
 
 ---
 
-## 13. MARKET HOURS (Europe/Madrid timezone)
+## 13. MARKET HOURS
 
-| Market | Exchange codes | Open (CET) | Close (CET) |
-|---|---|---|---|
-| Europe | XETRA, EPA, AMS, BME | 08:00 | 17:30 |
-| US | NYSE, NASDAQ | 14:30 | 21:00 |
-| Pre-market | — | — | — |
-| Both open | — | 14:30 | 17:30 |
+> User is in **Canary Islands (WET = UTC+0 winter, UTC+1 summer)** — always use Canary Islands time.
 
-**Optimal SCAN FULL window:** 14:30–17:30 CET (maximum universe, both markets active)  
+| Market | Exchanges | Open (CET) | Close (CET) | Open (Canarias) | Close (Canarias) |
+|---|---|---|---|---|---|
+| Europe | XETRA, EPA, AMS, BME | 08:00 | 17:30 | **07:00** | **16:30** |
+| US | NYSE, NASDAQ | 14:30 | 21:00 | **13:30** | **20:00** |
+| Both open | — | 14:30 | 17:30 | **13:30** | **16:30** |
+
+**Morning scan (before 13:30 Canarias):** only European tickers (XETRA, Euronext, BME)  
+**Afternoon scan (13:30–16:30 Canarias):** both EU + US — maximum universe, best coverage  
 **Master Indicators:** work any time (EODHD returns last-close outside market hours)
 
 ---
