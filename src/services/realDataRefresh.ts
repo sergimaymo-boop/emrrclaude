@@ -231,6 +231,21 @@ export async function fetchTop8Status(): Promise<Top8StatusApiResponse> {
   return response.json();
 }
 
+export async function fetchLastScanSnapshot(): Promise<ScanSnapshotResponse | null> {
+  try {
+    const response = await fetch("/api/scan-snapshot/last", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data.ok) return null;
+    return { ...data, source: "LAST_SESSION_CACHE" } as ScanSnapshotResponse;
+  } catch {
+    return null;
+  }
+}
+
 export async function startScanSnapshot(): Promise<ScanSnapshotResponse> {
   return fetchJsonWithTimeout<ScanSnapshotResponse>("/api/scan-snapshot/start", {
     method: "POST",

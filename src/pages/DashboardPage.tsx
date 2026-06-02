@@ -22,6 +22,7 @@ import {
   continueScanSnapshot,
   deriveDashboardDataMode,
   deriveIndicatorsDataMode,
+  fetchLastScanSnapshot,
   fetchMasterIndicators,
   fetchVisibleTop8Quotes,
   finalizeScanSnapshot,
@@ -243,6 +244,30 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       .catch(() => {
         setMasterIndicators(unavailableMasterIndicators);
       });
+
+    const sessionCache = loadSessionCache();
+    const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
+    if (!hasTop8InSession) {
+      fetchLastScanSnapshot()
+        .then((snapshot) => {
+          if (!snapshot) return;
+          const lastTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
+          if (lastTop8.length === 0) return;
+          setTop8(lastTop8);
+          setSystemStatus((current) => mergeScanSnapshotUniverseStatus(current, snapshot));
+          setScanState((current) => ({
+            ...current,
+            scanId: snapshot.scanId,
+            coveragePercent: snapshot.coveragePercent,
+            batchesTotal: snapshot.batchesTotal,
+            batchesCompleted: snapshot.batchesCompleted,
+            resultScope: "GLOBAL_TOP8_FINAL",
+            scanExecutionMode: "GLOBAL_TOP8_FINAL",
+            label: `LAST SESSION TOP 8 - ${snapshot.scanCompletedAtUtc ? new Date(snapshot.scanCompletedAtUtc).toLocaleDateString() : "cached"}`,
+          }));
+        })
+        .catch(() => {});
+    }
   }, []);
 
   useEffect(() => {

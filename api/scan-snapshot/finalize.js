@@ -1,4 +1,5 @@
 import { decodeScanSnapshotToken, finalizeScanSnapshot } from "../_lib/scanSnapshot.js";
+import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_FINALIZE";
@@ -70,11 +71,15 @@ export default async function handler(request, response) {
     });
   }
 
-  return sendJson(response, 200, {
+  const payload = {
     ok: true,
     mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
     ...state,
     assets: state.topCandidates,
     message: "GLOBAL_TOP8_FINAL verified from a complete signed scan snapshot.",
-  });
+  };
+
+  await saveLastScanSnapshot(payload);
+
+  return sendJson(response, 200, payload);
 }

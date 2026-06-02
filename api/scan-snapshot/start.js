@@ -1,5 +1,6 @@
 import { buildUniverseResponse } from "../universe.js";
 import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch } from "../_lib/scanSnapshot.js";
+import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_START";
@@ -75,7 +76,7 @@ export default async function handler(request, response) {
   const responseState = attachSnapshotToken(processedState);
   const statusCode = responseState.isGlobalTop8Final ? 200 : responseState.batchesCompleted > 0 ? 206 : 409;
 
-  return sendJson(response, statusCode, {
+  const payload = {
     ok: responseState.isGlobalTop8Final,
     mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
     ...responseState,
@@ -83,5 +84,11 @@ export default async function handler(request, response) {
     message: responseState.isGlobalTop8Final
       ? "Global TOP 8 final is available because coveragePercent reached 100%."
       : "SCAN FULL created a real snapshot but remains partial or unavailable until coveragePercent reaches 100%.",
-  });
+  };
+
+  if (responseState.isGlobalTop8Final) {
+    await saveLastScanSnapshot(payload);
+  }
+
+  return sendJson(response, statusCode, payload);
 }
