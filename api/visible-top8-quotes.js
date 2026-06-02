@@ -193,6 +193,7 @@ async function getVisibleQuote(asset) {
   const result = await cascadeQuote(asset.providerSymbolEodhd, {
     FINNHUB_API_KEY:     isConfigured(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
     TWELVE_DATA_API_KEY: isConfigured(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
+    FMP_API_KEY:         isConfigured(env.FMP_API_KEY)         ? env.FMP_API_KEY         : null,
     FRED_API_KEY:        isConfigured(env.FRED_API_KEY)        ? env.FRED_API_KEY        : null,
   });
 

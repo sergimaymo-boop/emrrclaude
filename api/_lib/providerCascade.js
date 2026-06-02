@@ -55,6 +55,37 @@ const YAHOO_DIRECT = {
   "MOVE.INDX":   "^MOVE",
 };
 
+// FMP uses plain tickers for US stocks, exchange suffix for EU
+const EODHD_TO_FMP = {
+  US:    "",        // AAPL.US → AAPL
+  XETRA: ".XETRA", // SIE.XETRA → SIE.XETRA
+  PA:    ".PA",     // MC.PA → MC.PA
+  AS:    ".AS",     // ASML.AS → ASML.AS
+  BR:    ".BR",
+  LS:    ".LS",
+  MI:    ".MI",
+  SW:    ".SW",
+  LSE:   ".L",      // SHEL.LSE → SHEL.L
+};
+
+const FMP_DIRECT = {
+  "VIX.INDX":    null, // FMP doesn't cover VIX index
+  "VVIX.INDX":   null,
+  "US10Y.GBOND": null, // Use FRED for TNX
+  "MOVE.INDX":   null,
+};
+
+export function toFMPSymbol(eodhdSymbol) {
+  if (FMP_DIRECT[eodhdSymbol] !== undefined) return FMP_DIRECT[eodhdSymbol];
+  const parts = eodhdSymbol.split(".");
+  if (parts.length < 2) return null;
+  const ticker = parts[0];
+  const suffix = parts.slice(1).join(".");
+  const fmpSuffix = EODHD_TO_FMP[suffix];
+  if (fmpSuffix === undefined) return null;
+  return ticker + fmpSuffix;
+}
+
 // EODHD suffix → Twelve Data exchange suffix
 const EODHD_TO_TWELVEDATA_EXCHANGE = {
   US:    "",       // AAPL.US → AAPL
@@ -229,6 +260,30 @@ async function fetchStooqQuote(eodhdSymbol) {
   if (!price || price <= 0) return { ok: false, provider: "Stooq", reason: "Invalid price in CSV" };
 
   return { ok: true, provider: "Stooq", price, previousClose: null, changePercent: null };
+}
+
+// ─── Financial Modeling Prep (FMP) ───────────────────────────────────────────
+
+async function fetchFMPQuote(eodhdSymbol, apiKey) {
+  const symbol = toFMPSymbol(eodhdSymbol);
+  if (!symbol) return { ok: false, provider: "FMP", reason: `No FMP mapping for ${eodhdSymbol}` };
+
+  const url = `https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetchJson(url);
+  if (!r.ok) return { ok: false, provider: "FMP", reason: r.reason };
+
+  const data = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (!data) return { ok: false, provider: "FMP", reason: "Empty response" };
+  if (data.error) return { ok: false, provider: "FMP", reason: data.error };
+
+  const price = finiteOrNull(data.price);
+  if (!price || price <= 0) return { ok: false, provider: "FMP", reason: "No valid price" };
+
+  const previousClose = finiteOrNull(data.previousClose);
+  const changePercent = finiteOrNull(data.changePercentage ?? data.changesPercentage)
+    ?? (previousClose && previousClose !== 0 ? ((price - previousClose) / previousClose) * 100 : null);
+
+  return { ok: true, provider: "FMP", price, previousClose, changePercent };
 }
 
 // ─── Twelve Data ─────────────────────────────────────────────────────────────
@@ -441,7 +496,7 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     return { ok: false, provider: "none", reason: "All TNX providers failed", triedProviders: tried };
   }
 
-  // Standard symbols: Finnhub → TwelveData → Yahoo → Stooq
+  // Standard symbols: Finnhub → TwelveData → FMP → Yahoo → Stooq
   if (env.FINNHUB_API_KEY) {
     const r = await fetchFinnhubQuote(eodhdSymbol, env.FINNHUB_API_KEY);
     tried.push({ provider: "Finnhub", ok: r.ok, reason: r.reason });
@@ -456,6 +511,14 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     if (r.ok) return { ...r, triedProviders: tried };
   } else {
     tried.push({ provider: "TwelveData", ok: false, reason: "Key not configured" });
+  }
+
+  if (env.FMP_API_KEY) {
+    const r = await fetchFMPQuote(eodhdSymbol, env.FMP_API_KEY);
+    tried.push({ provider: "FMP", ok: r.ok, reason: r.reason });
+    if (r.ok) return { ...r, triedProviders: tried };
+  } else {
+    tried.push({ provider: "FMP", ok: false, reason: "Key not configured" });
   }
 
   const yahoo = await fetchYahooQuote(eodhdSymbol);
