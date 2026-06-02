@@ -51,7 +51,12 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning }: StickyMin
         {systemStatus.health}
       </span>
       <button className="mini-scan-button" type="button" onClick={onScan} disabled={isScanning}>
-        {isScanning ? "Scanning" : "SCAN FULL"}
+        {isScanning ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "inline-block", animation: "pulse 1s infinite" }} />
+            Scanning
+          </span>
+        ) : "SCAN FULL"}
       </button>
     </div>
   );
