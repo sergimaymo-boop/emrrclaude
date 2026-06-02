@@ -245,7 +245,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setMasterIndicators(unavailableMasterIndicators);
       });
 
-    const sessionCache = loadSessionCache();
     const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
     if (!hasTop8InSession) {
       fetchLastScanSnapshot()
