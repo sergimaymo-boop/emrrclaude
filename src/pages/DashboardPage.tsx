@@ -264,7 +264,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
             label: `LAST SESSION TOP 8 - ${snapshot.scanCompletedAtUtc ? new Date(snapshot.scanCompletedAtUtc).toLocaleDateString() : "cached"}`,
           }));
         })
-        .catch(() => {});
+        .catch(() => {
+          showToast("Sin datos de sesión anterior", "info");
+        });
     }
   }, []);
 
