@@ -5,56 +5,82 @@ interface TechnicalHeaderProps {
   onLogout: () => void;
 }
 
+function dataModeDot(mode: string): string {
+  if (mode === "REAL") return "#10b981";
+  if (mode === "ERROR" || mode === "DATA_UNAVAILABLE") return "#ef4444";
+  return "#eab308";
+}
+
 export function TechnicalHeader({ systemStatus, onLogout }: TechnicalHeaderProps) {
-  const technical = systemStatus.technical;
-  const universeStats = technical.universeStats;
+  const u = systemStatus.technical.universeStats;
+  const dotColor = dataModeDot(systemStatus.dashboardDataMode);
 
   return (
-    <header className="technical-header">
-      <div className="header-identity">
-        <p className="eyebrow">DEV · Institutional Trend Dashboard</p>
-        <h1>EMRR 2.0</h1>
-        <p className="header-subtitle">Trends · {systemStatus.readiness} / {systemStatus.dashboardDataMode}</p>
-        <div className="technical-console" aria-label="Technical status">
-          <span><i className="console-dot" />EODHD {technical.eodhdStatus}</span>
-          <span><i className="console-dot" />Finnhub {technical.finnhubStatus}</span>
-          <span className="console-separator" aria-hidden="true" />
-          <span>Cache {technical.cacheEntries}</span>
-          <span>Uptime {technical.uptimeMinutes}m</span>
-          <span>API calls {technical.apiCalls}</span>
-          <span>Blocked {technical.blockedCalls}</span>
-          <span className="console-separator" aria-hidden="true" />
-          <span>Data mode {systemStatus.dashboardDataMode}</span>
-          <span>Operational {systemStatus.operationalDataStatus}</span>
-          <span>Source {universeStats.top8Source}</span>
-          <span>Scope {universeStats.resultScope}</span>
-          <span>{technical.sampleLabel}</span>
+    <header style={{
+      display: "grid",
+      gridTemplateColumns: "1fr auto",
+      alignItems: "center",
+      gap: 12,
+      padding: "20px 0 16px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      marginBottom: 16,
+    }}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+          <h1 style={{margin:0,fontSize:28,fontWeight:900,letterSpacing:"-0.5px",color:"#ffffff",lineHeight:1}}>
+            EMRR
+          </h1>
+          <span style={{
+            fontSize:10,fontWeight:800,letterSpacing:"0.12em",
+            color:"#f59e0b",textTransform:"uppercase",
+            padding:"3px 8px",border:"1px solid rgba(245,158,11,0.3)",
+            borderRadius:4,
+          }}>
+            INSTITUTIONAL
+          </span>
+          <span style={{
+            width:8,height:8,borderRadius:"50%",
+            background:dotColor,
+            boxShadow:`0 0 8px ${dotColor}`,
+          }} />
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:"#6b7280",fontWeight:600}}>
+            {systemStatus.dashboardDataMode}
+          </span>
+          {u.universeDiscovered > 0 && (
+            <span style={{fontSize:11,color:"#6b7280"}}>
+              Universe <strong style={{color:"#9ca3af"}}>{u.universeDiscovered.toLocaleString()}</strong>
+            </span>
+          )}
+          {u.finalTop8Count > 0 && (
+            <span style={{fontSize:11,color:"#6b7280"}}>
+              TOP 8 <strong style={{color:"#f59e0b"}}>{u.finalTop8Count}</strong>
+            </span>
+          )}
+          <span style={{fontSize:11,color:"#4b5563"}}>
+            {systemStatus.updatedAt.local}
+          </span>
         </div>
       </div>
-      <div className="header-session-actions">
-        <button className="session-logout-button" type="button" onClick={onLogout}>
-          Logout
-        </button>
-      </div>
-      <div className="header-metrics">
-        <div className="time-status-card">
-          <span>Local time</span>
-          <strong>{systemStatus.updatedAt.local}</strong>
-        </div>
-        <div className="universe-status-card">
-          <div className="universe-copy">
-            <span>Analysed Universe</span>
-            <small>
-              US {universeStats.us.toLocaleString()} · Europe {universeStats.europe.toLocaleString()}
-            </small>
-            <small>
-              Operable {universeStats.universeOperable.toLocaleString()} · Ranked{" "}
-              {universeStats.universeRanked.toLocaleString()}
-            </small>
-          </div>
-          <strong>{universeStats.total.toLocaleString()}</strong>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={onLogout}
+        style={{
+          padding:"8px 16px",
+          background:"transparent",
+          border:"1px solid rgba(255,255,255,0.1)",
+          borderRadius:6,
+          color:"#6b7280",
+          fontSize:11,
+          fontWeight:700,
+          letterSpacing:"0.06em",
+          textTransform:"uppercase",
+          cursor:"pointer",
+        }}
+      >
+        Logout
+      </button>
     </header>
   );
 }
