@@ -1,4 +1,5 @@
 import { PROVIDER_EXCHANGES } from "./universeEngine.js";
+import { fetchYahooHistory } from "./yahooProvider.js";
 
 const PROVIDER_TIMEOUT_MS = 8000;
 const CACHE_TTL_SECONDS = 86400;
@@ -188,52 +189,40 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
   )}&fmt=json&period=d&from=${encodeURIComponent(fromDate)}`;
   const providerResult = await fetchJson(url);
 
-  if (!providerResult.ok) {
-    return {
-      ok: false,
-      provider: "EODHD",
-      providerSymbol: normalizedSymbol,
-      cacheStatus: "BYPASS",
-      cachedAtUtc: null,
-      ttlSeconds: CACHE_TTL_SECONDS,
-      bars: [],
-      blockedReason: "PROVIDER_HISTORY_REQUEST_FAILED",
-      message: providerResult.reason,
-    };
+  if (providerResult.ok && Array.isArray(providerResult.data)) {
+    const bars = normalizeHistoricalRows(providerResult.data);
+    if (bars.length > 0) {
+      return writeCache(cacheKey, {
+        ok: true,
+        provider: "EODHD",
+        providerSymbol: normalizedSymbol,
+        bars,
+        barCount: bars.length,
+      });
+    }
   }
 
-  if (!Array.isArray(providerResult.data)) {
-    return {
-      ok: false,
-      provider: "EODHD",
+  // Fallback: Yahoo Finance (no API key required)
+  const yahooResult = await fetchYahooHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS);
+  if (yahooResult.ok && yahooResult.bars.length > 0) {
+    return writeCache(cacheKey, {
+      ok: true,
+      provider: "Yahoo",
       providerSymbol: normalizedSymbol,
-      cacheStatus: "BYPASS",
-      cachedAtUtc: null,
-      ttlSeconds: CACHE_TTL_SECONDS,
-      bars: [],
-      blockedReason: "PROVIDER_HISTORY_NOT_ARRAY",
-    };
+      bars: yahooResult.bars.slice(-MAX_BARS),
+      barCount: yahooResult.bars.length,
+    });
   }
 
-  const bars = normalizeHistoricalRows(providerResult.data);
-  if (bars.length === 0) {
-    return {
-      ok: false,
-      provider: "EODHD",
-      providerSymbol: normalizedSymbol,
-      cacheStatus: "BYPASS",
-      cachedAtUtc: null,
-      ttlSeconds: CACHE_TTL_SECONDS,
-      bars,
-      blockedReason: "PROVIDER_HISTORY_NO_VALID_BARS",
-    };
-  }
-
-  return writeCache(cacheKey, {
-    ok: true,
-    provider: "EODHD",
+  return {
+    ok: false,
+    provider: "EODHD+Yahoo",
     providerSymbol: normalizedSymbol,
-    bars,
-    barCount: bars.length,
-  });
+    cacheStatus: "BYPASS",
+    cachedAtUtc: null,
+    ttlSeconds: CACHE_TTL_SECONDS,
+    bars: [],
+    blockedReason: "ALL_PROVIDERS_FAILED",
+    message: `EODHD: ${providerResult.reason ?? "no valid bars"} | Yahoo: ${yahooResult.reason ?? "no valid bars"}`,
+  };
 }

@@ -1,3 +1,5 @@
+import { fetchYahooQuote } from "./_lib/yahooProvider.js";
+
 const ALLOWED_SYMBOLS = ["SPY", "LQD", "HYG", "VIX", "VVIX", "TNX", "MOVE"];
 
 const SYMBOL_DETAILS = {
@@ -235,14 +237,29 @@ async function getControlledQuote(symbol) {
     });
   }
 
+  // 1. Try EODHD (primary)
   const eodhdResult = await fetchEodhdQuote(symbol);
   if (eodhdResult.ok) return writeCachedQuote(symbol, eodhdResult.quote);
+
+  // 2. Fallback: Yahoo Finance (no API key required)
+  const details = SYMBOL_DETAILS[symbol];
+  const yahooResult = await fetchYahooQuote(details.eodhdSymbol);
+  if (yahooResult.ok) {
+    return writeCachedQuote(symbol, createQuote(symbol, {
+      price: yahooResult.price,
+      previousClose: yahooResult.previousClose,
+      changePercent: yahooResult.changePercent,
+      providerUsed: "Yahoo",
+      dataMode: "REAL",
+      dataQuality: yahooResult.dataQuality,
+    }));
+  }
 
   return createQuote(symbol, {
     cacheStatus: "BYPASS",
     cachedAtUtc: null,
     dataQuality: "NOT_AVAILABLE",
-    message: `Primary provider returned no valid quote data. EODHD: ${eodhdResult.reason}. Provider substitutes are disabled.`,
+    message: `All providers failed. EODHD: ${eodhdResult.reason} | Yahoo: ${yahooResult.reason}`,
   });
 }
 
