@@ -632,7 +632,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     <main className="dashboard-shell">
       <StickyMiniHeader systemStatus={systemStatus} onScan={handleScan} isScanning={scanState.isScanning} />
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
-      <SystemStatusCards systemStatus={systemStatus} />
+      <MasterIndicatorsGrid indicators={masterIndicators} />
+      <Top8Grid assets={top8} />
+      <SectorLeaders sectors={sectors} />
+      <FearGreedPanel fearGreed={fearGreed} />
+      <ScanStatusPanel scanState={scanState} />
       <ActionButtons
         onScan={handleScan}
         onContinueScan={handleContinueScan}
@@ -646,11 +650,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
             : "continue scan"
         }
       />
-      <ScanStatusPanel scanState={scanState} />
-      <FearGreedPanel fearGreed={fearGreed} />
-      <MasterIndicatorsGrid indicators={masterIndicators} />
-      <SectorLeaders sectors={sectors} />
-      <Top8Grid assets={top8} />
+      <SystemStatusCards systemStatus={systemStatus} />
       {exportText ? (
         <section className="section-block export-panel">
           <div className="section-title-row">
