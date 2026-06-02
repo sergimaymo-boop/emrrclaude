@@ -4,16 +4,18 @@
  * Tries providers in priority order, stops at first success.
  * No data mixing: result always comes from a single provider.
  *
- * QUOTE PRIORITY:
- *   1. EODHD       (paid, most reliable, real-time)
- *   2. Finnhub     (free, 60 req/min, real-time, API key required)
- *   3. Yahoo Finance (free, no key, real-time, unofficial)
- *   4. Stooq       (free, no key, delayed/EOD)
+ * QUOTE PRIORITY (EODHD cancelled June 2026):
+ *   TNX only: FRED (Federal Reserve) → Finnhub → Yahoo → Stooq
+ *   All others: Finnhub → Yahoo → Stooq
  *
  * HISTORICAL PRIORITY:
- *   1. EODHD       (paid, EOD, comprehensive)
- *   2. Yahoo Finance (free, no key, same quality)
- *   3. Stooq       (free, no key, CSV, EU + US)
+ *   1. Yahoo Finance (free, no key)
+ *   2. Stooq       (free, no key, CSV, EU + US)
+ *
+ * FRED (fred.stlouisfed.org):
+ *   Series DGS10 = 10-Year Treasury Constant Maturity Rate
+ *   Most authoritative source for TNX. Free API, unlimited calls.
+ *   Returns EOD data — valid for closed-market display.
  */
 
 const TIMEOUT_MS = 7000;
@@ -301,25 +303,54 @@ async function fetchStooqHistory(eodhdSymbol, lookbackDays) {
   return { ok: true, provider: "Stooq", bars };
 }
 
+// ─── FRED (Federal Reserve) — TNX only ───────────────────────────────────────
+
+async function fetchFredTNX(apiKey) {
+  // DGS10 = 10-Year Treasury Constant Maturity Rate (most authoritative source)
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=${encodeURIComponent(apiKey)}&sort_order=desc&limit=2&file_type=json`;
+  const r = await fetchJson(url);
+  if (!r.ok) return { ok: false, provider: "FRED", reason: r.reason };
+
+  const obs = r.data?.observations;
+  if (!Array.isArray(obs) || obs.length === 0) return { ok: false, provider: "FRED", reason: "No observations" };
+
+  // Latest valid value (FRED uses "." for missing data on weekends/holidays)
+  const latest = obs.find(o => o.value && o.value !== ".");
+  if (!latest) return { ok: false, provider: "FRED", reason: "No valid observation (weekend/holiday)" };
+
+  const price = finiteOrNull(latest.value);
+  if (!price) return { ok: false, provider: "FRED", reason: "Invalid value from FRED" };
+
+  // Calculate change vs previous observation
+  const prev = obs.find(o => o !== latest && o.value && o.value !== ".");
+  const previousClose = prev ? finiteOrNull(prev.value) : null;
+  const changePercent = previousClose && previousClose !== 0
+    ? ((price - previousClose) / previousClose) * 100
+    : null;
+
+  return { ok: true, provider: "FRED", price, previousClose, changePercent, date: latest.date };
+}
+
 // ─── Public cascade functions ─────────────────────────────────────────────────
 
+const TNX_SYMBOLS = new Set(["US10Y.GBOND", "TNX", "^TNX"]);
+
 /**
- * Cascade quote: EODHD → Finnhub → Yahoo → Stooq
- * Returns { ok, provider, price, previousClose, changePercent, triedProviders }
+ * Cascade quote: Finnhub → Yahoo → Stooq
+ * For TNX: FRED (Federal Reserve) → Finnhub → Yahoo → Stooq
  */
 export async function cascadeQuote(eodhdSymbol, env = {}) {
   const tried = [];
+  const isTNX = TNX_SYMBOLS.has(eodhdSymbol);
 
-  // 1. EODHD
-  if (env.EODHD_API_KEY) {
-    const r = await fetchEodhdQuote(eodhdSymbol, env.EODHD_API_KEY);
-    tried.push({ provider: "EODHD", ok: r.ok, reason: r.reason });
+  // TNX special: FRED first (Federal Reserve = most authoritative)
+  if (isTNX && env.FRED_API_KEY) {
+    const r = await fetchFredTNX(env.FRED_API_KEY);
+    tried.push({ provider: "FRED", ok: r.ok, reason: r.reason });
     if (r.ok) return { ...r, triedProviders: tried };
-  } else {
-    tried.push({ provider: "EODHD", ok: false, reason: "Key not configured" });
   }
 
-  // 2. Finnhub
+  // 1. Finnhub
   if (env.FINNHUB_API_KEY) {
     const r = await fetchFinnhubQuote(eodhdSymbol, env.FINNHUB_API_KEY);
     tried.push({ provider: "Finnhub", ok: r.ok, reason: r.reason });
@@ -328,12 +359,12 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     tried.push({ provider: "Finnhub", ok: false, reason: "Key not configured" });
   }
 
-  // 3. Yahoo Finance (no key)
+  // 2. Yahoo Finance (no key)
   const yahoo = await fetchYahooQuote(eodhdSymbol);
   tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
   if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
-  // 4. Stooq (no key, delayed)
+  // 3. Stooq (no key, delayed)
   const stooq = await fetchStooqQuote(eodhdSymbol);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };
