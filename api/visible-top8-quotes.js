@@ -1,3 +1,5 @@
+import { cascadeQuote } from "./_lib/providerCascade.js";
+
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "VISIBLE_TOP8_QUOTES";
 const ENDPOINT_VERSION = "DATA_INTEGRITY_FIX_2026_06_01";
@@ -184,19 +186,30 @@ async function getVisibleQuote(asset) {
     return buildUnavailableAsset(asset, "REAL_API_CALLS_DISABLED", "NOT_CONFIGURED");
   }
 
-  let lastError = null;
+  const env = process.env;
+  const isConfigured = (v) => v && v.trim() && !v.includes("placeholder");
 
-  try {
-    const eodhdQuote = await getEodhdQuote(asset);
-    if (eodhdQuote) {
-      quoteCache.set(asset.ticker, { quote: eodhdQuote, cachedAt: now });
-      return buildQuoteAsset(asset, eodhdQuote, "MISS");
-    }
-  } catch (error) {
-    lastError = error instanceof Error ? error.message : "EODHD_ERROR";
+  // Cascade: Finnhub → TwelveData → Yahoo → Stooq
+  const result = await cascadeQuote(asset.providerSymbolEodhd, {
+    FINNHUB_API_KEY:     isConfigured(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
+    TWELVE_DATA_API_KEY: isConfigured(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
+    FRED_API_KEY:        isConfigured(env.FRED_API_KEY)        ? env.FRED_API_KEY        : null,
+  });
+
+  if (result.ok) {
+    const quote = {
+      provider: result.provider,
+      providerSymbol: asset.providerSymbolEodhd,
+      price: result.price,
+      previousClose: result.previousClose,
+      timestampUtc: new Date().toISOString(),
+      dataQuality: result.previousClose ? "CLEAN" : "GOOD",
+    };
+    quoteCache.set(asset.ticker, { quote, cachedAt: now });
+    return buildQuoteAsset(asset, quote, "MISS");
   }
 
-  return buildUnavailableAsset(asset, lastError ?? "QUOTE_NOT_AVAILABLE");
+  return buildUnavailableAsset(asset, result.reason ?? "ALL_PROVIDERS_FAILED");
 }
 
 function summarizeProviders(assets) {
