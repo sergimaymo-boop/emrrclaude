@@ -174,21 +174,6 @@ function finiteOrNull(v) {
 
 // ─── Individual provider fetchers ─────────────────────────────────────────────
 
-async function fetchEodhdQuote(eodhdSymbol, apiKey) {
-  const url = `https://eodhd.com/api/real-time/${encodeURIComponent(eodhdSymbol)}?api_token=${encodeURIComponent(apiKey)}&fmt=json`;
-  const r = await fetchJson(url);
-  if (!r.ok) return { ok: false, provider: "EODHD", reason: r.reason };
-
-  const d = r.data;
-  const price = finiteOrNull(d.close ?? d.price ?? d.last ?? d.c);
-  const previousClose = finiteOrNull(d.previousClose ?? d.previous_close ?? d.pc ?? d.prev_close);
-  const changePercent = finiteOrNull(d.change_p ?? d.changePercent ?? d.dp)
-    ?? (price && previousClose && previousClose !== 0 ? ((price - previousClose) / previousClose) * 100 : null);
-
-  if (!price) return { ok: false, provider: "EODHD", reason: "No valid price in response" };
-  return { ok: true, provider: "EODHD", price, previousClose, changePercent };
-}
-
 async function fetchFinnhubQuote(eodhdSymbol, apiKey) {
   const symbol = toFinnhubSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Finnhub", reason: `No Finnhub mapping for ${eodhdSymbol}` };
@@ -302,26 +287,6 @@ async function fetchTwelveDataHistory(eodhdSymbol, lookbackDays, apiKey) {
 
 // ─── Historical bar fetchers ──────────────────────────────────────────────────
 
-async function fetchEodhdHistory(eodhdSymbol, apiKey, fromDate) {
-  const url = `https://eodhd.com/api/eod/${encodeURIComponent(eodhdSymbol)}?api_token=${encodeURIComponent(apiKey)}&fmt=json&period=d&from=${encodeURIComponent(fromDate)}`;
-  const r = await fetchJson(url);
-  if (!r.ok || !Array.isArray(r.data)) return { ok: false, provider: "EODHD", reason: r.reason ?? "Not an array" };
-
-  const bars = r.data
-    .map(row => ({
-      date: row.date?.slice(0, 10) ?? "",
-      open: finiteOrNull(row.open),
-      high: finiteOrNull(row.high),
-      low: finiteOrNull(row.low),
-      close: finiteOrNull(row.adjusted_close ?? row.close),
-      volume: finiteOrNull(row.volume) ?? 0,
-    }))
-    .filter(b => b.date && b.close && b.close > 0);
-
-  if (bars.length === 0) return { ok: false, provider: "EODHD", reason: "No valid bars" };
-  return { ok: true, provider: "EODHD", bars };
-}
-
 async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
   const symbol = toYahooSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Yahoo", reason: `No Yahoo mapping for ${eodhdSymbol}` };
@@ -419,22 +384,64 @@ async function fetchFredTNX(apiKey) {
 const TNX_SYMBOLS = new Set(["US10Y.GBOND", "TNX", "^TNX"]);
 
 /**
- * Cascade quote:
- *   TNX: FRED → Finnhub → TwelveData → Yahoo → Stooq
- *   All: Finnhub → TwelveData → Yahoo → Stooq
+ * Race two async functions — returns whichever resolves successfully first.
+ * If both fail, returns the second failure.
+ */
+async function raceProviders(fnA, fnB) {
+  return new Promise((resolve) => {
+    let failed = 0;
+    let lastFail = null;
+    const onSuccess = (r) => { if (r.ok) resolve(r); else { lastFail = r; if (++failed === 2) resolve(lastFail); } };
+    fnA().then(onSuccess).catch(() => { if (++failed === 2) resolve(lastFail); });
+    fnB().then(onSuccess).catch(() => { if (++failed === 2) resolve(lastFail); });
+  });
+}
+
+/**
+ * QUOTE CASCADE — optimised for max speed and real-time accuracy:
+ *
+ * TNX (10Y yield):
+ *   1. Finnhub + Yahoo in PARALLEL (real-time, intraday)
+ *   2. FRED fallback (official EOD, Federal Reserve)
+ *   3. TwelveData → Stooq
+ *
+ * All other symbols:
+ *   1. Finnhub (real-time, API key)
+ *   2. TwelveData (real-time, API key)
+ *   3. Yahoo Finance (real-time, no key)
+ *   4. Stooq (delayed, no key)
  */
 export async function cascadeQuote(eodhdSymbol, env = {}) {
   const tried = [];
   const isTNX = TNX_SYMBOLS.has(eodhdSymbol);
 
-  // TNX special: FRED first (Federal Reserve = most authoritative source)
-  if (isTNX && env.FRED_API_KEY) {
-    const r = await fetchFredTNX(env.FRED_API_KEY);
-    tried.push({ provider: "FRED", ok: r.ok, reason: r.reason });
-    if (r.ok) return { ...r, triedProviders: tried };
+  if (isTNX) {
+    // TNX: race Finnhub + Yahoo in parallel for fastest real-time result
+    if (env.FINNHUB_API_KEY) {
+      const r = await raceProviders(
+        () => fetchFinnhubQuote(eodhdSymbol, env.FINNHUB_API_KEY),
+        () => fetchYahooQuote(eodhdSymbol),
+      );
+      tried.push({ provider: r.provider, ok: r.ok });
+      if (r.ok) return { ...r, triedProviders: tried };
+    }
+    // FRED fallback: official Federal Reserve daily rate
+    if (env.FRED_API_KEY) {
+      const r = await fetchFredTNX(env.FRED_API_KEY);
+      tried.push({ provider: "FRED", ok: r.ok, reason: r.reason });
+      if (r.ok) return { ...r, triedProviders: tried };
+    }
+    // Last resort
+    const td = env.TWELVE_DATA_API_KEY ? await fetchTwelveDataQuote(eodhdSymbol, env.TWELVE_DATA_API_KEY) : { ok: false, provider: "TwelveData", reason: "No key" };
+    tried.push({ provider: td.provider, ok: td.ok });
+    if (td.ok) return { ...td, triedProviders: tried };
+    const stooq = await fetchStooqQuote(eodhdSymbol);
+    tried.push({ provider: "Stooq", ok: stooq.ok });
+    if (stooq.ok) return { ...stooq, triedProviders: tried };
+    return { ok: false, provider: "none", reason: "All TNX providers failed", triedProviders: tried };
   }
 
-  // 1. Finnhub
+  // Standard symbols: Finnhub → TwelveData → Yahoo → Stooq
   if (env.FINNHUB_API_KEY) {
     const r = await fetchFinnhubQuote(eodhdSymbol, env.FINNHUB_API_KEY);
     tried.push({ provider: "Finnhub", ok: r.ok, reason: r.reason });
@@ -443,7 +450,6 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     tried.push({ provider: "Finnhub", ok: false, reason: "Key not configured" });
   }
 
-  // 2. Twelve Data (800 req/day free)
   if (env.TWELVE_DATA_API_KEY) {
     const r = await fetchTwelveDataQuote(eodhdSymbol, env.TWELVE_DATA_API_KEY);
     tried.push({ provider: "TwelveData", ok: r.ok, reason: r.reason });
@@ -452,55 +458,43 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     tried.push({ provider: "TwelveData", ok: false, reason: "Key not configured" });
   }
 
-  // 3. Yahoo Finance (no key)
   const yahoo = await fetchYahooQuote(eodhdSymbol);
   tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
   if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
-  // 4. Stooq (no key, delayed)
   const stooq = await fetchStooqQuote(eodhdSymbol);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };
 
-  return {
-    ok: false,
-    provider: "none",
-    reason: "All providers failed",
-    triedProviders: tried,
-  };
+  return { ok: false, provider: "none", reason: "All providers failed", triedProviders: tried };
 }
 
 /**
- * Cascade historical bars: TwelveData → Yahoo → Stooq
- * Returns { ok, provider, bars, triedProviders }
+ * HISTORICAL CASCADE — TwelveData → Yahoo → Stooq
+ * TwelveData and Yahoo race in parallel for fastest response.
  */
 export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) {
   const tried = [];
 
-  // 1. Twelve Data (800 req/day free, good EU+US coverage)
+  // Race TwelveData + Yahoo in parallel (both are good quality, take whichever is faster)
   if (env.TWELVE_DATA_API_KEY) {
-    const r = await fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY);
-    tried.push({ provider: "TwelveData", ok: r.ok, reason: r.reason });
+    const r = await raceProviders(
+      () => fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY),
+      () => fetchYahooHistory(eodhdSymbol, lookbackDays),
+    );
+    tried.push({ provider: r.provider, ok: r.ok });
     if (r.ok) return { ...r, triedProviders: tried };
   } else {
-    tried.push({ provider: "TwelveData", ok: false, reason: "Key not configured" });
+    // TwelveData not configured — use Yahoo directly
+    const yahoo = await fetchYahooHistory(eodhdSymbol, lookbackDays);
+    tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
+    if (yahoo.ok) return { ...yahoo, triedProviders: tried };
   }
 
-  // 2. Yahoo Finance (no key)
-  const yahoo = await fetchYahooHistory(eodhdSymbol, lookbackDays);
-  tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
-  if (yahoo.ok) return { ...yahoo, triedProviders: tried };
-
-  // 3. Stooq (no key)
+  // Last resort: Stooq
   const stooq = await fetchStooqHistory(eodhdSymbol, lookbackDays);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };
 
-  return {
-    ok: false,
-    provider: "none",
-    reason: "All providers failed",
-    triedProviders: tried,
-    bars: [],
-  };
+  return { ok: false, provider: "none", reason: "All providers failed", triedProviders: tried, bars: [] };
 }
