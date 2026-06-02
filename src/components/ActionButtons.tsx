@@ -15,24 +15,31 @@ export function ActionButtons({
   onBackup,
   isScanning,
   canContinueScan = false,
-  continueLabel = "CONTINUE SCAN",
+  continueLabel = "CONTINUE",
 }: ActionButtonsProps) {
   return (
     <section className="action-panel">
+      {/* Primary action — full width */}
       <button className="primary-button" type="button" onClick={onScan} disabled={isScanning}>
-        {isScanning ? "SCAN RUNNING" : "SCAN FULL"}
+        {isScanning ? "SCANNING…" : "SCAN FULL"}
       </button>
+
+      {/* Continue scan if available */}
       {canContinueScan && onContinueScan ? (
         <button className="secondary-button" type="button" onClick={onContinueScan} disabled={isScanning}>
           {continueLabel}
         </button>
       ) : null}
-      <button className="secondary-button" type="button" onClick={onCopy}>
-        exportar resultados
-      </button>
-      <button className="secondary-button" type="button" onClick={onBackup}>
-        exportar código
-      </button>
+
+      {/* Export actions — side by side */}
+      <div className="action-panel-row">
+        <button className="secondary-button" type="button" onClick={onCopy}>
+          EXPORT RESULTS
+        </button>
+        <button className="secondary-button" type="button" onClick={onBackup}>
+          EXPORT CODE
+        </button>
+      </div>
     </section>
   );
 }
