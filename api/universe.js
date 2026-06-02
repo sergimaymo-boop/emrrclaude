@@ -8,6 +8,7 @@ import {
   mapUniverseAsset,
   summarizeUniverseAssets,
 } from "./_lib/universeEngine.js";
+import { getStaticAssetsForExchange, STATIC_UNIVERSE_VERSION, STATIC_TOTAL_COUNT } from "./_lib/staticUniverse.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const PHASE = "6";
@@ -136,12 +137,20 @@ export async function buildUniverseResponse(options = {}) {
     };
   }
 
+  // Try static universe first (no API call), fall back to EODHD if static is empty
   const exchangeResults = await Promise.all(
     PROVIDER_EXCHANGES.map(async (exchangeConfig) => {
+      // 1. Static universe (free, instant, no API key)
+      const staticRows = getStaticAssetsForExchange(exchangeConfig.providerExchange);
+      if (staticRows.length > 0) {
+        const filteredRows = staticRows.filter((row) => isEligibleForUniverse(row, exchangeConfig));
+        return { ok: true, exchangeConfig, rows: filteredRows, rawRows: staticRows, source: "STATIC" };
+      }
+      // 2. EODHD fallback (paid, dynamic)
       const result = await fetchEodhdExchangeList(exchangeConfig.providerExchange);
-      if (!result.ok) return { ok: false, exchangeConfig, reason: result.reason, rows: [] };
+      if (!result.ok) return { ok: false, exchangeConfig, reason: result.reason, rows: [], source: "EODHD_FAILED" };
       const filteredRows = result.rows.filter((row) => isEligibleForUniverse(row, exchangeConfig));
-      return { ok: true, exchangeConfig, rows: filteredRows, rawRows: result.rows };
+      return { ok: true, exchangeConfig, rows: filteredRows, rawRows: result.rows, source: "EODHD" };
     }),
   );
 
@@ -152,6 +161,7 @@ export async function buildUniverseResponse(options = {}) {
   );
   const shouldReturnFullAssets = options.includeFullAssets === true;
   const assetSample = shouldReturnFullAssets ? assets : assets.slice(0, ASSET_SAMPLE_LIMIT);
+  const sources = [...new Set(exchangeResults.map(r => r.source))];
 
   return {
     ok: assets.length > 0,
@@ -163,7 +173,9 @@ export async function buildUniverseResponse(options = {}) {
     cacheStatus: "BYPASS",
     cachedAtUtc: null,
     ttlSeconds: CACHE_TTL_SECONDS,
-    provider: "EODHD",
+    provider: sources.includes("EODHD") ? "EODHD" : "STATIC",
+    staticUniverseVersion: STATIC_UNIVERSE_VERSION,
+    staticUniverseTotal: STATIC_TOTAL_COUNT,
     includedMarkets: PROVIDER_EXCHANGES,
     excludedInstruments: getExcludedInstrumentLabels(),
     exchangeResults: exchangeResults.map((result) => ({
