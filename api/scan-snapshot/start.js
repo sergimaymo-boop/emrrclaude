@@ -5,6 +5,7 @@ import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
 import { calculateTechnicals } from "../_lib/technicalEngine.js";
 import { calculateScore } from "../_lib/scoreEngine.js";
 import { validateUniverseEligibility } from "../_lib/eligibilityEngine.js";
+import { evaluateCandidate, buildOperationalTop8FromEvaluations } from "../_lib/candidateEvaluationEngine.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_START";
@@ -111,6 +112,18 @@ export default async function handler(request, response) {
       }
     }
   } catch(e) { debugV10.error = e.message; }
+
+  // DEBUG v11 — run full evaluateCandidate + buildOperationalTop8 with SAP to confirm these functions are the new version
+  try {
+    const hist11 = await fetchEodhdHistoricalBars("SAP.XETRA");
+    if (hist11.ok && hist11.bars.length > 0) {
+      const tech11 = calculateTechnicals(hist11.bars, []);
+      const asset11 = { ticker: 'SAP', providerSymbol: 'SAP.XETRA', name: 'SAP SE', market: 'Xetra', exchange: 'XETRA', region: 'Europe', currency: 'EUR', operabilityStatus: 'OPERABLE', operabilityReasons: [] };
+      const eval11 = evaluateCandidate({ asset: asset11, historicalBars: hist11.bars, benchmarkBars: [], spreadPercent: null, spreadStatus: { ok: false, blockedReason: 'SPREAD_NOT_AVAILABLE' }, marketStatus: 'OPEN', dataQuality: 'GOOD' });
+      const top11 = buildOperationalTop8FromEvaluations([eval11]);
+      debugV10.v11 = { evalScore: eval11.score, evalAction: eval11.action, evalEligible: eval11.eligibility?.eligibleForScore, evalBlocked: eval11.blockedReasons, top8Length: top11.length };
+    }
+  } catch(e2) { debugV10.v11error = e2.message; }
 
   const allCandidates = responseState.topCandidates ?? [];
   const debugV9 = {
