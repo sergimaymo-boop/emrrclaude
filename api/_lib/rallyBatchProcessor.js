@@ -60,6 +60,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
         rallyScore: rallyResult.rallyScore,
         rallyLabel: rallyResult.label,
         rallyColor: rallyResult.color,
+        trailingStop: rallyResult.trailingStop,
         metrics: rallyResult.metrics,
         dataMode: "REAL",
         dataQuality: "GOOD",

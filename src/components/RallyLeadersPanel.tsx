@@ -44,11 +44,12 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
   const m = asset.metrics;
   const priceChange = m?.mom1m ?? null;
   const changeColor = priceChange === null ? "#64748b" : priceChange >= 0 ? "#10b981" : "#ef4444";
+  const trailing = asset.trailingStop ?? m?.trailingStop ?? null;
 
   return (
     <article style={{
       display: "grid",
-      gridTemplateColumns: "28px minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 100px",
+      gridTemplateColumns: "26px minmax(0,1.4fr) minmax(0,0.9fr) minmax(0,0.9fr) 64px 92px",
       gap: 8,
       alignItems: "center",
       padding: "10px 14px",
@@ -94,16 +95,16 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
         <MiniBar value={m?.rs3m ?? null} max={40} color="#6366f1" />
       </div>
 
-      {/* RVOL */}
-      <div>
-        <div style={{ fontSize: 8, color: "#475569", fontWeight: 700, marginBottom: 3, textTransform: "uppercase" }}>RVOL</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
-            <div style={{ width: `${Math.min(100, ((m?.rvol ?? 0) / 2) * 100)}%`, height: "100%", background: "#f59e0b", borderRadius: 2 }} />
-          </div>
-          <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 28, textAlign: "right" }}>
-            {m?.rvol?.toFixed(2) ?? "—"}
-          </span>
+      {/* Trailing Stop */}
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 8, color: "#475569", fontWeight: 700, marginBottom: 3, textTransform: "uppercase" }}>STOP</div>
+        <div style={{
+          fontSize: 11,
+          fontWeight: 800,
+          color: "#fbbf24",
+          fontVariantNumeric: "tabular-nums",
+        }}>
+          {trailing !== null ? `${trailing.toFixed(1)}%` : "—"}
         </div>
       </div>
 
@@ -205,14 +206,14 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
         <>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "28px minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 100px",
+            gridTemplateColumns: "26px minmax(0,1.4fr) minmax(0,0.9fr) minmax(0,0.9fr) 64px 92px",
             gap: 8,
             padding: "6px 14px",
             borderBottom: "1px solid rgba(255,255,255,0.06)",
             marginBottom: 2,
           }}>
-            {["#", "ACTIVO", "PRECIO / DÍA", "RS 3M", "RVOL", "RALLY SCORE"].map(h => (
-              <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: h === "PRECIO / DÍA" || h === "RALLY SCORE" ? "right" : "left" }}>
+            {["#", "ACTIVO", "PRECIO / DÍA", "RS 3M", "STOP", "RALLY SCORE"].map(h => (
+              <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: h === "PRECIO / DÍA" || h === "RALLY SCORE" ? "right" : h === "STOP" ? "center" : "left" }}>
                 {h}
               </span>
             ))}

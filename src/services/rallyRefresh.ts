@@ -16,7 +16,21 @@ export interface RallyMetrics {
   mom6m: number | null;
   rvol: number | null;
   atrPercent: number | null;
+  trailingStop: number | null;
   avgValue20: number;
+}
+
+export type MarketRegime = "BULLISH" | "BEARISH" | "UNKNOWN";
+
+export async function fetchMarketRegime(): Promise<MarketRegime> {
+  try {
+    const res = await fetch("/api/market-regime", { method: "GET", headers: { accept: "application/json" } });
+    if (!res.ok) return "UNKNOWN";
+    const data = await res.json();
+    return (data.regime as MarketRegime) ?? "UNKNOWN";
+  } catch {
+    return "UNKNOWN";
+  }
 }
 
 export interface RallyAsset {
@@ -30,6 +44,7 @@ export interface RallyAsset {
   rallyScore: number;
   rallyLabel: string;
   rallyColor: string;
+  trailingStop: number | null;
   metrics: RallyMetrics | null;
   dataMode: string;
   scanId: string | null;

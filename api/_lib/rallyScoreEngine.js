@@ -184,6 +184,31 @@ function scoreAtr(atrPercent) {
   return 30; // too wild
 }
 
+/**
+ * Optimal trailing stop % based on ATR (Average True Range).
+ *
+ * Institutional method (Wilder / Chandelier exit logic):
+ * - Low volatility (ATR% < 1.5): tighter 2.0× multiplier — protect gains
+ * - Normal volatility (1.5-3%): standard 2.5× multiplier
+ * - High volatility (> 3%): wider 3.0× multiplier — avoid noise stop-outs
+ *
+ * Clamped to [5%, 18%] so it stays operationally meaningful.
+ * Returns the % below the high at which to exit.
+ */
+function calculateTrailingStop(atrPercent) {
+  if (!isFiniteNum(atrPercent) || atrPercent <= 0) return null;
+  const atp = Math.abs(atrPercent);
+
+  let multiplier;
+  if (atp < 1.5) multiplier = 2.0;
+  else if (atp <= 3.0) multiplier = 2.5;
+  else multiplier = 3.0;
+
+  const rawStop = atp * multiplier;
+  // Operational bounds: never tighter than 5%, never wider than 18%
+  return Math.round(clamp(rawStop, 5, 18) * 10) / 10;
+}
+
 function scoreLiquidity(avgValue20, spreadPercent, region) {
   const thresholds = region === "USA"
     ? { minValue: 10_000_000, maxSpread: 0.35 }
@@ -313,12 +338,14 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const penaltyMetrics = { price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d };
   const finalScore = Math.round(applyPenalties(rawScore, penaltyMetrics));
   const rangeInfo = getRallyLabel(finalScore);
+  const trailingStop = calculateTrailingStop(atrPercent);
 
   return {
     ok: true,
     rallyScore: finalScore,
     label: rangeInfo.label,
     color: rangeInfo.color,
+    trailingStop, // optimal trailing stop % for this specific ticker
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,
@@ -335,6 +362,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
       mom6m: mom6m ? Math.round(mom6m * 100) / 100 : null,
       rvol: rvol ? Math.round(rvol * 100) / 100 : null,
       atrPercent: atrPercent ? Math.round(atrPercent * 100) / 100 : null,
+      trailingStop,
       avgValue20: Math.round(avgValue20),
       high52w: Math.round(high52w * 100) / 100,
       proximity52w: Math.round((lastClose / high52w) * 100) / 100,

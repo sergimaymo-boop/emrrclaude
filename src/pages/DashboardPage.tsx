@@ -38,9 +38,11 @@ import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/sys
 import { shareTop8 } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 import {
+  type MarketRegime,
   type RallyState,
   continueRallyScan,
   fetchLastRallyScan,
+  fetchMarketRegime,
   initialRallyState,
   startRallyScan,
 } from "../services/rallyRefresh";
@@ -176,6 +178,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [exportText, setExportText] = useState("");
   const [rallyState, setRallyState] = useState<RallyState>(initialRallyState());
+  const [marketRegime, setMarketRegime] = useState<MarketRegime>("UNKNOWN");
   const rallyAbortRef = useRef(false);
 
   function showToast(message: string, tone: ToastState["tone"]) {
@@ -713,7 +716,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
-  // Load last rally scan on mount
+  // Load last rally scan + market regime on mount
   useEffect(() => {
     fetchLastRallyScan().then(snapshot => {
       if (!snapshot || !snapshot.top10?.length) return;
@@ -729,6 +732,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           : new Date().toLocaleString(),
       }));
     }).catch(() => {});
+
+    // Market regime — internal SPY vs EMA200 analysis
+    fetchMarketRegime().then(setMarketRegime).catch(() => {});
   }, []);
 
   return (
@@ -740,6 +746,37 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         onScanRally={handleScanRally}
         isRallyScanning={rallyState.isScanning}
       />
+      {/* Market Regime semaphore — internal analysis, only label shown */}
+      {marketRegime !== "UNKNOWN" && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: "8px 16px",
+          margin: "0 0 4px",
+          borderRadius: 999,
+          background: marketRegime === "BULLISH" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
+          border: `1px solid ${marketRegime === "BULLISH" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+        }}>
+          <span style={{
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: marketRegime === "BULLISH" ? "#10b981" : "#ef4444",
+            boxShadow: `0 0 10px ${marketRegime === "BULLISH" ? "#10b981" : "#ef4444"}`,
+          }} />
+          <span style={{
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: marketRegime === "BULLISH" ? "#10b981" : "#ef4444",
+          }}>
+            {marketRegime === "BULLISH" ? "Régimen Alcista" : "Régimen Bajista"}
+          </span>
+        </div>
+      )}
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
       <Top8Grid assets={top8} />
