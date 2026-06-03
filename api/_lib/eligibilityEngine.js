@@ -54,9 +54,14 @@ export function validateUniverseEligibility({
     const validBars = technicalResult?.validBars ?? 0;
 
     if (validBars < MIN_HISTORY_ABSOLUTE_BARS) {
+      // Hard block: fewer than 80 bars — cannot calculate anything meaningful
       blockedReasons.push("INSUFFICIENT_HISTORY_ABSOLUTE");
     } else if (validBars < MIN_HISTORY_FULL_SCORE_BARS) {
-      blockedReasons.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
+      // Soft block: 80-259 bars — can score diagnostically, blocks operational EXEC
+      // Per MASTER_CODEX: "Entre 80 y 259 sesiones quedan bloqueados para ranking real"
+      // but CAN appear as WATCH/diagnostic in the panel
+      executionBlockedReasons.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
+      warnings.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
     }
 
     if (!isFiniteNumber(technicals.lastClose) || technicals.lastClose < MIN_PRICE) {
@@ -89,7 +94,14 @@ export function validateUniverseEligibility({
   }
 
   if (marketStatus !== "OPEN") executionBlockedReasons.push("MARKET_NOT_OPEN");
-  if (!["CLEAN", "GOOD"].includes(dataQuality)) blockedReasons.push("DATA_QUALITY_NOT_GOOD");
+  // DATA_QUALITY WARNING/STALE → block execution only, not scoring
+  // DATA_QUALITY INVALID/NOT_CONFIGURED → hard block scoring
+  if (["INVALID", "NOT_CONFIGURED"].includes(dataQuality)) {
+    blockedReasons.push("DATA_QUALITY_INVALID");
+  } else if (!["CLEAN", "GOOD"].includes(dataQuality)) {
+    executionBlockedReasons.push("DATA_QUALITY_NOT_CLEAN_OR_GOOD");
+    warnings.push("DATA_QUALITY_NOT_CLEAN_OR_GOOD");
+  }
 
   return {
     eligibleForScore: blockedReasons.length === 0,

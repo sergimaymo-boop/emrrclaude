@@ -3,8 +3,9 @@ import { cascadeHistory } from "./providerCascade.js";
 
 const PROVIDER_TIMEOUT_MS = 8000;
 const CACHE_TTL_SECONDS = 86400;
-const DEFAULT_LOOKBACK_DAYS = 260;
-const MAX_BARS = 260;
+// 400 calendar days ≈ 280 trading days — enough to get 260 valid bars
+const DEFAULT_LOOKBACK_DAYS = 400;
+const MAX_BARS = 400;
 const PLACEHOLDER_PARTS = ["your_", "_here", "placeholder"];
 const historyCache = new Map();
 
