@@ -1,0 +1,21 @@
+# Vercel
+.vercel
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editor
+.DS_Store
+*.local
