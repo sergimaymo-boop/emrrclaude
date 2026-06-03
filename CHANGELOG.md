@@ -11,6 +11,27 @@ Reglas:
 
 ---
 
+## Rally Leaders Engine v1.0 — Motor Independiente - 2026-06-03
+
+Nuevo motor completamente independiente del TOP 8 principal.
+
+- `api/_lib/rallyScoreEngine.js` — Rally Score engine: RS 35% + Momentum 25% + Trend 20% + RVOL 10% + ATR 5% + Liquidez/Spread 5%. Sin tickers favoritos, sin listas fijas. Detecta estructuras de rally puras.
+- `api/rally-scan/start.js` — endpoint POST que inicia el Rally Scan. Usa el mismo universo estático pero scoring independiente.
+- `api/rally-scan/continue.js` — endpoint POST para continuar batches parciales vía rallyToken.
+- `api/rally-scan/last.js` — endpoint GET que carga el último Rally Scan completado desde Redis (clave `last_rally_snapshot`).
+- `api/_lib/kvStorage.js` — añadidas `saveLastRallySnapshot` / `loadLastRallySnapshot` con clave Redis separada del TOP 8.
+- `src/services/rallyRefresh.ts` — servicio frontend independiente: `startRallyScan`, `continueRallyScan`, `fetchLastRallyScan`.
+- `src/components/RallyLeadersPanel.tsx` — panel visual Top 10: rank, ticker, nombre, mercado, precio, cambio día, RS 3M, RVOL, Rally Score badge.
+- `src/components/StickyMiniHeader.tsx` — botón SCAN RALLY añadido al lado de SCAN FULL en el header sticky. Color índigo/violeta para diferenciarlo.
+- `src/pages/DashboardPage.tsx` — estado `rallyState`, handler `handleScanRally`, carga automática desde Redis al montar, panel integrado después del TOP 8.
+- 8 validadores creados y verificados: no-mock, no-fixed-list, operability-required, market-hours, score-integrity, data-integrity, coverage-required, dashboard-panel. Todos pasan (8/8).
+- Build: 52 módulos, sin errores.
+
+Rangos Rally Score: ELITE RALLY (90-100) · STRONG RALLY (80-89) · ACTIVE RALLY (70-79) · WATCH (60-69) · DISCARD (<60).
+Solo activos OPERABLE. Sin mock, sin listas fijas, sin datos sintéticos. Resultado 100% dependiente de datos reales en el momento del scan.
+
+---
+
 ## Correccion Operativa EMRR - Universo Filtrado, Scan Continuable y Etiquetado Real - 2026-06-02
 
 - Se corrige el origen del universo operativo: `/api/universe` ya no cuenta el

@@ -347,15 +347,36 @@ Order is intentional. Most valuable real data first, technical debug last.
 
 | # | Component | Data source | Always visible |
 |---|---|---|---|
-| 1 | `StickyMiniHeader` | systemStatus | ✅ sticky |
+| 1 | `StickyMiniHeader` | systemStatus | ✅ sticky — SCAN FULL + SCAN RALLY |
 | 2 | `TechnicalHeader` | systemStatus | ✅ |
-| 3 | `MasterIndicatorsGrid` | EODHD real-time | ✅ loads on mount |
-| 4 | `Top8Grid` | scan + live quotes | when scan complete |
-| 5 | `SectorLeaders` | scan derived | when scan complete |
-| 6 | `FearGreedPanel` | Finnhub (pending) | ✅ shows unavailable |
-| 7 | `ScanStatusPanel` | scanState | ✅ |
-| 8 | `ActionButtons` | — | ✅ |
-| 9 | `SystemStatusCards` | systemStatus | ✅ bottom |
+| 3 | `MasterIndicatorsGrid` | real-time quotes | ✅ loads on mount |
+| 4 | `Top8Grid` | SCAN FULL results | when scan complete |
+| 5 | `RallyLeadersPanel` | SCAN RALLY results | ✅ shows idle/results |
+| 6 | `SectorLeaders` | scan derived | when scan complete |
+| 7 | `FearGreedPanel` | Finnhub (pending) | ✅ shows unavailable |
+| 8 | `ScanStatusPanel` | scanState | ✅ |
+| 9 | `ActionButtons` | — | ✅ |
+| 10 | `SystemStatusCards` | systemStatus | ✅ bottom |
+
+## 10b. RALLY LEADERS ENGINE
+
+Independent engine. Never modify TOP 8 results. Never share rankings.
+
+| Item | Value |
+|---|---|
+| Endpoint start | `POST /api/rally-scan/start` |
+| Endpoint continue | `POST /api/rally-scan/continue` |
+| Endpoint last | `GET /api/rally-scan/last` |
+| Redis key | `last_rally_snapshot` |
+| Score engine | `api/_lib/rallyScoreEngine.js` |
+| Frontend service | `src/services/rallyRefresh.ts` |
+| Panel component | `src/components/RallyLeadersPanel.tsx` |
+| Target | Top 10 (not 8) |
+| Activation | Manual — SCAN RALLY button in sticky header |
+| Score formula | RS 35% · Momentum 25% · Trend 20% · RVOL 10% · ATR 5% · Liq/Spread 5% |
+| Ranges | ELITE(90+) · STRONG(80+) · ACTIVE(70+) · WATCH(60+) · DISCARD(<60) |
+| Shared with TOP 8 | Universe engine, historical data, KV storage (separate key), market hours |
+| NOT shared | Rankings, scores, scan state, Redis key |
 
 ---
 

@@ -11,6 +11,44 @@ Reglas:
 
 ---
 
+## Rally Leaders Engine v1.0 — Auditoria - 2026-06-03
+
+**Estado:** Implementado y desplegado en producción.
+
+**Independencia verificada:**
+- Motor 1 (SCAN FULL / TOP 8): sin modificaciones funcionales.
+- Motor 2 (SCAN RALLY / Rally Leaders): completamente nuevo, sin compartir rankings ni scores.
+- Comparte únicamente: universe engine (lectura), historical data provider (lectura), KV storage (clave separada), tipos compartidos.
+
+**Validaciones ejecutadas localmente (8/8 OK):**
+- validate-rally-leaders-no-mock ✅
+- validate-rally-leaders-no-fixed-list ✅
+- validate-rally-leaders-operability-required ✅
+- validate-rally-leaders-market-hours ✅
+- validate-rally-leaders-score-integrity ✅
+- validate-rally-leaders-data-integrity ✅
+- validate-rally-leaders-coverage-required ✅
+- validate-rally-leaders-dashboard-panel ✅
+
+**Confirmaciones:**
+- Sin mocks en el motor rally.
+- Sin listas fijas ni tickers hardcodeados.
+- Sin rankings predefinidos.
+- Cobertura correcta (coveragePercent tracked por batch).
+- Score reproducible (fórmula determinista con pesos fijos).
+- Respeto a operabilidad (solo OPERABLE).
+- Respeto a mercado abierto/cerrado (409 si no hay universo activo).
+- Cost Gate: activación manual únicamente, sin polling, sin auto-refresh.
+- Redis clave independiente: `last_rally_snapshot`.
+
+**Deuda técnica menor:**
+- `continue.js` reconstruye los assets desde tickers — la metadata de región se infiere del sufijo del símbolo. Funcional pero mejorable con token enriquecido en v1.1.
+- Prueba con datos reales pendiente hasta apertura de mercado (07:00 Canarias).
+
+**Build:** 52 módulos, sin errores, sin warnings.
+
+---
+
 ## Correccion Operativa EMRR - Universo Filtrado, Scan Continuable y Etiquetado Real - 2026-06-02
 
 Contexto:
