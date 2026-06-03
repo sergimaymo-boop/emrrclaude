@@ -436,10 +436,16 @@ const TNX_SYMBOLS = new Set(["US10Y.GBOND", "TNX", "^TNX"]);
  * If both fail, returns the second failure.
  */
 async function raceProviders(fnA, fnB) {
+  // Safe default — never resolves with null
+  const FAIL = { ok: false, provider: "none", reason: "Both providers failed", bars: [] };
   return new Promise((resolve) => {
     let failed = 0;
-    let lastFail = null;
-    const onSuccess = (r) => { if (r.ok) resolve(r); else { lastFail = r; if (++failed === 2) resolve(lastFail); } };
+    let lastFail = FAIL;
+    const onSuccess = (r) => {
+      const result = r ?? FAIL;
+      if (result.ok) resolve(result);
+      else { lastFail = result; if (++failed === 2) resolve(lastFail); }
+    };
     fnA().then(onSuccess).catch(() => { if (++failed === 2) resolve(lastFail); });
     fnB().then(onSuccess).catch(() => { if (++failed === 2) resolve(lastFail); });
   });

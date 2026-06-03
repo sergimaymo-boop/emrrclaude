@@ -63,20 +63,19 @@ export function validateScoreInput(input) {
   if (input?.dataQuality && !["CLEAN", "GOOD"].includes(input.dataQuality)) blockedReasons.push("DATA_QUALITY_NOT_GOOD");
 
   if (technicals) {
-    const requiredFields = [
-      "ema20",
-      "ema50",
-      "ema20SlopePercent",
-      "atrPercent",
-      "rvol",
-      "momentum20",
-      "rs60",
-      "avgValue20",
-      "maxDrawdown20",
-    ];
+    // Hard required — if missing, score is meaningless
+    const hardRequiredFields = ["ema20", "ema50", "atrPercent", "rvol", "momentum20", "avgValue20"];
+    // Soft optional — if missing, score 0 for that component (benchmark unavailable etc.)
+    const softOptionalFields = ["ema20SlopePercent", "rs60", "maxDrawdown20"];
 
-    for (const field of requiredFields) {
+    for (const field of hardRequiredFields) {
       if (!isFiniteNumber(technicals[field])) blockedReasons.push(`INSUFFICIENT_${field.toUpperCase()}`);
+    }
+    // Soft fields: warn only, do not hard-block
+    for (const field of softOptionalFields) {
+      if (!isFiniteNumber(technicals[field])) {
+        // Will score 0 for this component — acceptable degradation
+      }
     }
 
     if (isFiniteNumber(technicals.avgValue20) && technicals.avgValue20 < MIN_AVG_VALUE_20) {
@@ -105,11 +104,15 @@ export function calculateScore(input) {
 
   const technicals = input.technicals;
   const trend = technicals.ema20 > technicals.ema50 ? 100 : scaled(technicals.ema20 - technicals.ema50, -5, 5);
-  const momentum = (scaled(technicals.momentum20, -12, 18) + scaled(technicals.ema20SlopePercent, -3, 5)) / 2;
-  const relativeStrength = scaled(technicals.rs60, -12, 18);
+  // Slope may be null if not enough bars — use 50 (neutral) as fallback
+  const slopeScore = isFiniteNumber(technicals.ema20SlopePercent) ? scaled(technicals.ema20SlopePercent, -3, 5) : 50;
+  const momentum = (scaled(technicals.momentum20, -12, 18) + slopeScore) / 2;
+  // RS vs benchmark — 50 (neutral) if benchmark unavailable
+  const relativeStrength = isFiniteNumber(technicals.rs60) ? scaled(technicals.rs60, -12, 18) : 50;
   const liquidity = scaled(technicals.avgValue20, MIN_AVG_VALUE_20, MIN_AVG_VALUE_20 * 20);
   const volatility = 100 - scaled(technicals.atrPercent, 1, 12);
-  const drawdown = 100 - scaled(technicals.maxDrawdown20, 0, 25);
+  // Drawdown — 50 (neutral) if not calculable
+  const drawdown = isFiniteNumber(technicals.maxDrawdown20) ? 100 - scaled(technicals.maxDrawdown20, 0, 25) : 50;
 
   const weightedScore =
     (trend * SCORE_WEIGHTS.trend +
@@ -144,8 +147,13 @@ export function calculateScore(input) {
 }
 
 export function classifyRisk(technicals) {
-  if (!technicals || !isFiniteNumber(technicals.atrPercent) || !isFiniteNumber(technicals.maxDrawdown20)) {
+  if (!technicals || !isFiniteNumber(technicals.atrPercent)) {
     return "BLOCKED";
+  }
+  // maxDrawdown20 may be null if insufficient bars — use ATR only for risk
+  if (!isFiniteNumber(technicals.maxDrawdown20)) {
+    return technicals.atrPercent <= MAX_ATR_PERCENT_FOR_LOW_RISK ? "LOW"
+      : technicals.atrPercent <= MAX_ATR_PERCENT_FOR_MEDIUM_RISK ? "MEDIUM" : "HIGH";
   }
 
   if (
