@@ -4,6 +4,8 @@ interface StickyMiniHeaderProps {
   systemStatus: SystemStatus;
   onScan: () => void;
   isScanning: boolean;
+  onScanRally: () => void;
+  isRallyScanning: boolean;
 }
 
 function marketSummary(marketMode: SystemStatus["marketMode"]): string {
@@ -28,11 +30,11 @@ function healthClass(health: SystemStatus["health"]): string {
   return "health-badge-error";
 }
 
-export function StickyMiniHeader({ systemStatus, onScan, isScanning }: StickyMiniHeaderProps) {
+export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally, isRallyScanning }: StickyMiniHeaderProps) {
   const markets = marketStates(systemStatus.marketMode);
 
   return (
-    <div className="sticky-mini-header">
+    <div className="sticky-mini-header" style={{ gridTemplateColumns: "minmax(0,1fr) auto auto auto auto" }}>
       <div className="mini-time-block">
         <span>{systemStatus.updatedAt.local}</span>
         <strong>{marketSummary(systemStatus.marketMode)}</strong>
@@ -50,7 +52,23 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning }: StickyMin
       <span className={`badge health-badge ${healthClass(systemStatus.health)}`}>
         {systemStatus.health}
       </span>
-      <button className="mini-scan-button" type="button" onClick={onScan} disabled={isScanning}>
+      {/* SCAN RALLY — Rally Leaders Engine */}
+      <button
+        className="mini-scan-button"
+        type="button"
+        onClick={onScanRally}
+        disabled={isRallyScanning || isScanning}
+        style={{ background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)", minWidth: 100 }}
+      >
+        {isRallyScanning ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "inline-block", animation: "pulse 1s infinite" }} />
+            Rally…
+          </span>
+        ) : "SCAN RALLY"}
+      </button>
+      {/* SCAN FULL — TOP 8 main engine */}
+      <button className="mini-scan-button" type="button" onClick={onScan} disabled={isScanning || isRallyScanning}>
         {isScanning ? (
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "inline-block", animation: "pulse 1s infinite" }} />

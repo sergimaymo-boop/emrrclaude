@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
 import { FearGreedPanel } from "../components/FearGreedPanel";
 import { MasterIndicatorsGrid } from "../components/MasterIndicatorsGrid";
+import { RallyLeadersPanel } from "../components/RallyLeadersPanel";
 import { ScanStatusPanel } from "../components/ScanStatusPanel";
 import { SectorLeaders } from "../components/SectorLeaders";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
@@ -36,6 +37,13 @@ import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
 import { shareTop8 } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
+import {
+  type RallyState,
+  continueRallyScan,
+  fetchLastRallyScan,
+  initialRallyState,
+  startRallyScan,
+} from "../services/rallyRefresh";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -167,6 +175,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   });
   const [toast, setToast] = useState<ToastState | null>(null);
   const [exportText, setExportText] = useState("");
+  const [rallyState, setRallyState] = useState<RallyState>(initialRallyState());
+  const rallyAbortRef = useRef(false);
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -616,12 +626,124 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     else showToast("Listo para copiar manualmente", "info");
   }
 
+  // ─── Rally Leaders Engine handlers ───────────────────────────────────────
+
+  async function handleScanRally() {
+    if (rallyState.isScanning || scanState.isScanning) return;
+    rallyAbortRef.current = false;
+
+    setRallyState(prev => ({
+      ...prev,
+      status: "RALLY_SCANNING",
+      isScanning: true,
+      label: "Rally scan running…",
+      coveragePercent: 0,
+      batchesCompleted: 0,
+      top10: [],
+    }));
+
+    try {
+      let response = await startRallyScan();
+
+      if (!response.ok && response.error) {
+        setRallyState(prev => ({
+          ...prev,
+          status: "RALLY_DATA_UNAVAILABLE",
+          isScanning: false,
+          label: response.message ?? "Rally scan unavailable",
+        }));
+        showToast(response.message ?? "Rally scan failed", "error");
+        return;
+      }
+
+      setRallyState(prev => ({
+        ...prev,
+        scanId: response.scanId ?? null,
+        rallyToken: response.rallyToken ?? null,
+        coveragePercent: response.coveragePercent ?? 0,
+        batchesCompleted: response.batchesCompleted ?? 0,
+        batchesTotal: response.batchesTotal ?? 0,
+        top10: response.top10 ?? [],
+        label: response.isRallyFinal
+          ? `Rally Leaders — ${(response.top10 ?? []).length} líderes encontrados`
+          : `Rally scan batch ${response.batchesCompleted}/${response.batchesTotal}…`,
+      }));
+
+      // Continue batches until complete
+      while (!response.isRallyFinal && response.rallyToken && !rallyAbortRef.current) {
+        response = await continueRallyScan(response.rallyToken);
+
+        setRallyState(prev => ({
+          ...prev,
+          rallyToken: response.rallyToken ?? null,
+          coveragePercent: response.coveragePercent ?? prev.coveragePercent,
+          batchesCompleted: response.batchesCompleted ?? prev.batchesCompleted,
+          top10: response.top10 ?? prev.top10,
+          label: response.isRallyFinal
+            ? `Rally Leaders — ${(response.top10 ?? []).length} líderes encontrados`
+            : `Rally scan batch ${response.batchesCompleted}/${response.batchesTotal}…`,
+        }));
+      }
+
+      const finalTop10 = response.top10 ?? [];
+      setRallyState(prev => ({
+        ...prev,
+        status: response.isRallyFinal ? "RALLY_FINAL" : "RALLY_PARTIAL_DIAGNOSTIC",
+        isScanning: false,
+        rallyToken: null,
+        coveragePercent: response.coveragePercent ?? prev.coveragePercent,
+        top10: finalTop10,
+        label: response.isRallyFinal
+          ? `Rally Leaders Final — ${finalTop10.length} líderes`
+          : `Rally Partial — ${finalTop10.length} encontrados`,
+        lastRun: new Date().toLocaleString(),
+      }));
+
+      if (response.isRallyFinal) {
+        showToast(`Rally Leaders Final — ${finalTop10.length} líderes identificados`, "success");
+      }
+    } catch (error) {
+      setRallyState(prev => ({
+        ...prev,
+        status: "RALLY_ERROR",
+        isScanning: false,
+        label: "Rally scan error",
+      }));
+      showToast("Rally scan failed", "error");
+    }
+  }
+
+  // Load last rally scan on mount
+  useEffect(() => {
+    fetchLastRallyScan().then(snapshot => {
+      if (!snapshot || !snapshot.top10?.length) return;
+      setRallyState(prev => ({
+        ...prev,
+        status: "RALLY_FINAL",
+        scanId: snapshot.scanId ?? null,
+        top10: snapshot.top10 ?? [],
+        coveragePercent: 100,
+        label: `Rally Leaders — sesión anterior`,
+        lastRun: snapshot.scanCompletedAtUtc
+          ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
+          : new Date().toLocaleString(),
+      }));
+    }).catch(() => {});
+  }, []);
+
   return (
     <main className="dashboard-shell">
-      <StickyMiniHeader systemStatus={systemStatus} onScan={handleScan} isScanning={scanState.isScanning} />
+      <StickyMiniHeader
+        systemStatus={systemStatus}
+        onScan={handleScan}
+        isScanning={scanState.isScanning}
+        onScanRally={handleScanRally}
+        isRallyScanning={rallyState.isScanning}
+      />
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
       <Top8Grid assets={top8} />
+      <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <SectorLeaders sectors={sectors} />
       <FearGreedPanel fearGreed={fearGreed} />
       <ScanStatusPanel scanState={scanState} />

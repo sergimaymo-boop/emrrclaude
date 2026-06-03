@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 
 const KV_KEY = "last_scan_snapshot";
+const KV_RALLY_KEY = "last_rally_snapshot";
 const KV_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 // Singleton — create client once per cold start, not on every call
@@ -31,6 +32,30 @@ export async function loadLastScanSnapshot() {
     const redis = getRedis();
     if (!redis) return null;
     const data = await redis.get(KV_KEY);
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Rally Leaders Engine persistence ────────────────────────────────────────
+
+export async function saveLastRallySnapshot(snapshot) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(KV_RALLY_KEY, snapshot, { ex: KV_TTL_SECONDS });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadLastRallySnapshot() {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    const data = await redis.get(KV_RALLY_KEY);
     return data ?? null;
   } catch {
     return null;

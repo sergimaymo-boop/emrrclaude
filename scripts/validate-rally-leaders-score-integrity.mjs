@@ -1,0 +1,10 @@
+import { readFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+const score = await readFile("api/_lib/rallyScoreEngine.js", "utf8");
+assert.match(score, /relativeStrength.*0\.35|0\.35.*relativeStrength/, "RS weight must be 35%");
+assert.match(score, /momentum.*0\.25|0\.25.*momentum/, "Momentum weight must be 25%");
+assert.match(score, /trend.*0\.20|0\.20.*trend/, "Trend weight must be 20%");
+assert.match(score, /ELITE RALLY/, "must have ELITE RALLY range");
+assert.match(score, /STRONG RALLY/, "must have STRONG RALLY range");
+assert.match(score, /applyPenalties/, "must have penalty system");
+console.log("validate-rally-leaders-score-integrity OK");

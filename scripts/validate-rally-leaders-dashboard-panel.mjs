@@ -1,0 +1,12 @@
+import { readFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+const panel = await readFile("src/components/RallyLeadersPanel.tsx", "utf8");
+const dash  = await readFile("src/pages/DashboardPage.tsx", "utf8");
+const header = await readFile("src/components/StickyMiniHeader.tsx", "utf8");
+assert.match(panel, /Rally Leaders Engine/, "panel must show Rally Leaders Engine title");
+assert.match(panel, /Top 10/, "panel must mention Top 10");
+assert.match(panel, /RALLY_FINAL|RALLY_SCANNING/, "panel must handle rally states");
+assert.match(dash,  /RallyLeadersPanel/, "dashboard must include RallyLeadersPanel");
+assert.match(dash,  /handleScanRally/, "dashboard must have handleScanRally handler");
+assert.match(header, /SCAN RALLY/, "sticky header must have SCAN RALLY button");
+console.log("validate-rally-leaders-dashboard-panel OK");

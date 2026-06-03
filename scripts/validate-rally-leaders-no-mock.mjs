@@ -1,0 +1,10 @@
+import { readFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+const start = await readFile("api/rally-scan/start.js", "utf8");
+const cont  = await readFile("api/rally-scan/continue.js", "utf8");
+const score = await readFile("api/_lib/rallyScoreEngine.js", "utf8");
+assert.doesNotMatch(start, /mock/i, "rally start must not contain mock");
+assert.doesNotMatch(cont,  /mock/i, "rally continue must not contain mock");
+assert.doesNotMatch(score, /mock/i, "rally score engine must not contain mock");
+assert.doesNotMatch(start, /SYNTHETIC/i, "no synthetic data");
+console.log("validate-rally-leaders-no-mock OK");
