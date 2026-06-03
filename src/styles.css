@@ -243,6 +243,21 @@ input:focus {
   -webkit-backdrop-filter: blur(20px);
 }
 
+/* Two scan buttons container — always side by side */
+.mini-scan-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* SCAN RALLY button — indigo/purple distinct from SCAN FULL */
+.mini-scan-rally {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%) !important;
+  box-shadow: 0 0 12px rgba(99,102,241,0.3) !important;
+  min-width: 90px !important;
+}
+
 .mini-time-block {
   display: grid;
   gap: 2px;
@@ -1503,19 +1518,47 @@ input:focus {
 }
 
 @media (max-width: 720px) {
+  /* Mobile: time | buttons on row 1, market pills span full width on row 2 */
   .sticky-mini-header {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+  }
+
+  .mini-time-block {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .health-badge {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .mini-scan-buttons {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .mini-market-strip {
     grid-column: 1 / -1;
+    grid-row: 2;
     justify-content: stretch;
-    order: 3;
   }
 
   .market-pill {
     flex: 1 1 0;
     min-width: 0;
+  }
+
+  .mini-scan-button {
+    min-width: 76px !important;
+    font-size: 9px !important;
+    padding: 0 10px !important;
+    min-height: 34px !important;
+  }
+
+  .mini-scan-rally {
+    min-width: 76px !important;
   }
 }
 
