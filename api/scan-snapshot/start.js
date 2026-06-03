@@ -1,6 +1,10 @@
 import { buildUniverseResponse } from "../universe.js";
 import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch } from "../_lib/scanSnapshot.js";
 import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
+import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
+import { calculateTechnicals } from "../_lib/technicalEngine.js";
+import { calculateScore } from "../_lib/scoreEngine.js";
+import { validateUniverseEligibility } from "../_lib/eligibilityEngine.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_START";
@@ -77,7 +81,37 @@ export default async function handler(request, response) {
   const responseState = attachSnapshotToken(processedState);
   const statusCode = responseState.isGlobalTop8Final ? 200 : responseState.batchesCompleted > 0 ? 206 : 409;
 
-  // DEBUG v9 — show first 3 candidates with their scores
+  // DEBUG v10 — run SAP.XETRA through full pipeline and show exact result
+  let debugV10 = { v: ENGINE_VERSION };
+  try {
+    const hist = await fetchEodhdHistoricalBars("SAP.XETRA");
+    debugV10.histOk = hist.ok;
+    debugV10.histBars = hist.ok ? hist.bars.length : 0;
+    debugV10.histProvider = hist.provider;
+    if (hist.ok && hist.bars.length > 0) {
+      const tech = calculateTechnicals(hist.bars, []);
+      debugV10.techOk = tech.ok;
+      debugV10.techValidBars = tech.validBars;
+      debugV10.technicals = tech.ok ? {
+        ema20: tech.technicals?.ema20,
+        ema50: tech.technicals?.ema50,
+        rvol: tech.technicals?.rvol,
+        atrPercent: tech.technicals?.atrPercent,
+        momentum20: tech.technicals?.momentum20,
+        avgValue20: tech.technicals?.avgValue20,
+        rs60: tech.technicals?.rs60,
+      } : null;
+      if (tech.ok) {
+        const elig = validateUniverseEligibility({ asset: { operabilityStatus: 'OPERABLE', region: 'Europe' }, technicalResult: tech, marketStatus: 'OPEN', dataQuality: 'GOOD' });
+        debugV10.eligibleForScore = elig.eligibleForScore;
+        debugV10.eligibilityBlocked = elig.blockedReasons;
+        const score = calculateScore({ operabilityStatus: 'OPERABLE', marketStatus: 'OPEN', dataQuality: 'GOOD', eligibleForScore: elig.eligibleForScore, eligibilityBlockedReasons: elig.blockedReasons, technicals: tech.technicals });
+        debugV10.score = score.score;
+        debugV10.scoreBlocked = score.blockedReasons;
+      }
+    }
+  } catch(e) { debugV10.error = e.message; }
+
   const allCandidates = responseState.topCandidates ?? [];
   const debugV9 = {
     v: ENGINE_VERSION,
@@ -94,6 +128,7 @@ export default async function handler(request, response) {
     ...responseState,
     assets: responseState.topCandidates,
     _debugV9: debugV9,
+    _debugV10: debugV10,
     message: responseState.isGlobalTop8Final
       ? "Global TOP 8 final is available because coveragePercent reached 100%."
       : "SCAN FULL created a real snapshot but remains partial or unavailable until coveragePercent reaches 100%.",
