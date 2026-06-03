@@ -170,9 +170,10 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
     };
   }
 
-  // Cascade: TwelveData → Yahoo Finance → Stooq
+  // Cascade: EODHD (primary) → TwelveData+Yahoo (parallel) → Stooq
   const env = getEnv();
   const result = await cascadeHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS, {
+    EODHD_API_KEY:       isConfiguredSecret(env.EODHD_API_KEY)       ? env.EODHD_API_KEY       : null,
     TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
   });
 

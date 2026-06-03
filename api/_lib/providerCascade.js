@@ -1,21 +1,14 @@
 /**
  * PROVIDER CASCADE SYSTEM
  *
- * Tries providers in priority order, stops at first success.
- * No data mixing: result always comes from a single provider.
+ * QUOTE PRIORITY:
+ *   TNX: FRED → Finnhub + Yahoo (parallel) → TwelveData → Stooq
+ *   All: Finnhub → TwelveData → FMP → Yahoo → Stooq
  *
- * QUOTE PRIORITY (EODHD cancelled June 2026):
- *   TNX only: FRED (Federal Reserve) → Finnhub → Yahoo → Stooq
- *   All others: Finnhub → Yahoo → Stooq
- *
- * HISTORICAL PRIORITY:
- *   1. Yahoo Finance (free, no key)
- *   2. Stooq       (free, no key, CSV, EU + US)
- *
- * FRED (fred.stlouisfed.org):
- *   Series DGS10 = 10-Year Treasury Constant Maturity Rate
- *   Most authoritative source for TNX. Free API, unlimited calls.
- *   Returns EOD data — valid for closed-market display.
+ * HISTORICAL PRIORITY (critical for scan batches):
+ *   1. EODHD       (active key, best EU+US coverage — used until cancelled)
+ *   2. TwelveData + Yahoo (parallel race, free)
+ *   3. Stooq       (last resort, free)
  */
 
 const TIMEOUT_MS = 7000;
@@ -532,14 +525,44 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
   return { ok: false, provider: "none", reason: "All providers failed", triedProviders: tried };
 }
 
+// ─── EODHD historical (still active — best EU+US coverage) ──────────────────
+
+async function fetchEodhdHistory(eodhdSymbol, apiKey, lookbackDays) {
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - lookbackDays);
+  const fromDateStr = fromDate.toISOString().slice(0, 10);
+  const url = `https://eodhd.com/api/eod/${encodeURIComponent(eodhdSymbol)}?api_token=${encodeURIComponent(apiKey)}&fmt=json&period=d&from=${encodeURIComponent(fromDateStr)}`;
+  const r = await fetchJson(url);
+  if (!r.ok || !Array.isArray(r.data)) return { ok: false, provider: "EODHD", reason: r.reason ?? "Not an array" };
+  const bars = r.data
+    .map(row => ({
+      date: row.date?.slice(0, 10) ?? "",
+      open:   finiteOrNull(row.open),
+      high:   finiteOrNull(row.high),
+      low:    finiteOrNull(row.low),
+      close:  finiteOrNull(row.adjusted_close ?? row.close),
+      volume: finiteOrNull(row.volume) ?? 0,
+    }))
+    .filter(b => b.date && b.close && b.close > 0);
+  if (bars.length === 0) return { ok: false, provider: "EODHD", reason: "No valid bars" };
+  return { ok: true, provider: "EODHD", bars };
+}
+
 /**
- * HISTORICAL CASCADE — TwelveData → Yahoo → Stooq
- * TwelveData and Yahoo race in parallel for fastest response.
+ * HISTORICAL CASCADE — EODHD → TwelveData+Yahoo (parallel) → Stooq
+ * EODHD is primary because it has the best EU+US stock coverage.
  */
 export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) {
   const tried = [];
 
-  // Race TwelveData + Yahoo in parallel (both are good quality, take whichever is faster)
+  // 1. EODHD — primary, best coverage especially for EU stocks
+  if (env.EODHD_API_KEY) {
+    const r = await fetchEodhdHistory(eodhdSymbol, env.EODHD_API_KEY, lookbackDays);
+    tried.push({ provider: "EODHD", ok: r.ok, reason: r.reason });
+    if (r.ok) return { ...r, triedProviders: tried };
+  }
+
+  // 2. TwelveData + Yahoo in parallel
   if (env.TWELVE_DATA_API_KEY) {
     const r = await raceProviders(
       () => fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY),
@@ -548,13 +571,12 @@ export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) 
     tried.push({ provider: r.provider, ok: r.ok });
     if (r.ok) return { ...r, triedProviders: tried };
   } else {
-    // TwelveData not configured — use Yahoo directly
     const yahoo = await fetchYahooHistory(eodhdSymbol, lookbackDays);
     tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
     if (yahoo.ok) return { ...yahoo, triedProviders: tried };
   }
 
-  // Last resort: Stooq
+  // 3. Stooq last resort
   const stooq = await fetchStooqHistory(eodhdSymbol, lookbackDays);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };
