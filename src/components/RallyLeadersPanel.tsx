@@ -128,24 +128,31 @@ function CoverageBar({ percent }: { percent: number }) {
 }
 
 export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanelProps) {
-  const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal } = rallyState;
+  const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal, lastRun } = rallyState;
   const isIdle = status === "RALLY_IDLE";
   const isFinal = status === "RALLY_FINAL";
   const isPartial = status === "RALLY_PARTIAL_DIAGNOSTIC";
   const isUnavailable = status === "RALLY_DATA_UNAVAILABLE";
+  // Detect if data is from previous session (loaded from Redis on mount, not from a fresh scan)
+  const isFromCache = isFinal && top10.length > 0 && !isScanning;
 
   return (
     <section className="section-block" style={{ marginTop: 16, border: "1px solid rgba(99,102,241,0.2)" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, gap: 12 }}>
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8" }}>
               Rally Leaders Engine
             </h2>
-            {isFinal && (
+            {isFinal && !isFromCache && (
               <span style={{ fontSize: 8, fontWeight: 800, color: "#10b981", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 999, padding: "1px 6px" }}>
-                FINAL
+                LIVE FINAL
+              </span>
+            )}
+            {isFromCache && (
+              <span style={{ fontSize: 8, fontWeight: 800, color: "#6366f1", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 999, padding: "1px 6px" }}>
+                SESIÓN ANTERIOR · {lastRun}
               </span>
             )}
             {isPartial && (
