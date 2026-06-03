@@ -4,6 +4,7 @@ import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_START";
+const ENGINE_VERSION = "2026-06-03-v8"; // force rebuild
 
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json({
