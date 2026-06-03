@@ -2,14 +2,11 @@
  * POST /api/rally-scan/continue
  * Rally Leaders Engine — continue partial scan
  */
-import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
-import { calculateRallyScore } from "../_lib/rallyScoreEngine.js";
 import { saveLastRallySnapshot } from "../_lib/kvStorage.js";
-import { runRallyBatch } from "./start.js";
+import { runRallyBatch, fetchSpyBars } from "../_lib/rallyBatchProcessor.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "RALLY_SCAN_CONTINUE";
-const BENCHMARK_SYMBOL = "SPY.US";
 
 function getEnv() { return globalThis.process?.env ?? {}; }
 function isRealApiEnabled() { return getEnv().ENABLE_REAL_API_CALLS === "true"; }
@@ -79,12 +76,7 @@ export default async function handler(req, res) {
     currency: ticker.includes(".US") ? "USD" : "EUR",
   }));
 
-  // Fetch SPY benchmark
-  let spyBars = [];
-  try {
-    const spyResult = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL, { fromDate: null });
-    if (spyResult.ok) spyBars = spyResult.bars;
-  } catch { /* continue without SPY */ }
+  const spyBars = await fetchSpyBars();
 
   const { candidates, providerCalls: newCalls } = await runRallyBatch({
     eligibleAssets,

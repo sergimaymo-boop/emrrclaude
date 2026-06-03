@@ -3,17 +3,15 @@
  * Rally Leaders Engine — independent from SCAN FULL / TOP 8
  */
 import { buildUniverseResponse } from "../universe.js";
-import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
-import { calculateRallyScore } from "../_lib/rallyScoreEngine.js";
 import { saveLastRallySnapshot } from "../_lib/kvStorage.js";
+import { runRallyBatch, fetchSpyBars } from "../_lib/rallyBatchProcessor.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "RALLY_SCAN_START";
 const RALLY_VERSION = "RALLY_V1";
 const BATCH_SIZE = 80;
 const MAX_TOP_CANDIDATES = 10;
-const BENCHMARK_SYMBOL = "SPY.US";
-const MIN_RALLY_SCORE = 60; // discard below WATCH
+const MIN_RALLY_SCORE = 60;
 
 function getEnv() { return globalThis.process?.env ?? {}; }
 function isRealApiEnabled() { return getEnv().ENABLE_REAL_API_CALLS === "true"; }
@@ -133,12 +131,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // Fetch SPY benchmark once
-  let spyBars = [];
-  try {
-    const spyResult = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL, { fromDate: null });
-    if (spyResult.ok) spyBars = spyResult.bars;
-  } catch { /* continue without SPY */ }
+  const spyBars = await fetchSpyBars();
 
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(","))
