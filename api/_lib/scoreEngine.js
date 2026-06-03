@@ -64,9 +64,9 @@ export function validateScoreInput(input) {
 
   if (technicals) {
     // Hard required — if missing, score is meaningless
-    const hardRequiredFields = ["ema20", "ema50", "atrPercent", "rvol", "momentum20", "avgValue20"];
-    // Soft optional — if missing, score 0 for that component (benchmark unavailable etc.)
-    const softOptionalFields = ["ema20SlopePercent", "rs60", "maxDrawdown20"];
+    const hardRequiredFields = ["ema20", "ema50", "atrPercent", "momentum20", "avgValue20"];
+    // Soft optional — if missing, score neutral (50) for that component
+    const softOptionalFields = ["rvol", "ema20SlopePercent", "rs60", "maxDrawdown20"];
 
     for (const field of hardRequiredFields) {
       if (!isFiniteNumber(technicals[field])) blockedReasons.push(`INSUFFICIENT_${field.toUpperCase()}`);

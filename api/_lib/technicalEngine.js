@@ -120,9 +120,13 @@ export function calculateTechnicals(rawBars, benchmarkRawBars = []) {
   const avgVolume20 = average(last20.map((bar) => bar.volume));
   const avgPreviousVolume20 = average(previous20.map((bar) => bar.volume));
   const avgValue20 = avgVolume20 === null ? null : avgVolume20 * lastClose;
-  const rvol = avgVolume20 === null || avgPreviousVolume20 === null || avgPreviousVolume20 === 0
+  // If previous period volume is 0 or missing, use 1.0 (neutral — no volume amplification)
+  // This avoids blocking European stocks where providers return 0 for older volume data
+  const rvol = avgVolume20 === null
     ? null
-    : avgVolume20 / avgPreviousVolume20;
+    : (avgPreviousVolume20 === null || avgPreviousVolume20 === 0)
+      ? 1.0
+      : avgVolume20 / avgPreviousVolume20;
   const momentum5 = percentChange(lastClose, closes.at(-6));
   const momentum20 = percentChange(lastClose, closes.at(-21));
   const ema20Previous = calculateEma(closes.slice(0, -5), 20);
