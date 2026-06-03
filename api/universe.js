@@ -210,34 +210,6 @@ export async function buildUniverseResponse(options = {}) {
   };
 }
 
-export default async function handler(request, response) {
-  if (request.method && request.method !== "GET") {
-    return sendJson(response, 405, {
-      ok: false,
-      error: "METHOD_NOT_ALLOWED",
-      message: "Only GET is allowed for Phase 6 controlled Universe Engine validation.",
-    });
-  }
-
-  if (request.query && Object.keys(request.query).length > 0) {
-    return sendJson(response, 400, {
-      ok: false,
-      error: "QUERY_NOT_ALLOWED",
-      message: "Phase 6 universe discovery does not accept ad hoc symbols or custom exchanges.",
-    });
-  }
-
-  const cached = readUniverseCache();
-  if (cached?.cacheStatus === "HIT") {
-    return sendJson(response, 200, {
-      ...cached.payload,
-      cacheStatus: "HIT",
-      cachedAtUtc: cached.cachedAtUtc,
-      ttlSeconds: CACHE_TTL_SECONDS,
-    });
-  }
-
-  const payload = await buildUniverseResponse();
-  if (!payload.ok || payload.assets.length === 0) return sendJson(response, 200, payload);
-  return sendJson(response, 200, writeUniverseCache(payload));
-}
+// NOTE: No default export — universe.js is a shared library used internally
+// by scan-snapshot and rally-scan. It does NOT count as a Vercel function.
+// (Vercel Hobby plan limit: 12 serverless functions)
