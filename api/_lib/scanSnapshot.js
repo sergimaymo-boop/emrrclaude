@@ -3,6 +3,7 @@ import { buildTop8BatchPlan, getTop8Batch, prioritizeUniverseCandidates } from "
 import { runControlledTop8Pipeline } from "./top8Pipeline.js";
 
 const SNAPSHOT_TOKEN_VERSION = "SCAN_SNAPSHOT_V1";
+const SNAPSHOT_ENGINE_VERSION = "2026-06-03-v12"; // force cache bust
 const DEFAULT_BATCH_SIZE = 100;
 const MIN_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 100;

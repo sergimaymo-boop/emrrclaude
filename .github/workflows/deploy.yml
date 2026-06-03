@@ -1,0 +1,35 @@
+name: Deploy to Vercel Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel (force, no cache)
+        run: |
+          vercel deploy --prod --force \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            --yes \
+            2>&1 | tee deploy.log
+          DEPLOY_URL=$(grep -o 'https://[^ ]*\.vercel\.app' deploy.log | head -1)
+          echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
+
+      - name: Set production alias
+        run: |
+          vercel alias set $DEPLOY_URL emrrclaude.vercel.app \
+            --token=${{ secrets.VERCEL_TOKEN }} \
+            2>&1
+        env:
+          DEPLOY_URL: ${{ env.DEPLOY_URL }}

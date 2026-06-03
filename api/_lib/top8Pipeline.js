@@ -10,6 +10,7 @@ import { buildTop8BatchPlan } from "./top8BatchPlanner.js";
 
 const DEFAULT_MAX_CANDIDATES_PER_RUN = 100;
 const BENCHMARK_SYMBOL = "SPY.US";
+const PIPELINE_VERSION = "2026-06-03-v12"; // force cache bust
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -141,6 +142,7 @@ export async function runControlledTop8Pipeline({
     assets: top8,
     summary: summarizeEvaluations(evaluations),
     providerCallsPlanned: candidates.length * 2 + 1,
-    _debug_scoreNull: { eligibleCount: eligibleEvals.length, scoreNull: scoreNullEvals.length, scoreValid: scoreValidEvals.length, nullReasons: scoreNullReasons, sample: scoreNullEvals.slice(0,2).map(e => ({ ticker: e.ticker, score: e.score, blockedReasons: e.blockedReasons, scoreBreakdown: e.scoreBreakdown })) },
+    pipelineVersion: PIPELINE_VERSION,
+    _debug_scoreNull: { eligibleCount: eligibleEvals.length, scoreNull: scoreNullEvals.length, scoreValid: scoreValidEvals.length, nullReasons: scoreNullReasons, sample: scoreNullEvals.slice(0,2).map(e => ({ ticker: e.ticker, score: e.score, blockedReasons: e.blockedReasons })) },
   };
 }
