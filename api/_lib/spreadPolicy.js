@@ -124,12 +124,12 @@ export function classifySpreadPolicy({ spreadPercent = null, spreadStatus = null
     executionPolicy: SPREAD_POLICY_STATUS.BLOCKS_EXEC,
     spreadPercent: null,
     maxSpreadPercent,
-    blocksScore: true,
-    blocksExecution: true,
-    canEnterGlobalTop8: false,
-    canGenerateExec: false,
+    blocksScore: false,        // CAN be scored → appears as WATCH/BLOCKED, not EXEC
+    blocksExecution: true,     // CANNOT generate EXEC without verified spread
+    canEnterGlobalTop8: true,  // CAN appear in TOP 8 as WATCH_DIAGNOSTIC_ONLY
+    canGenerateExec: false,    // CANNOT generate EXEC
     allowedNonOperationalActions: SPREAD_POLICY_ACTIONS.allowedWhenUnverified,
     prohibitedActions: SPREAD_POLICY_ACTIONS.prohibitedWhenUnverified,
-    reason: "Spread is not verified; asset may be inspected only as non-operational diagnostics.",
+    reason: "Spread is not verified; asset scored as WATCH/BLOCKED only, EXEC prohibited.",
   });
 }

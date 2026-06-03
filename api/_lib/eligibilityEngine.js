@@ -78,7 +78,10 @@ export function validateUniverseEligibility({
 
   if (spreadPolicy.verificationStatus === SPREAD_POLICY_STATUS.NOT_VERIFIED && spreadPolicy.status !== SPREAD_POLICY_STATUS.INVALID) {
     warnings.push("SPREAD_NOT_VERIFIED");
-    blockedReasons.push("SPREAD_NOT_VERIFIED");
+    // SPREAD_NOT_VERIFIED only blocks EXEC, NOT scoring.
+    // Asset can appear in TOP 8 as WATCH/BLOCKED per MASTER_CODEX Fase 11.6:
+    // allowedWhenUnverified: ["BLOCKED", "STANDBY", "WATCH_DIAGNOSTIC_ONLY"]
+    executionBlockedReasons.push("SPREAD_NOT_VERIFIED");
   } else if (spreadPolicy.status === SPREAD_POLICY_STATUS.INVALID) {
     blockedReasons.push("INVALID_SPREAD");
   } else if (spreadPolicy.status === SPREAD_POLICY_STATUS.ABOVE_MAXIMUM) {
