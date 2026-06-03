@@ -77,11 +77,23 @@ export default async function handler(request, response) {
   const responseState = attachSnapshotToken(processedState);
   const statusCode = responseState.isGlobalTop8Final ? 200 : responseState.batchesCompleted > 0 ? 206 : 409;
 
+  // DEBUG v9 — show first 3 candidates with their scores
+  const allCandidates = responseState.topCandidates ?? [];
+  const debugV9 = {
+    v: ENGINE_VERSION,
+    totalCandidates: allCandidates.length,
+    sample: allCandidates.slice(0, 3).map(c => ({
+      ticker: c.ticker, score: c.score, action: c.action,
+      blockedReasons: c.blockedReasons
+    }))
+  };
+
   const payload = {
     ok: responseState.isGlobalTop8Final,
     mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
     ...responseState,
     assets: responseState.topCandidates,
+    _debugV9: debugV9,
     message: responseState.isGlobalTop8Final
       ? "Global TOP 8 final is available because coveragePercent reached 100%."
       : "SCAN FULL created a real snapshot but remains partial or unavailable until coveragePercent reaches 100%.",
