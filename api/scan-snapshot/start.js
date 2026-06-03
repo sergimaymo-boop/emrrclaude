@@ -1,15 +1,23 @@
+/**
+ * POST /api/scan-snapshot/start
+ * SCAN FULL — Motor 1 (TOP 8 institucional)
+ *
+ * Direct implementation bypassing top8Pipeline.js module cache issues.
+ * Uses evaluateCandidate + buildOperationalTop8FromEvaluations directly.
+ */
 import { buildUniverseResponse } from "../universe.js";
 import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch } from "../_lib/scanSnapshot.js";
 import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
+import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { calculateTechnicals } from "../_lib/technicalEngine.js";
-import { calculateScore } from "../_lib/scoreEngine.js";
-import { validateUniverseEligibility } from "../_lib/eligibilityEngine.js";
-import { evaluateCandidate, buildOperationalTop8FromEvaluations } from "../_lib/candidateEvaluationEngine.js";
+import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_START";
-const ENGINE_VERSION = "2026-06-03-v8"; // force rebuild
+const BENCHMARK_SYMBOL = "SPY.US";
+const DEFAULT_BATCH_SIZE = 50;
+const MAX_BATCH_SIZE = 100;
 
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json({
@@ -20,43 +28,37 @@ function sendJson(response, statusCode, payload) {
   });
 }
 
-async function readJsonBody(request) {
-  if (!request.body) return {};
-  if (typeof request.body === "object") return request.body;
-  if (typeof request.body === "string") {
-    try {
-      return JSON.parse(request.body);
-    } catch {
-      return {};
-    }
+async function readJsonBody(req) {
+  if (!req.body) return {};
+  if (typeof req.body === "object") return req.body;
+  if (typeof req.body === "string") {
+    try { return JSON.parse(req.body); } catch { return {}; }
   }
   return {};
+}
+
+function getActiveMarkets(assets) {
+  return [...new Set(assets.map(a => a.market ?? a.providerExchange ?? "UNKNOWN"))];
 }
 
 export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store");
 
   if (request.method !== "POST") {
-    return sendJson(response, 405, {
-      ok: false,
-      error: "METHOD_NOT_ALLOWED",
-      allowedMethods: ["POST"],
-    });
+    return sendJson(response, 405, { ok: false, error: "METHOD_NOT_ALLOWED" });
   }
 
   const queryKeys = Object.keys(request.query ?? {});
   if (queryKeys.length > 0) {
-    return sendJson(response, 400, {
-      ok: false,
-      error: "QUERY_NOT_ALLOWED",
-      receivedQueryKeys: queryKeys,
-    });
+    return sendJson(response, 400, { ok: false, error: "QUERY_NOT_ALLOWED" });
   }
 
   const body = await readJsonBody(request);
+  const batchSize = Math.min(body.batchSize ?? DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE);
   const scanStartedAtUtc = new Date().toISOString();
-  const universe = await buildUniverseResponse({ includeFullAssets: true });
 
+  // 1. Get universe
+  const universe = await buildUniverseResponse({ includeFullAssets: true });
   if (!universe.ok) {
     return sendJson(response, 409, {
       ok: false,
@@ -68,88 +70,180 @@ export default async function handler(request, response) {
       coveragePercent: 0,
       error: universe.error ?? "UNIVERSE_DISCOVERY_NOT_READY",
       blockedReasons: [universe.error ?? "UNIVERSE_DISCOVERY_NOT_READY"],
-      universeSummary: universe.summary,
       assets: [],
-      message: "SCAN FULL cannot start without real universe metadata. No substitute data is used.",
+      message: "SCAN FULL cannot start without real universe metadata.",
     });
   }
 
-  const { eligibleAssets, state } = buildSnapshotPlan(universe, scanStartedAtUtc, {
-    batchSize: body.batchSize,
-    maxProviderCallsPerInvocation: body.maxProviderCallsPerInvocation,
-  });
-  const processedState = await processNextSnapshotBatch({ state, eligibleAssets });
-  const responseState = attachSnapshotToken(processedState);
-  const statusCode = responseState.isGlobalTop8Final ? 200 : responseState.batchesCompleted > 0 ? 206 : 409;
-
-  // DEBUG v10 — run SAP.XETRA through full pipeline and show exact result
-  let debugV10 = { v: ENGINE_VERSION };
-  try {
-    const hist = await fetchEodhdHistoricalBars("SAP.XETRA");
-    debugV10.histOk = hist.ok;
-    debugV10.histBars = hist.ok ? hist.bars.length : 0;
-    debugV10.histProvider = hist.provider;
-    if (hist.ok && hist.bars.length > 0) {
-      const tech = calculateTechnicals(hist.bars, []);
-      debugV10.techOk = tech.ok;
-      debugV10.techValidBars = tech.validBars;
-      debugV10.technicals = tech.ok ? {
-        ema20: tech.technicals?.ema20,
-        ema50: tech.technicals?.ema50,
-        rvol: tech.technicals?.rvol,
-        atrPercent: tech.technicals?.atrPercent,
-        momentum20: tech.technicals?.momentum20,
-        avgValue20: tech.technicals?.avgValue20,
-        rs60: tech.technicals?.rs60,
-      } : null;
-      if (tech.ok) {
-        const elig = validateUniverseEligibility({ asset: { operabilityStatus: 'OPERABLE', region: 'Europe' }, technicalResult: tech, marketStatus: 'OPEN', dataQuality: 'GOOD' });
-        debugV10.eligibleForScore = elig.eligibleForScore;
-        debugV10.eligibilityBlocked = elig.blockedReasons;
-        const score = calculateScore({ operabilityStatus: 'OPERABLE', marketStatus: 'OPEN', dataQuality: 'GOOD', eligibleForScore: elig.eligibleForScore, eligibilityBlockedReasons: elig.blockedReasons, technicals: tech.technicals });
-        debugV10.score = score.score;
-        debugV10.scoreBlocked = score.blockedReasons;
-      }
-    }
-  } catch(e) { debugV10.error = e.message; }
-
-  // DEBUG v11 — run full evaluateCandidate + buildOperationalTop8 with SAP to confirm these functions are the new version
-  try {
-    const hist11 = await fetchEodhdHistoricalBars("SAP.XETRA");
-    if (hist11.ok && hist11.bars.length > 0) {
-      const tech11 = calculateTechnicals(hist11.bars, []);
-      const asset11 = { ticker: 'SAP', providerSymbol: 'SAP.XETRA', name: 'SAP SE', market: 'Xetra', exchange: 'XETRA', region: 'Europe', currency: 'EUR', operabilityStatus: 'OPERABLE', operabilityReasons: [] };
-      const eval11 = evaluateCandidate({ asset: asset11, historicalBars: hist11.bars, benchmarkBars: [], spreadPercent: null, spreadStatus: { ok: false, blockedReason: 'SPREAD_NOT_AVAILABLE' }, marketStatus: 'OPEN', dataQuality: 'GOOD' });
-      const top11 = buildOperationalTop8FromEvaluations([eval11]);
-      debugV10.v11 = { evalScore: eval11.score, evalAction: eval11.action, evalEligible: eval11.eligibility?.eligibleForScore, evalBlocked: eval11.blockedReasons, top8Length: top11.length };
-    }
-  } catch(e2) { debugV10.v11error = e2.message; }
-
-  const allCandidates = responseState.topCandidates ?? [];
-  const debugV9 = {
-    v: ENGINE_VERSION,
-    totalCandidates: allCandidates.length,
-    sample: allCandidates.slice(0, 3).map(c => ({
-      ticker: c.ticker, score: c.score, action: c.action,
-      blockedReasons: c.blockedReasons
-    }))
-  };
-
-  const payload = {
-    ok: responseState.isGlobalTop8Final,
-    mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
-    ...responseState,
-    assets: responseState.topCandidates,
-    _debugV9: debugV9,
-    _debugV10: debugV10,
-    message: responseState.isGlobalTop8Final
-      ? "Global TOP 8 final is available because coveragePercent reached 100%."
-      : "SCAN FULL created a real snapshot but remains partial or unavailable until coveragePercent reaches 100%.",
-  };
-
-  if (responseState.isGlobalTop8Final) {
-    await saveLastScanSnapshot(payload);
+  // 2. Filter operable assets
+  const allOperable = (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE");
+  if (allOperable.length === 0) {
+    return sendJson(response, 409, {
+      ok: false,
+      scanStartedAtUtc,
+      status: "DATA_UNAVAILABLE",
+      error: "NO_OPERABLE_ASSETS",
+      assets: [],
+    });
   }
 
-  return sendJson(response, statusCode, payload);
+  const batchesTotal = Math.ceil(allOperable.length / batchSize);
+  const universeHash = Buffer.from(allOperable.map(a => a.providerSymbol).join(","))
+    .toString("base64url").slice(0, 16);
+  const activeMarkets = getActiveMarkets(allOperable);
+  const scanId = `scan-${Date.now().toString(36)}`;
+
+  // 3. Process batch 0
+  const batch = allOperable.slice(0, batchSize);
+
+  // Fetch SPY benchmark
+  let benchmarkBars = [];
+  try {
+    const spyResult = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL);
+    if (spyResult.ok) benchmarkBars = spyResult.bars;
+  } catch { /* no benchmark */ }
+
+  // 4. Evaluate each asset directly — no top8Pipeline module
+  const evaluations = [];
+  let providerCalls = 1; // benchmark
+
+  for (const asset of batch) {
+    try {
+      const [histResult, spreadResult] = await Promise.all([
+        fetchEodhdHistoricalBars(asset.providerSymbol),
+        fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_PROVIDER_FAILED" })),
+      ]);
+      providerCalls += 2;
+
+      const historicalBars = histResult.ok ? histResult.bars : [];
+      const spreadPercent = spreadResult.ok ? spreadResult.spreadPercent : null;
+
+      const eval_ = evaluateCandidate({
+        asset,
+        historicalBars,
+        benchmarkBars,
+        spreadPercent,
+        historyStatus: {
+          ok: histResult.ok === true,
+          provider: histResult.provider ?? null,
+          providerSymbol: histResult.providerSymbol ?? asset.providerSymbol,
+          blockedReason: histResult.ok ? null : histResult.blockedReason ?? "HISTORY_FAILED",
+          barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0,
+        },
+        spreadStatus: {
+          ok: spreadResult.ok === true,
+          provider: spreadResult.provider ?? null,
+          providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol,
+          blockedReason: spreadResult.ok ? null : spreadResult.blockedReason ?? "SPREAD_FAILED",
+          spreadPercent: spreadResult.spreadPercent ?? null,
+        },
+        marketStatus: "OPEN",
+        dataQuality: "GOOD",
+      });
+      evaluations.push(eval_);
+    } catch {
+      // skip asset on error
+    }
+  }
+
+  // 5. Build TOP 8
+  const top8 = buildOperationalTop8FromEvaluations(evaluations);
+
+  const batchesCompleted = 1;
+  const coveragePercent = Math.round((batchesCompleted / batchesTotal) * 100);
+  const isGlobalTop8Final = batchesCompleted >= batchesTotal;
+  const scanCompletedAtUtc = isGlobalTop8Final ? new Date().toISOString() : null;
+
+  const summary = summarizeEvaluations(evaluations);
+  const eligibilityDiagnostics = buildEligibilityDiagnostics(evaluations, { batchSize: batch.length });
+
+  // Add rank + scanId to results
+  const topCandidates = top8.map((c, i) => ({
+    ...c,
+    rank: i + 1,
+    scanId,
+    scanStartedAtUtc,
+    scanCompletedAtUtc,
+  }));
+
+  // Save if complete
+  if (isGlobalTop8Final && topCandidates.length > 0) {
+    const payload = {
+      ok: true,
+      scanId,
+      scanStartedAtUtc,
+      scanCompletedAtUtc,
+      coveragePercent: 100,
+      isGlobalTop8Final: true,
+      topCandidates,
+      universeHash,
+      activeMarkets,
+      universeCount: allOperable.length,
+      actualProviderCalls: providerCalls,
+    };
+    await saveLastScanSnapshot(payload).catch(() => {});
+  }
+
+  // Build snapshot token for continuation
+  const snapshotState = {
+    scanId,
+    scanStartedAtUtc,
+    universeHash,
+    activeMarkets,
+    batchSize,
+    batchesTotal,
+    batchesCompleted,
+    nextBatchIndex: isGlobalTop8Final ? null : 1,
+    coveragePercent,
+    universeCount: allOperable.length,
+    actualProviderCalls: providerCalls,
+    topCandidates,
+    eligibleTickers: allOperable.map(a => a.providerSymbol),
+    status: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+    isGlobalTop8Final,
+    resultScope: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+  };
+
+  const snapshotToken = isGlobalTop8Final ? null
+    : Buffer.from(JSON.stringify(snapshotState)).toString("base64url");
+
+  const statusCode = isGlobalTop8Final ? 200 : batchesCompleted > 0 ? 206 : 409;
+
+  return sendJson(response, statusCode, {
+    ok: isGlobalTop8Final,
+    mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
+    status: snapshotState.status,
+    scanId,
+    scanStartedAtUtc,
+    scanCompletedAtUtc,
+    universeHash,
+    activeMarkets,
+    universeDiscovered: allOperable.length,
+    universeAfterFilters: allOperable.length,
+    batchesTotal,
+    batchesCompleted,
+    nextBatchIndex: snapshotState.nextBatchIndex,
+    coveragePercent,
+    estimatedProviderCalls: batchSize * 2 + 1,
+    actualProviderCalls: providerCalls,
+    resultScope: snapshotState.resultScope,
+    isGlobalTop8Final,
+    isPartialResult: !isGlobalTop8Final,
+    snapshotToken,
+    topCandidates,
+    assets: topCandidates,
+    diagnostics: {
+      processedBatches: [{
+        batchIndex: 1,
+        selectedAssets: batch.length,
+        providerCallsPlanned: batch.length * 2 + 1,
+        ok: true,
+        evaluationSummary: summary,
+        eligibilityDiagnostics,
+      }],
+    },
+    message: isGlobalTop8Final
+      ? "Global TOP 8 final — 100% coverage."
+      : `SCAN FULL batch 1/${batchesTotal} complete.`,
+  });
 }
