@@ -120,6 +120,17 @@ export async function runControlledTop8Pipeline({
 
   const top8 = buildOperationalTop8FromEvaluations(evaluations);
 
+  // Temporary debug: show why eligible assets have null score
+  const eligibleEvals = evaluations.filter(e => e.eligibility?.eligibleForScore === true);
+  const scoreNullEvals = eligibleEvals.filter(e => e.score === null);
+  const scoreValidEvals = eligibleEvals.filter(e => e.score !== null);
+  const scoreNullReasons = {};
+  for (const ev of scoreNullEvals) {
+    for (const r of (ev.blockedReasons ?? [])) {
+      scoreNullReasons[r] = (scoreNullReasons[r] ?? 0) + 1;
+    }
+  }
+
   return {
     ok: top8.length > 0,
     error: top8.length > 0 ? null : "NO_ELIGIBLE_ASSETS_AFTER_VALIDATION",
@@ -130,5 +141,6 @@ export async function runControlledTop8Pipeline({
     assets: top8,
     summary: summarizeEvaluations(evaluations),
     providerCallsPlanned: candidates.length * 2 + 1,
+    _debug_scoreNull: { eligibleCount: eligibleEvals.length, scoreNull: scoreNullEvals.length, scoreValid: scoreValidEvals.length, nullReasons: scoreNullReasons, sample: scoreNullEvals.slice(0,2).map(e => ({ ticker: e.ticker, score: e.score, blockedReasons: e.blockedReasons, scoreBreakdown: e.scoreBreakdown })) },
   };
 }
