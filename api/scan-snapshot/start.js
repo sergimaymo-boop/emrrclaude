@@ -223,7 +223,15 @@ export default async function handler(request, response) {
     resultScope: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
   };
 
-  // Compact token — NO eligibleTickers, NO topCandidates (reduces from 36KB to <1KB)
+  // Compact token — include minimal top8 for cross-batch accumulation
+  const compactAccumulated = top8.map(c => ({
+    ticker: c.ticker, providerSymbol: c.providerSymbol, score: c.score,
+    name: c.name, market: c.market, exchange: c.exchange, currency: c.currency,
+    risk: c.risk, action: c.action, conviction: c.conviction,
+    trailing: c.trailing, scoreBreakdown: c.scoreBreakdown,
+    operabilityStatus: c.operabilityStatus, eligibility: c.eligibility,
+    scanId, scanStartedAtUtc
+  }));
   const compactState = {
     scanId: snapshotState.scanId,
     scanStartedAtUtc: snapshotState.scanStartedAtUtc,
@@ -235,6 +243,7 @@ export default async function handler(request, response) {
     nextBatchIndex: snapshotState.nextBatchIndex,
     universeCount: snapshotState.universeCount,
     actualProviderCalls: snapshotState.actualProviderCalls,
+    accumulatedTop8: compactAccumulated,
   };
   const snapshotToken = isGlobalTop8Final ? null
     : Buffer.from(JSON.stringify(compactState)).toString("base64url");

@@ -73,7 +73,8 @@ export default async function handler(request, response) {
 
   const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize,
     batchesTotal, batchesCompleted, nextBatchIndex, universeCount,
-    actualProviderCalls: prevCalls } = state;
+    actualProviderCalls: prevCalls,
+    accumulatedTop8: prevAccumulated } = state; // accumulated top8 from previous batches
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
     return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
@@ -135,8 +136,14 @@ export default async function handler(request, response) {
   const providerCalls = 1 + batch.length * 2;
 
   const newTop8 = buildOperationalTop8FromEvaluations(evaluations);
-  // Frontend accumulates topCandidates across batches — server returns this batch's top8
-  const mergedTop8 = newTop8;
+
+  // Merge with accumulated top8 from previous batches
+  const accumulated = (prevAccumulated ?? []);
+  const combined = [...accumulated, ...newTop8]
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .filter((c, i, arr) => arr.findIndex(x => (x.providerSymbol ?? x.ticker) === (c.providerSymbol ?? c.ticker)) === i)
+    .slice(0, 8);
+  const mergedTop8 = combined;
   const newBatchesCompleted = batchesCompleted + 1;
   const newCoverage = Math.round((newBatchesCompleted / batchesTotal) * 100);
   const isGlobalTop8Final = newBatchesCompleted >= batchesTotal;
@@ -149,12 +156,20 @@ export default async function handler(request, response) {
     await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allOperable.length, actualProviderCalls: totalCalls }).catch(() => {});
   }
 
-  // Compact token — no big arrays
+  // Compact token — include minimal accumulated top8 for cross-batch merging
+  const compactAccumulated = mergedTop8.map(c => ({
+    ticker: c.ticker, providerSymbol: c.providerSymbol, score: c.score,
+    name: c.name, market: c.market, exchange: c.exchange, currency: c.currency,
+    risk: c.risk, action: c.action, conviction: c.conviction,
+    trailing: c.trailing, scoreBreakdown: c.scoreBreakdown,
+    operabilityStatus: c.operabilityStatus, eligibility: c.eligibility,
+    scanId, scanStartedAtUtc
+  }));
   const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({
     scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal,
     batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1,
-    universeCount: allOperable.length,
-    actualProviderCalls: totalCalls,
+    universeCount: allOperable.length, actualProviderCalls: totalCalls,
+    accumulatedTop8: compactAccumulated, // carry forward best candidates
   })).toString("base64url");
 
   const statusCode = isGlobalTop8Final ? 200 : 206;

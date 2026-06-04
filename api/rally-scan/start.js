@@ -45,50 +45,7 @@ function mergeCandidates(existing, newOnes) {
     .slice(0, MAX_TOP_CANDIDATES);
 }
 
-export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, existingCandidates, spyBars }) {
-  const batch = eligibleAssets.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
-  const newCandidates = [];
-  let providerCalls = 0;
-
-  for (const asset of batch) {
-    try {
-      const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
-      providerCalls++;
-      if (!histResult.ok || histResult.bars.length < 130) continue;
-
-      const rallyResult = calculateRallyScore({
-        bars: histResult.bars,
-        spyBars,
-        spreadPercent: null,
-        region: asset.region ?? "USA",
-      });
-
-      if (!rallyResult.ok || rallyResult.rallyScore < MIN_RALLY_SCORE) continue;
-
-      newCandidates.push({
-        rank: 0,
-        ticker: asset.ticker,
-        name: asset.name,
-        market: asset.market ?? asset.providerExchange,
-        exchange: asset.exchange,
-        currency: asset.currency ?? "USD",
-        providerSymbol: asset.providerSymbol,
-        rallyScore: rallyResult.rallyScore,
-        rallyLabel: rallyResult.label,
-        rallyColor: rallyResult.color,
-        metrics: rallyResult.metrics,
-        dataMode: "REAL",
-        dataQuality: "GOOD",
-        scanId: null,
-      });
-    } catch {
-      // skip asset on error
-    }
-  }
-
-  const merged = mergeCandidates(existingCandidates, newCandidates);
-  return { candidates: merged, providerCalls };
-}
+// runRallyBatch is imported from rallyBatchProcessor.js — no duplicate definition here
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
