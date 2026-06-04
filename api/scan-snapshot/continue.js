@@ -2,7 +2,8 @@
  * POST /api/scan-snapshot/continue
  * Continues a scan started by start.js using the base64 state token.
  */
-import { buildUniverseResponse } from "../universe.js";
+import { STATIC_ASSETS_BY_EXCHANGE } from "../_lib/staticUniverse.js";
+import { isEligibleForUniverse, mapUniverseAsset, PROVIDER_EXCHANGES } from "../_lib/universeEngine.js";
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
 import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
@@ -78,13 +79,20 @@ export default async function handler(request, response) {
     return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
   }
 
-  // Rebuild universe from static JSON (fast, no external calls)
-  let allOperable = [];
+  // Rebuild operable assets directly from static universe (no external calls, no ENABLE check)
+  const allOperable = [];
   try {
-    const universe = await buildUniverseResponse({ includeFullAssets: true });
-    allOperable = universe.ok ? (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE") : [];
+    for (const exchangeConfig of PROVIDER_EXCHANGES) {
+      const rows = STATIC_ASSETS_BY_EXCHANGE[exchangeConfig.providerExchange] ?? [];
+      for (const row of rows) {
+        if (isEligibleForUniverse(row, exchangeConfig)) {
+          const asset = mapUniverseAsset(row, exchangeConfig);
+          if (asset.operabilityStatus === "OPERABLE") allOperable.push(asset);
+        }
+      }
+    }
   } catch(e) {
-    return sendJson(response, 500, { ok: false, error: "UNIVERSE_REBUILD_FAILED", message: e.message });
+    return sendJson(response, 500, { ok: false, error: "STATIC_UNIVERSE_FAILED", message: e.message });
   }
   if (allOperable.length === 0) {
     return sendJson(response, 409, { ok: false, error: "NO_OPERABLE_ASSETS_ON_CONTINUE" });
