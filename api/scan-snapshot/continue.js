@@ -78,9 +78,17 @@ export default async function handler(request, response) {
     return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
   }
 
-  // Rebuild universe (no tickers stored in token — keeps token small)
-  const universe = await buildUniverseResponse({ includeFullAssets: true });
-  const allOperable = universe.ok ? (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE") : [];
+  // Rebuild universe from static JSON (fast, no external calls)
+  let allOperable = [];
+  try {
+    const universe = await buildUniverseResponse({ includeFullAssets: true });
+    allOperable = universe.ok ? (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE") : [];
+  } catch(e) {
+    return sendJson(response, 500, { ok: false, error: "UNIVERSE_REBUILD_FAILED", message: e.message });
+  }
+  if (allOperable.length === 0) {
+    return sendJson(response, 409, { ok: false, error: "NO_OPERABLE_ASSETS_ON_CONTINUE" });
+  }
   const batch = allOperable.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize);
 
   // Fetch benchmark
