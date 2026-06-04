@@ -146,7 +146,7 @@ export default async function handler(request, response) {
   const topCandidates = mergedTop8.map((c, i) => ({ ...c, rank: i + 1, scanId, scanStartedAtUtc, scanCompletedAtUtc }));
 
   if (isGlobalTop8Final && topCandidates.length > 0) {
-    await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allTickers.length, actualProviderCalls: totalCalls }).catch(() => {});
+    await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allOperable.length, actualProviderCalls: totalCalls }).catch(() => {});
   }
 
   // Compact token — no big arrays
@@ -164,7 +164,7 @@ export default async function handler(request, response) {
     mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
     status: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
     scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets,
-    universeDiscovered: allTickers.length, universeAfterFilters: allTickers.length,
+    universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length,
     batchesTotal, batchesCompleted: newBatchesCompleted,
     nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1,
     coveragePercent: newCoverage, actualProviderCalls: totalCalls,
