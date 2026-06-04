@@ -250,10 +250,8 @@ export async function startScanSnapshot(): Promise<ScanSnapshotResponse> {
   return fetchJsonWithTimeout<ScanSnapshotResponse>("/api/scan-snapshot/start", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({
-      batchSize: 100,
-    }),
-  });
+    body: JSON.stringify({ batchSize: 100 }),
+  }, 30000); // 30s — each batch takes ~9s
 }
 
 export async function continueScanSnapshot(snapshotToken: string): Promise<ScanSnapshotResponse> {
@@ -261,7 +259,7 @@ export async function continueScanSnapshot(snapshotToken: string): Promise<ScanS
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({ snapshotToken }),
-  });
+  }, 30000); // 30s — each batch takes ~9s
 }
 
 export async function finalizeScanSnapshot(snapshotToken: string): Promise<ScanSnapshotResponse> {

@@ -240,8 +240,21 @@ export default async function handler(request, response) {
     resultScope: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
   };
 
+  // Compact token — NO eligibleTickers, NO topCandidates (reduces from 36KB to <1KB)
+  const compactState = {
+    scanId: snapshotState.scanId,
+    scanStartedAtUtc: snapshotState.scanStartedAtUtc,
+    universeHash: snapshotState.universeHash,
+    activeMarkets: snapshotState.activeMarkets,
+    batchSize: snapshotState.batchSize,
+    batchesTotal: snapshotState.batchesTotal,
+    batchesCompleted: snapshotState.batchesCompleted,
+    nextBatchIndex: snapshotState.nextBatchIndex,
+    universeCount: snapshotState.universeCount,
+    actualProviderCalls: snapshotState.actualProviderCalls,
+  };
   const snapshotToken = isGlobalTop8Final ? null
-    : Buffer.from(JSON.stringify(snapshotState)).toString("base64url");
+    : Buffer.from(JSON.stringify(compactState)).toString("base64url");
 
   const statusCode = isGlobalTop8Final ? 200 : batchesCompleted > 0 ? 206 : 409;
 

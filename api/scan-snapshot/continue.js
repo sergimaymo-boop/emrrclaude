@@ -2,6 +2,7 @@
  * POST /api/scan-snapshot/continue
  * Continues a scan started by start.js using the base64 state token.
  */
+import { buildUniverseResponse } from "../universe.js";
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
 import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
@@ -70,27 +71,17 @@ export default async function handler(request, response) {
   }
 
   const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize,
-    batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers,
-    topCandidates: previousTop8, actualProviderCalls: prevCalls } = state;
+    batchesTotal, batchesCompleted, nextBatchIndex, universeCount,
+    actualProviderCalls: prevCalls } = state;
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
     return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
   }
 
-  // Rebuild asset list from tickers
-  const allTickers = eligibleTickers ?? [];
-  const batch = allTickers.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize)
-    .map(sym => ({
-      ticker: sym.split(".")[0],
-      providerSymbol: sym,
-      name: sym.split(".")[0],
-      market: sym.endsWith(".US") ? "Nasdaq/NYSE" : "Europe",
-      exchange: sym.split(".").slice(1).join("."),
-      region: sym.endsWith(".US") ? "USA" : "Europe",
-      currency: sym.endsWith(".US") ? "USD" : "EUR",
-      operabilityStatus: "OPERABLE",
-      operabilityReasons: [],
-    }));
+  // Rebuild universe (no tickers stored in token — keeps token small)
+  const universe = await buildUniverseResponse({ includeFullAssets: true });
+  const allOperable = universe.ok ? (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE") : [];
+  const batch = allOperable.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize);
 
   // Fetch benchmark
   let benchmarkBars = [];
@@ -123,7 +114,8 @@ export default async function handler(request, response) {
   }
 
   const newTop8 = buildOperationalTop8FromEvaluations(evaluations);
-  const mergedTop8 = mergeTop8(previousTop8, newTop8);
+  // Frontend accumulates topCandidates across batches — server returns this batch's top8
+  const mergedTop8 = newTop8;
   const newBatchesCompleted = batchesCompleted + 1;
   const newCoverage = Math.round((newBatchesCompleted / batchesTotal) * 100);
   const isGlobalTop8Final = newBatchesCompleted >= batchesTotal;
@@ -136,11 +128,12 @@ export default async function handler(request, response) {
     await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allTickers.length, actualProviderCalls: totalCalls }).catch(() => {});
   }
 
+  // Compact token — no big arrays
   const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({
     scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal,
     batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1,
-    coveragePercent: newCoverage, eligibleTickers: allTickers, topCandidates,
-    actualProviderCalls: totalCalls, status: "PARTIAL_BATCH_ONLY", isGlobalTop8Final: false,
+    universeCount: allOperable.length,
+    actualProviderCalls: totalCalls,
   })).toString("base64url");
 
   const statusCode = isGlobalTop8Final ? 200 : 206;
