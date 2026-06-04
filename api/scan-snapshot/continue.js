@@ -1,8 +1,15 @@
-import { buildUniverseResponse } from "../universe.js";
-import { attachSnapshotToken, continueScanSnapshot, decodeScanSnapshotToken } from "../_lib/scanSnapshot.js";
+/**
+ * POST /api/scan-snapshot/continue
+ * Continues a scan started by start.js using the base64 state token.
+ */
+import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
+import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
+import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
+import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_CONTINUE";
+const BENCHMARK_SYMBOL = "SPY.US";
 
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json({
@@ -13,81 +20,145 @@ function sendJson(response, statusCode, payload) {
   });
 }
 
-async function readJsonBody(request) {
-  if (!request.body) return {};
-  if (typeof request.body === "object") return request.body;
-  if (typeof request.body === "string") {
-    try {
-      return JSON.parse(request.body);
-    } catch {
-      return {};
-    }
+async function readJsonBody(req) {
+  if (!req.body) return {};
+  if (typeof req.body === "object") return req.body;
+  if (typeof req.body === "string") {
+    try { return JSON.parse(req.body); } catch { return {}; }
   }
   return {};
+}
+
+function isWeekend(date) { const d = date.getUTCDay(); return d === 0 || d === 6; }
+function inRange(date, s, e) { const m = date.getUTCHours() * 60 + date.getUTCMinutes(); return m >= s && m < e; }
+function isUsDst(date) { const mo = date.getUTCMonth() + 1; return mo >= 3 && mo <= 11; }
+function marketStatusForExchange(exchange, date) {
+  if (isWeekend(date)) return "CLOSED";
+  const n = String(exchange ?? "").toUpperCase();
+  if (n.includes("NASDAQ") || n.includes("NYSE") || n === "USA_SUPPORTED")
+    return inRange(date, isUsDst(date) ? 13*60+30 : 14*60+30, isUsDst(date) ? 20*60 : 21*60) ? "OPEN" : "CLOSED";
+  if (n.includes("LSE") || n.includes("LONDON")) return inRange(date, 8*60, 16*60+30) ? "OPEN" : "CLOSED";
+  if (n.includes("XETRA") || n.includes("EURONEXT") || n.includes("BORSA") || n.includes("SIX") || n.includes("MILAN") || n.includes("PARIS") || n.includes("AMSTERDAM"))
+    return inRange(date, 7*60, 15*60+30) ? "OPEN" : "CLOSED";
+  return "CLOSED";
+}
+
+function mergeTop8(existing, newOnes) {
+  const map = new Map((existing ?? []).map(c => [c.providerSymbol ?? c.ticker, c]));
+  for (const c of (newOnes ?? [])) {
+    const key = c.providerSymbol ?? c.ticker;
+    const prev = map.get(key);
+    if (!prev || (c.score ?? 0) > (prev.score ?? 0)) map.set(key, c);
+  }
+  return [...map.values()].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 8);
 }
 
 export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store");
 
-  if (request.method !== "POST") {
-    return sendJson(response, 405, {
-      ok: false,
-      error: "METHOD_NOT_ALLOWED",
-      allowedMethods: ["POST"],
-    });
-  }
-
-  const queryKeys = Object.keys(request.query ?? {});
-  if (queryKeys.length > 0) {
-    return sendJson(response, 400, {
-      ok: false,
-      error: "QUERY_NOT_ALLOWED",
-      receivedQueryKeys: queryKeys,
-    });
-  }
+  if (request.method !== "POST") return sendJson(response, 405, { ok: false, error: "METHOD_NOT_ALLOWED" });
 
   const body = await readJsonBody(request);
-  const decoded = decodeScanSnapshotToken(body.snapshotToken);
-  if (!decoded.ok) {
-    return sendJson(response, 400, {
-      ok: false,
-      status: "ERROR",
-      error: decoded.error,
-      blockedReasons: [decoded.error],
-      assets: [],
-    });
+  if (!body.snapshotToken) return sendJson(response, 400, { ok: false, error: "SNAPSHOT_TOKEN_REQUIRED" });
+
+  // Decode the base64 state token from start.js
+  let state;
+  try {
+    state = JSON.parse(Buffer.from(body.snapshotToken, "base64url").toString("utf8"));
+  } catch {
+    return sendJson(response, 400, { ok: false, error: "INVALID_SNAPSHOT_TOKEN" });
   }
 
-  const universe = await buildUniverseResponse({ includeFullAssets: true });
-  if (!universe.ok) {
-    return sendJson(response, 409, {
-      ok: false,
-      status: "DATA_UNAVAILABLE",
-      resultScope: "DATA_UNAVAILABLE",
-      isGlobalTop8Final: false,
-      error: universe.error ?? "UNIVERSE_DISCOVERY_NOT_READY",
-      blockedReasons: [universe.error ?? "UNIVERSE_DISCOVERY_NOT_READY"],
-      assets: [],
-    });
+  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize,
+    batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers,
+    topCandidates: previousTop8, actualProviderCalls: prevCalls } = state;
+
+  if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
+    return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
   }
 
-  const processedState = await continueScanSnapshot({
-    universe,
-    tokenState: decoded.state,
-    options: {
-      maxProviderCallsPerInvocation: body.maxProviderCallsPerInvocation,
-    },
-  });
-  const responseState = attachSnapshotToken(processedState);
-  const statusCode = responseState.isGlobalTop8Final ? 200 : responseState.status === "ERROR" ? 409 : 206;
+  // Rebuild asset list from tickers
+  const allTickers = eligibleTickers ?? [];
+  const batch = allTickers.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize)
+    .map(sym => ({
+      ticker: sym.split(".")[0],
+      providerSymbol: sym,
+      name: sym.split(".")[0],
+      market: sym.endsWith(".US") ? "Nasdaq/NYSE" : "Europe",
+      exchange: sym.split(".").slice(1).join("."),
+      region: sym.endsWith(".US") ? "USA" : "Europe",
+      currency: sym.endsWith(".US") ? "USD" : "EUR",
+      operabilityStatus: "OPERABLE",
+      operabilityReasons: [],
+    }));
+
+  // Fetch benchmark
+  let benchmarkBars = [];
+  try { const r = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL); if (r.ok) benchmarkBars = r.bars; } catch {}
+
+  // Evaluate batch
+  const evaluations = [];
+  let providerCalls = 1;
+  const now = new Date();
+
+  for (const asset of batch) {
+    try {
+      const [histResult, spreadResult] = await Promise.all([
+        fetchEodhdHistoricalBars(asset.providerSymbol),
+        fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_FAILED" })),
+      ]);
+      providerCalls += 2;
+      const assetMarketStatus = marketStatusForExchange(asset.exchange, now);
+      evaluations.push(evaluateCandidate({
+        asset,
+        historicalBars: histResult.ok ? histResult.bars : [],
+        benchmarkBars,
+        spreadPercent: spreadResult.ok ? spreadResult.spreadPercent : null,
+        historyStatus: { ok: histResult.ok === true, provider: histResult.provider ?? null, providerSymbol: histResult.providerSymbol ?? asset.providerSymbol, blockedReason: histResult.ok ? null : "HISTORY_FAILED", barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0 },
+        spreadStatus: { ok: spreadResult.ok === true, provider: spreadResult.provider ?? null, providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol, blockedReason: spreadResult.ok ? null : "SPREAD_FAILED", spreadPercent: spreadResult.spreadPercent ?? null },
+        marketStatus: assetMarketStatus,
+        dataQuality: "GOOD",
+      }));
+    } catch { /* skip */ }
+  }
+
+  const newTop8 = buildOperationalTop8FromEvaluations(evaluations);
+  const mergedTop8 = mergeTop8(previousTop8, newTop8);
+  const newBatchesCompleted = batchesCompleted + 1;
+  const newCoverage = Math.round((newBatchesCompleted / batchesTotal) * 100);
+  const isGlobalTop8Final = newBatchesCompleted >= batchesTotal;
+  const scanCompletedAtUtc = isGlobalTop8Final ? new Date().toISOString() : null;
+  const totalCalls = (prevCalls ?? 0) + providerCalls;
+
+  const topCandidates = mergedTop8.map((c, i) => ({ ...c, rank: i + 1, scanId, scanStartedAtUtc, scanCompletedAtUtc }));
+
+  if (isGlobalTop8Final && topCandidates.length > 0) {
+    await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allTickers.length, actualProviderCalls: totalCalls }).catch(() => {});
+  }
+
+  const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({
+    scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal,
+    batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1,
+    coveragePercent: newCoverage, eligibleTickers: allTickers, topCandidates,
+    actualProviderCalls: totalCalls, status: "PARTIAL_BATCH_ONLY", isGlobalTop8Final: false,
+  })).toString("base64url");
+
+  const statusCode = isGlobalTop8Final ? 200 : 206;
 
   return sendJson(response, statusCode, {
-    ok: responseState.isGlobalTop8Final,
+    ok: isGlobalTop8Final,
     mode: "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT",
-    ...responseState,
-    assets: responseState.topCandidates,
-    message: responseState.isGlobalTop8Final
-      ? "Global TOP 8 final is available because coveragePercent reached 100%."
-      : "Scan snapshot continued but remains partial until every eligible-universe batch is processed.",
+    status: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+    scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets,
+    universeDiscovered: allTickers.length, universeAfterFilters: allTickers.length,
+    batchesTotal, batchesCompleted: newBatchesCompleted,
+    nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1,
+    coveragePercent: newCoverage, actualProviderCalls: totalCalls,
+    resultScope: isGlobalTop8Final ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+    isGlobalTop8Final, isPartialResult: !isGlobalTop8Final,
+    snapshotToken: newSnapshotToken,
+    topCandidates, assets: topCandidates,
+    diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] },
+    message: isGlobalTop8Final ? "Global TOP 8 final." : `Batch ${newBatchesCompleted}/${batchesTotal} complete.`,
   });
 }

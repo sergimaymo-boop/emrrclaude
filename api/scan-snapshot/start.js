@@ -19,6 +19,38 @@ const BENCHMARK_SYMBOL = "SPY.US";
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 100;
 
+// Market hours — used to set correct marketStatus per asset
+function isWeekend(date) {
+  const d = date.getUTCDay();
+  return d === 0 || d === 6;
+}
+function inRange(date, startMin, endMin) {
+  const m = date.getUTCHours() * 60 + date.getUTCMinutes();
+  return m >= startMin && m < endMin;
+}
+function isUsDst(date) {
+  // Approximate: DST active March-November
+  const month = date.getUTCMonth() + 1;
+  return month >= 3 && month <= 11;
+}
+function marketStatusForExchange(exchange, date) {
+  if (isWeekend(date)) return "CLOSED";
+  const n = String(exchange ?? "").toUpperCase();
+  if (n.includes("NASDAQ") || n.includes("NYSE") || n === "USA_SUPPORTED") {
+    return inRange(date, isUsDst(date) ? 13 * 60 + 30 : 14 * 60 + 30,
+      isUsDst(date) ? 20 * 60 : 21 * 60) ? "OPEN" : "CLOSED";
+  }
+  if (n.includes("LSE") || n.includes("LONDON")) {
+    return inRange(date, 8 * 60, 16 * 60 + 30) ? "OPEN" : "CLOSED";
+  }
+  if (n.includes("XETRA") || n.includes("EURONEXT") || n.includes("BORSA") ||
+      n.includes("ITALIANA") || n.includes("SIX") || n.includes("MILAN") ||
+      n.includes("PARIS") || n.includes("AMSTERDAM")) {
+    return inRange(date, 7 * 60, 15 * 60 + 30) ? "OPEN" : "CLOSED";
+  }
+  return "CLOSED";
+}
+
 function sendJson(response, statusCode, payload) {
   response.status(statusCode).json({
     ...payload,
@@ -95,6 +127,7 @@ export default async function handler(request, response) {
 
   // 3. Process batch 0
   const batch = allOperable.slice(0, batchSize);
+  const now = new Date();
 
   // Fetch SPY benchmark
   let benchmarkBars = [];
@@ -118,6 +151,9 @@ export default async function handler(request, response) {
       const historicalBars = histResult.ok ? histResult.bars : [];
       const spreadPercent = spreadResult.ok ? spreadResult.spreadPercent : null;
 
+      // Determine real market status for this asset's exchange
+      const assetMarketStatus = marketStatusForExchange(asset.exchange ?? asset.market, now);
+
       const eval_ = evaluateCandidate({
         asset,
         historicalBars,
@@ -137,7 +173,7 @@ export default async function handler(request, response) {
           blockedReason: spreadResult.ok ? null : spreadResult.blockedReason ?? "SPREAD_FAILED",
           spreadPercent: spreadResult.spreadPercent ?? null,
         },
-        marketStatus: "OPEN",
+        marketStatus: assetMarketStatus, // OPEN or CLOSED based on real exchange hours
         dataQuality: "GOOD",
       });
       evaluations.push(eval_);
