@@ -136,51 +136,34 @@ export default async function handler(request, response) {
     if (spyResult.ok) benchmarkBars = spyResult.bars;
   } catch { /* no benchmark */ }
 
-  // 4. Evaluate each asset directly — no top8Pipeline module
-  const evaluations = [];
-  let providerCalls = 1; // benchmark
+  // 4. Evaluate ALL assets IN PARALLEL — reduces time from N×T to max(T)
+  const assetResults = await Promise.all(
+    batch.map(async (asset) => {
+      try {
+        const [histResult, spreadResult] = await Promise.all([
+          fetchEodhdHistoricalBars(asset.providerSymbol),
+          fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_PROVIDER_FAILED" })),
+        ]);
+        return { asset, histResult, spreadResult };
+      } catch {
+        return { asset, histResult: { ok: false, bars: [] }, spreadResult: { ok: false } };
+      }
+    })
+  );
 
-  for (const asset of batch) {
-    try {
-      const [histResult, spreadResult] = await Promise.all([
-        fetchEodhdHistoricalBars(asset.providerSymbol),
-        fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_PROVIDER_FAILED" })),
-      ]);
-      providerCalls += 2;
-
-      const historicalBars = histResult.ok ? histResult.bars : [];
-      const spreadPercent = spreadResult.ok ? spreadResult.spreadPercent : null;
-
-      // Determine real market status for this asset's exchange
-      const assetMarketStatus = marketStatusForExchange(asset.exchange ?? asset.market, now);
-
-      const eval_ = evaluateCandidate({
-        asset,
-        historicalBars,
-        benchmarkBars,
-        spreadPercent,
-        historyStatus: {
-          ok: histResult.ok === true,
-          provider: histResult.provider ?? null,
-          providerSymbol: histResult.providerSymbol ?? asset.providerSymbol,
-          blockedReason: histResult.ok ? null : histResult.blockedReason ?? "HISTORY_FAILED",
-          barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0,
-        },
-        spreadStatus: {
-          ok: spreadResult.ok === true,
-          provider: spreadResult.provider ?? null,
-          providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol,
-          blockedReason: spreadResult.ok ? null : spreadResult.blockedReason ?? "SPREAD_FAILED",
-          spreadPercent: spreadResult.spreadPercent ?? null,
-        },
-        marketStatus: assetMarketStatus, // OPEN or CLOSED based on real exchange hours
-        dataQuality: "GOOD",
-      });
-      evaluations.push(eval_);
-    } catch {
-      // skip asset on error
-    }
-  }
+  const evaluations = assetResults.map(({ asset, histResult, spreadResult }) =>
+    evaluateCandidate({
+      asset,
+      historicalBars: histResult.ok ? histResult.bars : [],
+      benchmarkBars,
+      spreadPercent: spreadResult.ok ? spreadResult.spreadPercent : null,
+      historyStatus: { ok: histResult.ok === true, provider: histResult.provider ?? null, providerSymbol: histResult.providerSymbol ?? asset.providerSymbol, blockedReason: histResult.ok ? null : histResult.blockedReason ?? "HISTORY_FAILED", barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0 },
+      spreadStatus: { ok: spreadResult.ok === true, provider: spreadResult.provider ?? null, providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol, blockedReason: spreadResult.ok ? null : spreadResult.blockedReason ?? "SPREAD_FAILED", spreadPercent: spreadResult.spreadPercent ?? null },
+      marketStatus: marketStatusForExchange(asset.exchange ?? asset.market, now),
+      dataQuality: "GOOD",
+    })
+  );
+  const providerCalls = 1 + batch.length * 2;
 
   // 5. Build TOP 8
   const top8 = buildOperationalTop8FromEvaluations(evaluations);

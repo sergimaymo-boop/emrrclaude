@@ -95,31 +95,36 @@ export default async function handler(request, response) {
   let benchmarkBars = [];
   try { const r = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL); if (r.ok) benchmarkBars = r.bars; } catch {}
 
-  // Evaluate batch
-  const evaluations = [];
-  let providerCalls = 1;
+  // Evaluate batch — ALL assets fetched IN PARALLEL (not sequential)
+  // This reduces time from batchSize×callTime to max(callTime)
   const now = new Date();
+  const assetResults = await Promise.all(
+    batch.map(async (asset) => {
+      try {
+        const [histResult, spreadResult] = await Promise.all([
+          fetchEodhdHistoricalBars(asset.providerSymbol),
+          fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_FAILED" })),
+        ]);
+        return { asset, histResult, spreadResult };
+      } catch {
+        return { asset, histResult: { ok: false, bars: [] }, spreadResult: { ok: false } };
+      }
+    })
+  );
 
-  for (const asset of batch) {
-    try {
-      const [histResult, spreadResult] = await Promise.all([
-        fetchEodhdHistoricalBars(asset.providerSymbol),
-        fetchEodhdSpread(asset.providerSymbol).catch(() => ({ ok: false, blockedReason: "SPREAD_FAILED" })),
-      ]);
-      providerCalls += 2;
-      const assetMarketStatus = marketStatusForExchange(asset.exchange, now);
-      evaluations.push(evaluateCandidate({
-        asset,
-        historicalBars: histResult.ok ? histResult.bars : [],
-        benchmarkBars,
-        spreadPercent: spreadResult.ok ? spreadResult.spreadPercent : null,
-        historyStatus: { ok: histResult.ok === true, provider: histResult.provider ?? null, providerSymbol: histResult.providerSymbol ?? asset.providerSymbol, blockedReason: histResult.ok ? null : "HISTORY_FAILED", barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0 },
-        spreadStatus: { ok: spreadResult.ok === true, provider: spreadResult.provider ?? null, providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol, blockedReason: spreadResult.ok ? null : "SPREAD_FAILED", spreadPercent: spreadResult.spreadPercent ?? null },
-        marketStatus: assetMarketStatus,
-        dataQuality: "GOOD",
-      }));
-    } catch { /* skip */ }
-  }
+  const evaluations = assetResults.map(({ asset, histResult, spreadResult }) =>
+    evaluateCandidate({
+      asset,
+      historicalBars: histResult.ok ? histResult.bars : [],
+      benchmarkBars,
+      spreadPercent: spreadResult.ok ? spreadResult.spreadPercent : null,
+      historyStatus: { ok: histResult.ok === true, provider: histResult.provider ?? null, providerSymbol: histResult.providerSymbol ?? asset.providerSymbol, blockedReason: histResult.ok ? null : "HISTORY_FAILED", barCount: Array.isArray(histResult.bars) ? histResult.bars.length : 0 },
+      spreadStatus: { ok: spreadResult.ok === true, provider: spreadResult.provider ?? null, providerSymbol: spreadResult.providerSymbol ?? asset.providerSymbol, blockedReason: spreadResult.ok ? null : "SPREAD_FAILED", spreadPercent: spreadResult.spreadPercent ?? null },
+      marketStatus: marketStatusForExchange(asset.exchange, now),
+      dataQuality: "GOOD",
+    })
+  );
+  const providerCalls = 1 + batch.length * 2;
 
   const newTop8 = buildOperationalTop8FromEvaluations(evaluations);
   // Frontend accumulates topCandidates across batches — server returns this batch's top8
