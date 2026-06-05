@@ -64,16 +64,17 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
           onClick={onScanRally}
           disabled={isRallyScanning || isScanning}
           style={{
-            background: "linear-gradient(135deg, #c8961e 0%, #a07214 100%)",
-            border: "1px solid rgba(255,200,80,0.4)",
-            borderBottom: "3px solid #7a5510",
-            minWidth: 108,
-            minHeight: 38,
-            fontSize: 12,
+            background: "linear-gradient(135deg, #8b1a1a 0%, #6b1212 100%)",
+            border: "1px solid rgba(180,50,50,0.5)",
+            borderBottom: "3px solid #4a0d0d",
+            minWidth: 80,
+            minHeight: 30,
+            padding: "4px 10px",
+            fontSize: 9,
             fontWeight: 900,
             letterSpacing: "0.06em",
-            color: "#fff8e1",
-            boxShadow: "0 4px 12px rgba(200,150,30,0.3)",
+            color: "#ffd5d5",
+            boxShadow: "0 4px 12px rgba(139,26,26,0.4)",
             borderRadius: 999,
             cursor: isRallyScanning || isScanning ? "not-allowed" : "pointer",
             transition: "transform 80ms, box-shadow 80ms, border-bottom 80ms",
@@ -81,18 +82,18 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
           onPointerDown={(e) => {
             if (isRallyScanning || isScanning) return;
             e.currentTarget.style.transform = "translateY(2px)";
-            e.currentTarget.style.borderBottom = "1px solid #7a5510";
-            e.currentTarget.style.boxShadow = "0 1px 4px rgba(200,150,30,0.2)";
+            e.currentTarget.style.borderBottom = "1px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 1px 4px rgba(139,26,26,0.2)";
           }}
           onPointerUp={(e) => {
             e.currentTarget.style.transform = "none";
-            e.currentTarget.style.borderBottom = "3px solid #7a5510";
-            e.currentTarget.style.boxShadow = "0 4px 12px rgba(200,150,30,0.3)";
+            e.currentTarget.style.borderBottom = "3px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
           }}
           onPointerLeave={(e) => {
             e.currentTarget.style.transform = "none";
-            e.currentTarget.style.borderBottom = "3px solid #7a5510";
-            e.currentTarget.style.boxShadow = "0 4px 12px rgba(200,150,30,0.3)";
+            e.currentTarget.style.borderBottom = "3px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
           }}
         >
           {isRallyScanning ? (
@@ -108,16 +109,17 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
           onClick={onScan}
           disabled={isScanning || isRallyScanning}
           style={{
-            background: "linear-gradient(135deg, #d4a820 0%, #b8860b 100%)",
-            border: "1px solid rgba(255,210,90,0.4)",
-            borderBottom: "3px solid #8b6508",
-            minWidth: 108,
-            minHeight: 38,
-            fontSize: 12,
+            background: "linear-gradient(135deg, #8b1a1a 0%, #6b1212 100%)",
+            border: "1px solid rgba(180,50,50,0.5)",
+            borderBottom: "3px solid #4a0d0d",
+            minWidth: 80,
+            minHeight: 30,
+            padding: "4px 10px",
+            fontSize: 9,
             fontWeight: 900,
             letterSpacing: "0.06em",
-            color: "#fffde7",
-            boxShadow: "0 4px 12px rgba(212,168,32,0.3)",
+            color: "#ffd5d5",
+            boxShadow: "0 4px 12px rgba(139,26,26,0.4)",
             borderRadius: 999,
             cursor: isScanning || isRallyScanning ? "not-allowed" : "pointer",
             transition: "transform 80ms, box-shadow 80ms, border-bottom 80ms",
@@ -125,18 +127,18 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
           onPointerDown={(e) => {
             if (isScanning || isRallyScanning) return;
             e.currentTarget.style.transform = "translateY(2px)";
-            e.currentTarget.style.borderBottom = "1px solid #8b6508";
-            e.currentTarget.style.boxShadow = "0 1px 4px rgba(212,168,32,0.2)";
+            e.currentTarget.style.borderBottom = "1px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 1px 4px rgba(139,26,26,0.2)";
           }}
           onPointerUp={(e) => {
             e.currentTarget.style.transform = "none";
-            e.currentTarget.style.borderBottom = "3px solid #8b6508";
-            e.currentTarget.style.boxShadow = "0 4px 12px rgba(212,168,32,0.3)";
+            e.currentTarget.style.borderBottom = "3px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
           }}
           onPointerLeave={(e) => {
             e.currentTarget.style.transform = "none";
-            e.currentTarget.style.borderBottom = "3px solid #8b6508";
-            e.currentTarget.style.boxShadow = "0 4px 12px rgba(212,168,32,0.3)";
+            e.currentTarget.style.borderBottom = "3px solid #4a0d0d";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
           }}
         >
           {isScanning ? (
