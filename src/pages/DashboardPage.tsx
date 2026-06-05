@@ -747,6 +747,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         isScanning={scanState.isScanning}
         onScanRally={handleScanRally}
         isRallyScanning={rallyState.isScanning}
+        onLogout={onLogout}
       />
       {/* Market Regime semaphore — internal analysis, only label shown */}
       {marketRegime !== "UNKNOWN" && (
