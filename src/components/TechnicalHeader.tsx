@@ -48,6 +48,9 @@ export function TechnicalHeader({ systemStatus, onLogout }: TechnicalHeaderProps
           <span style={{fontSize:11,color:"#6b7280",fontWeight:600}}>
             {systemStatus.dashboardDataMode}
           </span>
+          <span style={{fontSize:11,color:"#6b7280"}}>
+            Operational {systemStatus.operationalDataStatus}
+          </span>
           {u.universeDiscovered > 0 && (
             <span style={{fontSize:11,color:"#6b7280"}}>
               Universe <strong style={{color:"#9ca3af"}}>{u.universeDiscovered.toLocaleString()}</strong>

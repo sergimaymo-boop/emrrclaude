@@ -129,7 +129,10 @@ export function toTwelveDataSymbol(eodhdSymbol) {
 }
 
 export function toFinnhubSymbol(eodhdSymbol) {
-  return EODHD_TO_FINNHUB[eodhdSymbol] ?? null;
+  if (EODHD_TO_FINNHUB[eodhdSymbol]) return EODHD_TO_FINNHUB[eodhdSymbol];
+  // Generic US stocks: strip .US suffix (e.g. AAPL.US → AAPL)
+  if (eodhdSymbol.endsWith('.US')) return eodhdSymbol.slice(0, -3);
+  return null;
 }
 
 export function toYahooSymbol(eodhdSymbol) {

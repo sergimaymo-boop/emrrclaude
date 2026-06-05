@@ -16,6 +16,7 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
   const cards: [string, string][] = [
     ["Data Mode", systemStatus.dashboardDataMode],
     ["API Status", systemStatus.apiStatus],
+    ["Operational Decision", systemStatus.operationalDataStatus],
     ["Universe", `${u.universeDiscovered.toLocaleString()} assets`],
     ["Operable", u.universeOperable.toLocaleString()],
     ["Final TOP 8", u.finalTop8Count.toLocaleString()],

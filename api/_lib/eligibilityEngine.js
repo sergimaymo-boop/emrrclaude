@@ -60,6 +60,7 @@ export function validateUniverseEligibility({
       // Soft block: 80-259 bars — can score diagnostically, blocks operational EXEC
       // Per MASTER_CODEX: "Entre 80 y 259 sesiones quedan bloqueados para ranking real"
       // but CAN appear as WATCH/diagnostic in the panel
+      blockedReasons.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
       executionBlockedReasons.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
       warnings.push("INSUFFICIENT_HISTORY_FOR_FULL_SCORE");
     }

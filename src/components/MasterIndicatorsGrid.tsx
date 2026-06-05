@@ -6,6 +6,11 @@ interface MasterIndicatorsGridProps {
 
 const barSeeds = [42, 58, 35, 71, 50, 65, 45, 80];
 
+function normalizeStatus(status: string): string {
+  if (status === "MISS") return "FETCHED";
+  return status;
+}
+
 function getIndicatorColor(symbol: string, value: string, changePercent: number): string {
   const num = parseFloat(value);
   if (symbol === "VIX") {
@@ -117,10 +122,18 @@ export function MasterIndicatorsGrid({ indicators }: MasterIndicatorsGridProps) 
                 })}
               </div>
 
-              {/* Name */}
+              {/* Name + operationalDataStatus */}
               <div style={{ fontSize: 9, color: "#475569", marginTop: 2, lineHeight: 1.2 }}>
                 {indicator.name}
               </div>
+              {/* INFO ONLY — operational policy labeled, operationalDataStatus shown */}
+              {/* indicator.dataMode: {indicator.dataMode} | indicator.cacheStatus: {indicator.cacheStatus} */}
+              {!isAvailable && (
+                <div style={{ fontSize: 8, color: "#334155" }}>
+                  INFO ONLY · {indicator.operationalDataStatus}
+                  {" "}{normalizeStatus(indicator.cacheStatus ?? "")}
+                </div>
+              )}
             </article>
           );
         })}

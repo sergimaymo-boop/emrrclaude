@@ -27,11 +27,12 @@ export function ScanStatusPanel({ scanState }: ScanStatusPanelProps) {
         />
       </div>
       <div style={{display:"flex",justifyContent:"space-between",marginTop:8,flexWrap:"wrap",gap:4}}>
+        <span style={{fontSize:10,color:"#6b7280"}}>Coverage {scanState.coveragePercent}%</span>
         {typeof scanState.batchesCompleted === "number" && typeof scanState.batchesTotal === "number" && (
           <span style={{fontSize:10,color:"#6b7280"}}>Batches {scanState.batchesCompleted}/{scanState.batchesTotal}</span>
         )}
         {typeof scanState.actualProviderCalls === "number" && (
-          <span style={{fontSize:10,color:"#6b7280"}}>Calls {scanState.actualProviderCalls}</span>
+          <span style={{fontSize:10,color:"#6b7280"}}>Calls {scanState.actualProviderCalls}/{scanState.estimatedProviderCalls}</span>
         )}
         <span style={{fontSize:10,color:"#6b7280"}}>{scanState.scanExecutionMode}</span>
         <span style={{fontSize:10,color:"#6b7280"}}>{scanState.lastRun.local}</span>

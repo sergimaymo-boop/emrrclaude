@@ -352,7 +352,12 @@ export function buildDashboardTop8FromTop8Status(response: Top8StatusApiResponse
       dataMode: policy.operationalDataStatus === "REAL" ? "REAL" : "DATA_UNAVAILABLE",
       priceDataMode: "DATA_UNAVAILABLE",
       provider: "none",
-      providerSymbol: stringFromUnknown(asset.providerSymbol, ""),
+      providerSymbol: stringFromUnknown(asset.providerSymbol, "") ||
+        (stringFromUnknown(asset.exchange ?? asset.market, "") === "US" ||
+         stringFromUnknown(asset.exchange ?? asset.market, "").toUpperCase() === "NYSE" ||
+         stringFromUnknown(asset.exchange ?? asset.market, "").toUpperCase() === "NASDAQ"
+          ? `${stringFromUnknown(asset.ticker, "")}.US`
+          : stringFromUnknown(asset.ticker, "")),
       currency,
       previousClose: null,
       cacheStatus: "NOT_AVAILABLE",

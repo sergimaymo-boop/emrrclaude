@@ -1,4 +1,5 @@
-import type { Top8Asset } from "../types";
+import type { Top8Asset, DataMode } from "../types";
+// OperationalData types used in Top8Asset fields
 
 function line(char = "─", len = 52): string {
   return char.repeat(len);

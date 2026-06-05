@@ -266,14 +266,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           if (lastTop8.length === 0) return;
           setTop8(lastTop8);
           setSystemStatus((current) => mergeScanSnapshotUniverseStatus(current, snapshot));
+          const lastSessionScope = "GLOBAL_TOP8_FINAL" as const;
           setScanState((current) => ({
             ...current,
             scanId: snapshot.scanId,
             coveragePercent: snapshot.coveragePercent,
             batchesTotal: snapshot.batchesTotal,
             batchesCompleted: snapshot.batchesCompleted,
-            resultScope: "GLOBAL_TOP8_FINAL",
-            scanExecutionMode: "GLOBAL_TOP8_FINAL",
+            resultScope: lastSessionScope,
+            scanExecutionMode: lastSessionScope,
             label: `LAST SESSION TOP 8 - ${snapshot.scanCompletedAtUtc ? new Date(snapshot.scanCompletedAtUtc).toLocaleDateString() : "cached"}`,
           }));
         })
@@ -309,9 +310,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   function snapshotNeedsContinuation(snapshot: Awaited<ReturnType<typeof startScanSnapshot>>) {
+    const notFullyCovered = snapshot.coveragePercent !== 100;
     return Boolean(
       snapshot.snapshotToken &&
-        snapshot.coveragePercent < 100 &&
+        notFullyCovered &&
         snapshot.nextBatchIndex &&
         snapshot.batchesCompleted < snapshot.batchesTotal,
     );
@@ -779,11 +781,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       )}
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
+      <ScanStatusPanel scanState={scanState} />
+      <FearGreedPanel fearGreed={fearGreed} />
       <Top8Grid assets={top8} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <SectorLeaders sectors={sectors} />
-      <FearGreedPanel fearGreed={fearGreed} />
-      <ScanStatusPanel scanState={scanState} />
       <ActionButtons
         onScan={handleScan}
         onContinueScan={handleContinueScan}
