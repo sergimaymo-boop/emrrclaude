@@ -78,7 +78,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.61.1",
     "@upstash/redis": "^1.34.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
