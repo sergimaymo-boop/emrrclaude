@@ -18,18 +18,27 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy to Vercel (force, no cache)
+        id: deploy
         run: |
-          vercel deploy --prod --force \
+          OUTPUT=$(vercel deploy --prod --force \
             --token=${{ secrets.VERCEL_TOKEN }} \
             --yes \
-            2>&1 | tee deploy.log
-          DEPLOY_URL=$(grep -o 'https://[^ ]*\.vercel\.app' deploy.log | head -1)
+            2>&1)
+          echo "$OUTPUT"
+          DEPLOY_URL=$(echo "$OUTPUT" | grep -o 'https://[a-zA-Z0-9_-]*\.vercel\.app' | grep -v 'emrrclaude\.vercel\.app' | head -1)
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL=$(echo "$OUTPUT" | grep -o 'https://emrrclaude-[^[:space:]]*' | head -1)
+          fi
           echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
+          echo "Deployed to: $DEPLOY_URL"
 
       - name: Set production alias
+        if: env.DEPLOY_URL != ''
+        continue-on-error: true
         run: |
-          vercel alias set $DEPLOY_URL emrrclaude.vercel.app \
+          echo "Setting alias: $DEPLOY_URL -> emrrclaude.vercel.app"
+          vercel alias set "$DEPLOY_URL" emrrclaude.vercel.app \
             --token=${{ secrets.VERCEL_TOKEN }} \
-            2>&1
+            2>&1 || echo "Alias already set or skipped"
         env:
           DEPLOY_URL: ${{ env.DEPLOY_URL }}
