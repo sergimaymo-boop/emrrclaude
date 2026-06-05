@@ -558,6 +558,46 @@ async function fetchEodhdHistory(eodhdSymbol, apiKey, lookbackDays) {
 }
 
 /**
+ * BENCHMARK RACE — fetches SPY.US from ALL providers simultaneously.
+ * First valid result wins. No sequential fallback = no timeout risk.
+ * SPY is the most liquid US ETF — available on every provider.
+ * Used to guarantee RS (Relative Strength) is always calculable.
+ */
+export async function raceBenchmarkHistory(lookbackDays = 260, env = {}) {
+  const symbol = "SPY.US";
+  const promises = [];
+
+  if (env.EODHD_API_KEY) {
+    promises.push(fetchEodhdHistory(symbol, env.EODHD_API_KEY, lookbackDays));
+  }
+  if (env.TWELVE_DATA_API_KEY) {
+    promises.push(fetchTwelveDataHistory(symbol, lookbackDays, env.TWELVE_DATA_API_KEY));
+  }
+  promises.push(fetchYahooHistory(symbol, lookbackDays));
+  promises.push(fetchStooqHistory(symbol, lookbackDays));
+
+  // Race all providers: first valid result wins, never waits for slow ones
+  return new Promise((resolve) => {
+    let pending = promises.length;
+    let resolved = false;
+    for (const p of promises) {
+      p.then((r) => {
+        if (!resolved && r.ok && Array.isArray(r.bars) && r.bars.length >= 61) {
+          resolved = true;
+          resolve({ ...r, source: "RACE" });
+        } else {
+          pending -= 1;
+          if (pending === 0 && !resolved) resolve({ ok: false, bars: [], provider: "none", reason: "All benchmark providers failed" });
+        }
+      }).catch(() => {
+        pending -= 1;
+        if (pending === 0 && !resolved) resolve({ ok: false, bars: [], provider: "none", reason: "All benchmark providers threw" });
+      });
+    }
+  });
+}
+
+/**
  * HISTORICAL CASCADE — EODHD → TwelveData+Yahoo (parallel) → Stooq
  * EODHD is primary because it has the best EU+US stock coverage.
  */

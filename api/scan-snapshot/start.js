@@ -7,8 +7,9 @@
  */
 import { buildUniverseResponse } from "../universe.js";
 import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch } from "../_lib/scanSnapshot.js";
-import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
+import { saveLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from "../_lib/kvStorage.js";
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
+import { raceBenchmarkHistory } from "../_lib/providerCascade.js";
 import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { calculateTechnicals } from "../_lib/technicalEngine.js";
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
@@ -129,12 +130,27 @@ export default async function handler(request, response) {
   const batch = allOperable.slice(0, batchSize);
   const now = new Date();
 
-  // Fetch SPY benchmark
+  // Fetch SPY benchmark — Redis cache (4h TTL) + parallel race across ALL providers
+  // This guarantees RS (Relative Strength) is always calculable, never falls back to neutral 50
   let benchmarkBars = [];
   try {
-    const spyResult = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL);
-    if (spyResult.ok) benchmarkBars = spyResult.bars;
-  } catch { /* no benchmark */ }
+    // 1. Try Redis cache first (fast, <50ms)
+    const cached = await loadBenchmarkBars();
+    if (cached) {
+      benchmarkBars = cached;
+    } else {
+      // 2. Cache miss → race ALL 4 providers simultaneously (fastest wins, no timeout risk)
+      const env = process.env;
+      const spyResult = await raceBenchmarkHistory(270, {
+        EODHD_API_KEY:       env.EODHD_API_KEY,
+        TWELVE_DATA_API_KEY: env.TWELVE_DATA_API_KEY,
+      });
+      if (spyResult.ok && spyResult.bars.length >= 61) {
+        benchmarkBars = spyResult.bars;
+        saveBenchmarkBars(benchmarkBars); // async, fire-and-forget
+      }
+    }
+  } catch { /* no benchmark — RS will use neutral 50 */ }
 
   // 4. Evaluate ALL assets IN PARALLEL — reduces time from N×T to max(T)
   const assetResults = await Promise.all(

@@ -61,3 +61,30 @@ export async function loadLastRallySnapshot() {
     return null;
   }
 }
+
+// ─── SPY Benchmark cache (4h TTL) — ensures RS is always calculable ───────────
+const KV_SPY_KEY = "benchmark_spy_bars";
+const KV_SPY_TTL_SECONDS = 4 * 60 * 60; // 4 hours
+
+export async function saveBenchmarkBars(bars) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(KV_SPY_KEY, { bars, cachedAtUtc: new Date().toISOString() }, { ex: KV_SPY_TTL_SECONDS });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function loadBenchmarkBars() {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    const data = await redis.get(KV_SPY_KEY);
+    if (!data || !Array.isArray(data.bars) || data.bars.length < 61) return null;
+    return data.bars;
+  } catch {
+    return null;
+  }
+}

@@ -7,7 +7,8 @@ import { isEligibleForUniverse, mapUniverseAsset, PROVIDER_EXCHANGES } from "../
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
 import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
-import { saveLastScanSnapshot } from "../_lib/kvStorage.js";
+import { saveLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from "../_lib/kvStorage.js";
+import { raceBenchmarkHistory } from "../_lib/providerCascade.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_CONTINUE";
@@ -100,9 +101,24 @@ export default async function handler(request, response) {
   }
   const batch = allOperable.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize);
 
-  // Fetch benchmark
+  // Fetch SPY benchmark — Redis cache (4h TTL) + parallel race, same as start.js
   let benchmarkBars = [];
-  try { const r = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL); if (r.ok) benchmarkBars = r.bars; } catch {}
+  try {
+    const cached = await loadBenchmarkBars();
+    if (cached) {
+      benchmarkBars = cached;
+    } else {
+      const env = process.env;
+      const spyResult = await raceBenchmarkHistory(270, {
+        EODHD_API_KEY:       env.EODHD_API_KEY,
+        TWELVE_DATA_API_KEY: env.TWELVE_DATA_API_KEY,
+      });
+      if (spyResult.ok && spyResult.bars.length >= 61) {
+        benchmarkBars = spyResult.bars;
+        saveBenchmarkBars(benchmarkBars); // async, fire-and-forget
+      }
+    }
+  } catch { /* RS will use neutral 50 if all providers fail */ }
 
   // Evaluate batch — ALL assets fetched IN PARALLEL (not sequential)
   // This reduces time from batchSize×callTime to max(callTime)
