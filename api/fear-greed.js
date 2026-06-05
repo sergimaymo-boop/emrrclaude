@@ -76,10 +76,22 @@ export default async function handler(req, res) {
 
     // Extract values — fall back to neutral if unavailable
     const vixValue  = vixResult.ok   ? vixResult.price      : null;
-    const spyChange = spyResult.ok   ? spyResult.changePercent : null;
-    const hygChange = hygResult.ok   ? hygResult.changePercent : null;
     const moveValue = moveResult.ok  ? moveResult.price     : null;
     const vvixValue = vvixResult.ok  ? vvixResult.price     : null;
+
+    // For SPY/HYG: prefer changePercent, but if 0 (closed market) calculate from price/previousClose
+    function resolveChange(result) {
+      if (!result.ok) return null;
+      const change = result.changePercent;
+      if (change !== null && change !== 0) return change;
+      // If change is 0 but we have price and previousClose, calculate it
+      if (result.price && result.previousClose && result.previousClose !== 0) {
+        return ((result.price - result.previousClose) / result.previousClose) * 100;
+      }
+      return change; // might be 0 or null
+    }
+    const spyChange = resolveChange(spyResult);
+    const hygChange = resolveChange(hygResult);
 
     // Individual component scores (null = use neutral 50)
     const sVix  = vixValue  !== null ? vixScore(vixValue)   : 50;

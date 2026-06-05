@@ -41,13 +41,16 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
         <strong>{marketSummary(systemStatus.marketMode)}</strong>
       </div>
       <div className="mini-market-strip" aria-label="Market status">
-        <span className={`market-pill market-pill-${markets.europe.toLowerCase()}`}>
-          <b>Europe</b>
-          <strong>{markets.europe}</strong>
+        {/* Small market pills — scan buttons are the priority */}
+        <span className={`market-pill market-pill-${markets.europe.toLowerCase()}`}
+          style={{ minWidth: 80, minHeight: 30, fontSize: 9, padding: "4px 8px" }}>
+          <b style={{ fontSize: 9 }}>EU</b>
+          <strong style={{ fontSize: 9 }}>{markets.europe}</strong>
         </span>
-        <span className={`market-pill market-pill-${markets.us.toLowerCase()}`}>
-          <b>United States</b>
-          <strong>{markets.us}</strong>
+        <span className={`market-pill market-pill-${markets.us.toLowerCase()}`}
+          style={{ minWidth: 80, minHeight: 30, fontSize: 9, padding: "4px 8px" }}>
+          <b style={{ fontSize: 9 }}>EEUU</b>
+          <strong style={{ fontSize: 9 }}>{markets.us}</strong>
         </span>
       </div>
       <span className={`badge health-badge ${healthClass(systemStatus.health)}`}>
@@ -64,7 +67,8 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
             background: "linear-gradient(135deg, #c8961e 0%, #a07214 100%)",
             border: "1px solid rgba(255,200,80,0.4)",
             borderBottom: "3px solid #7a5510",
-            minWidth: 110,
+            minWidth: 108,
+            minHeight: 38,
             fontSize: 12,
             fontWeight: 900,
             letterSpacing: "0.06em",
@@ -107,7 +111,8 @@ export function StickyMiniHeader({ systemStatus, onScan, isScanning, onScanRally
             background: "linear-gradient(135deg, #d4a820 0%, #b8860b 100%)",
             border: "1px solid rgba(255,210,90,0.4)",
             borderBottom: "3px solid #8b6508",
-            minWidth: 110,
+            minWidth: 108,
+            minHeight: 38,
             fontSize: 12,
             fontWeight: 900,
             letterSpacing: "0.06em",

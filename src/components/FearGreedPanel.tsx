@@ -90,22 +90,28 @@ export function FearGreedPanel({ fearGreed }: { fearGreed: any }) {
             <span style={{ fontSize: 8, color: "#64748b", fontWeight: 700 }}>/ 100</span>
           </div>
         </div>
-        {/* Label + components */}
+        {/* Label + component SCORES (not raw values) */}
         <div>
-          <div style={{ fontSize: 16, fontWeight: 900, color, marginBottom: 4 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color, marginBottom: 6 }}>
             {fgData.label ?? fgData.rating}
           </div>
-          <div style={{ fontSize: 10, color: "#475569", lineHeight: 1.6 }}>
-            {fgData.components &&
-              Object.entries(fgData.components).map(([k, v]) => (
-                <div key={k}>
-                  {k}:{" "}
-                  <span style={{ color: "#94a3b8" }}>
-                    {v === null ? "N/A" : typeof v === "number" ? v.toFixed(0) : String(v)}
-                  </span>
-                </div>
-              ))}
-          </div>
+          {(fgData as any).componentScores && (
+            <div style={{ fontSize: 10, color: "#475569", lineHeight: 1.7 }}>
+              {Object.entries((fgData as any).componentScores).map(([k, v]) => {
+                const score = v as number;
+                const barColor = score >= 60 ? "#10b981" : score >= 40 ? "#eab308" : "#ef4444";
+                return (
+                  <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ minWidth: 38, fontSize: 9, fontWeight: 700, color: "#6b7280" }}>{k}</span>
+                    <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
+                      <div style={{ width: `${score}%`, height: "100%", background: barColor, borderRadius: 2 }} />
+                    </div>
+                    <span style={{ minWidth: 22, fontSize: 9, color: "#94a3b8", textAlign: "right" }}>{score}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </section>

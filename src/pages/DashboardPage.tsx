@@ -780,9 +780,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         </div>
       )}
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
-      <MasterIndicatorsGrid indicators={masterIndicators} />
       <ScanStatusPanel scanState={scanState} />
       <FearGreedPanel fearGreed={fearGreed} />
+      <MasterIndicatorsGrid indicators={masterIndicators} />
       <Top8Grid assets={top8} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <SectorLeaders sectors={sectors} />

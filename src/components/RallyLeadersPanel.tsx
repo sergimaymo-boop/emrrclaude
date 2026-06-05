@@ -7,22 +7,21 @@ interface RallyLeadersPanelProps {
 
 function RallyScoreBadge({ score, label, color }: { score: number; label: string; color: string }) {
   return (
-    <span style={{
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 4,
-      padding: "2px 8px",
-      borderRadius: 999,
-      fontSize: 9,
-      fontWeight: 800,
-      letterSpacing: "0.06em",
-      textTransform: "uppercase",
-      background: `${color}18`,
-      border: `1px solid ${color}40`,
-      color,
+    <div style={{
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      width: 72, minHeight: 72,
+      borderRadius: "50%",
+      background: `${color}15`,
+      border: `2px solid ${color}50`,
+      padding: 4,
+      textAlign: "center",
     }}>
-      {score} · {label}
-    </span>
+      <span style={{ fontSize: 16, fontWeight: 900, color, lineHeight: 1 }}>{score}</span>
+      <span style={{ fontSize: 7, fontWeight: 800, color: `${color}cc`, letterSpacing: "0.04em", marginTop: 2, lineHeight: 1.2 }}>
+        {label.replace(" RALLY", "").replace("ELITE", "ÉLITE")}
+      </span>
+    </div>
   );
 }
 
@@ -49,10 +48,10 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
   return (
     <article style={{
       display: "grid",
-      gridTemplateColumns: "26px minmax(0,1.4fr) minmax(0,0.9fr) minmax(0,0.9fr) 64px 92px",
+      gridTemplateColumns: "24px minmax(0,1.6fr) 60px 52px 76px",
       gap: 8,
       alignItems: "center",
-      padding: "10px 14px",
+      padding: "8px 12px",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
       transition: "background 150ms",
     }}
@@ -89,27 +88,24 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
         </div>
       </div>
 
-      {/* RS 3M */}
-      <div>
-        <div style={{ fontSize: 8, color: "#475569", fontWeight: 700, marginBottom: 3, textTransform: "uppercase" }}>RS 3M</div>
-        <MiniBar value={m?.rs3m ?? null} max={40} color="#6366f1" />
-      </div>
-
-      {/* Trailing Stop */}
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 8, color: "#475569", fontWeight: 700, marginBottom: 3, textTransform: "uppercase" }}>STOP</div>
-        <div style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "#fbbf24",
-          fontVariantNumeric: "tabular-nums",
-        }}>
-          {trailing !== null ? `${trailing.toFixed(1)}%` : "—"}
+      {/* RS 3M + Trailing stop stacked */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <div>
+          <div style={{ fontSize: 7, color: "#475569", fontWeight: 700, textTransform: "uppercase" }}>RS 3M</div>
+          <div style={{ fontSize: 10, color: "#818cf8", fontWeight: 700 }}>
+            {m?.rs3m !== null && m?.rs3m !== undefined ? `${m.rs3m > 0 ? "+" : ""}${m.rs3m.toFixed(1)}%` : "—"}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 7, color: "#475569", fontWeight: 700, textTransform: "uppercase" }}>STOP</div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#fbbf24" }}>
+            {trailing !== null ? `${trailing.toFixed(1)}%` : "—"}
+          </div>
         </div>
       </div>
 
-      {/* Rally Score */}
-      <div style={{ textAlign: "right" }}>
+      {/* Rally Score circle — centered */}
+      <div style={{ display: "flex", justifyContent: "center" }}>
         <RallyScoreBadge score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
       </div>
     </article>
@@ -206,14 +202,14 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
         <>
           <div style={{
             display: "grid",
-            gridTemplateColumns: "26px minmax(0,1.4fr) minmax(0,0.9fr) minmax(0,0.9fr) 64px 92px",
+            gridTemplateColumns: "24px minmax(0,1.6fr) 60px 52px 76px",
             gap: 8,
-            padding: "6px 14px",
+            padding: "6px 12px",
             borderBottom: "1px solid rgba(255,255,255,0.06)",
             marginBottom: 2,
           }}>
-            {["#", "ACTIVO", "PRECIO / DÍA", "RS 3M", "STOP", "RALLY SCORE"].map(h => (
-              <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: h === "PRECIO / DÍA" || h === "RALLY SCORE" ? "right" : h === "STOP" ? "center" : "left" }}>
+            {["#", "ACTIVO", "PRECIO/DÍA", "RS·STOP", "SCORE"].map(h => (
+              <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h === "SCORE" ? "center" : "left" }}>
                 {h}
               </span>
             ))}
