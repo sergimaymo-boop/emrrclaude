@@ -1,7 +1,11 @@
 /**
  * Rally Leaders Engine — batch processor (shared between start and continue)
+ * IMPORTANT: assets are processed IN PARALLEL (Promise.all), NOT sequentially.
+ * Sequential processing at 80 assets × 7s timeout = 560s → Vercel timeout at 10s.
  */
 import { fetchEodhdHistoricalBars } from "./historicalDataProvider.js";
+import { loadBenchmarkBars, saveBenchmarkBars } from "./kvStorage.js";
+import { raceBenchmarkHistory } from "./providerCascade.js";
 import { calculateRallyScore } from "./rallyScoreEngine.js";
 
 const MAX_TOP_CANDIDATES = 10;
@@ -20,59 +24,74 @@ export function mergeRallyCandidates(existing, newOnes) {
     .slice(0, MAX_TOP_CANDIDATES);
 }
 
+// SPY benchmark — Redis cache (4h TTL) + parallel race across all providers
 export async function fetchSpyBars() {
   try {
-    const r = await fetchEodhdHistoricalBars(BENCHMARK_SYMBOL, { fromDate: null });
-    return r.ok ? r.bars : [];
+    const cached = await loadBenchmarkBars();
+    if (cached) return cached;
+
+    const env = process.env;
+    const result = await raceBenchmarkHistory(270, {
+      EODHD_API_KEY:       env.EODHD_API_KEY,
+      TWELVE_DATA_API_KEY: env.TWELVE_DATA_API_KEY,
+    });
+    if (result.ok && result.bars.length >= 61) {
+      saveBenchmarkBars(result.bars); // fire-and-forget
+      return result.bars;
+    }
+    return [];
   } catch {
     return [];
   }
 }
 
+// PARALLEL batch — all assets fetched simultaneously, not one-by-one
 export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, existingCandidates, spyBars, minScore = 60 }) {
   const batch = eligibleAssets.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
-  const newCandidates = [];
-  let providerCalls = 0;
 
-  for (const asset of batch) {
-    try {
-      const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
-      providerCalls++;
-      if (!histResult.ok || histResult.bars.length < 130) continue;
+  // Process ALL assets in parallel — critical to stay within 10s Vercel limit
+  const results = await Promise.all(
+    batch.map(async (asset) => {
+      try {
+        const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
+        if (!histResult.ok || histResult.bars.length < 130) return null;
 
-      const rallyResult = calculateRallyScore({
-        bars: histResult.bars,
-        spyBars,
-        spreadPercent: null,
-        region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
-      });
+        const rallyResult = calculateRallyScore({
+          bars: histResult.bars,
+          spyBars,
+          spreadPercent: null,
+          region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
+        });
 
-      if (!rallyResult.ok || rallyResult.rallyScore < minScore) continue;
+        if (!rallyResult.ok || rallyResult.rallyScore < minScore) return null;
 
-      newCandidates.push({
-        rank: 0,
-        ticker: asset.ticker ?? asset.providerSymbol.split(".")[0],
-        name: asset.name ?? asset.ticker ?? asset.providerSymbol.split(".")[0],
-        market: asset.market ?? asset.providerExchange ?? "",
-        exchange: asset.exchange ?? asset.providerExchange ?? "",
-        currency: asset.currency ?? "USD",
-        providerSymbol: asset.providerSymbol,
-        rallyScore: rallyResult.rallyScore,
-        rallyLabel: rallyResult.label,
-        rallyColor: rallyResult.color,
-        trailingStop: rallyResult.trailingStop,
-        metrics: rallyResult.metrics,
-        dataMode: "REAL",
-        dataQuality: "GOOD",
-        scanId: null,
-      });
-    } catch {
-      // skip asset on error
-    }
-  }
+        return {
+          rank: 0,
+          ticker: asset.ticker ?? asset.providerSymbol.split(".")[0],
+          name: asset.name ?? asset.ticker ?? asset.providerSymbol.split(".")[0],
+          market: asset.market ?? asset.providerExchange ?? "",
+          exchange: asset.exchange ?? asset.providerExchange ?? "",
+          currency: asset.currency ?? "USD",
+          providerSymbol: asset.providerSymbol,
+          rallyScore: rallyResult.rallyScore,
+          rallyLabel: rallyResult.label,
+          rallyColor: rallyResult.color,
+          trailingStop: rallyResult.trailingStop,
+          metrics: rallyResult.metrics,
+          dataMode: "REAL",
+          dataQuality: "GOOD",
+          scanId: null,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const newCandidates = results.filter(Boolean);
 
   return {
     candidates: mergeRallyCandidates(existingCandidates, newCandidates),
-    providerCalls,
+    providerCalls: batch.length,
   };
 }

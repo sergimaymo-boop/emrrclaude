@@ -109,10 +109,9 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 <div className="asset-symbol-row">
                   <strong>{asset.ticker}</strong>
                   <Badge token={actionToken(asset.action)}>{displayAction(asset.action)}</Badge>
-                  <Badge token={dataModeToken(asset.dataMode)}>{asset.dataMode}</Badge>
-                  <Badge token={operationalStatusToken(asset.operationalDataStatus)}>
-                    {asset.operationalDataStatus}
-                  </Badge>
+                  {asset.dataMode !== "REAL" && (
+                    <Badge token={dataModeToken(asset.dataMode)}>{asset.dataMode}</Badge>
+                  )}
                 </div>
                 <span>{asset.name}</span>
               </div>
@@ -178,10 +177,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 <span>{asset.dataQuality}</span>
                 <span>{asset.provider === "none" ? "no provider" : asset.provider}</span>
                 <span>{asset.resultScope}</span>
-                <span>{asset.operationalDecisionAllowed ? "OPERATIONAL" : "NO OPERATION"}</span>
                 <span>{asset.priceTimestamp.local}</span>
-                {asset.execDisabledReason ? <span>{asset.execDisabledReason}</span> : null}
-                {asset.operationalBlockReasons.length > 0 ? <span>{asset.operationalBlockReasons[0]}</span> : null}
               </div>
             </article>
           );
