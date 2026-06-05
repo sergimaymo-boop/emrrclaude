@@ -783,8 +783,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ScanStatusPanel scanState={scanState} />
       <FearGreedPanel fearGreed={fearGreed} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
-      <Top8Grid assets={top8} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
+      <Top8Grid assets={top8} />
       <SectorLeaders sectors={sectors} />
       <ActionButtons
         onScan={handleScan}
