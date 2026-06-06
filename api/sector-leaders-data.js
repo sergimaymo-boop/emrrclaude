@@ -11,17 +11,19 @@
 
 // ─── INTRADAY: Sectors with ETFs and top holdings ────────────────────────────
 
+// Holdings: S&P500 stocks only (all in our 606-stock universe)
+// 6 candidates per sector → pick the ONE with highest intraday % change
 const FLOW_SECTORS = [
-  { key: "defense",    name: "Defensa",         etf: "ITA",  holdings: ["LMT","RTX","NOC","GD","LHX"] },
-  { key: "utilities",  name: "Utilities",        etf: "XLU",  holdings: ["NEE","SO","DUK","AEP","SRE"] },
-  { key: "staples",    name: "Consumo Básico",   etf: "XLP",  holdings: ["PG","KO","PEP","COST","WMT"] },
-  { key: "gold",       name: "Oro / Metales",    etf: "GLD",  holdings: ["GOLD","NEM","AEM","WPM","FNV"] },
-  { key: "healthcare", name: "Salud",             etf: "XLV",  holdings: ["UNH","LLY","JNJ","ABBV","MRK"] },
-  { key: "semis",      name: "Semiconductores",  etf: "SOXX", holdings: ["NVDA","AMD","INTC","QCOM","AVGO"] },
-  { key: "software",   name: "Software / IA",    etf: "IGV",  holdings: ["MSFT","ORCL","CRM","NOW","INTU"] },
-  { key: "banks",      name: "Bancos",           etf: "KBE",  holdings: ["JPM","BAC","WFC","C","GS"] },
-  { key: "energy",     name: "Energía",          etf: "XLE",  holdings: ["XOM","CVX","COP","EOG","SLB"] },
-  { key: "tech",       name: "Tecnología",       etf: "XLK",  holdings: ["AAPL","MSFT","NVDA","AVGO","ORCL"] },
+  { key: "defense",    name: "Defensa",         etf: "ITA",  holdings: ["LMT","RTX","NOC","GD","LHX","HII"] },
+  { key: "utilities",  name: "Utilities",        etf: "XLU",  holdings: ["NEE","SO","DUK","AEP","SRE","EXC"] },
+  { key: "staples",    name: "Consumo Básico",   etf: "XLP",  holdings: ["PG","KO","PEP","COST","WMT","CL"] },
+  { key: "gold",       name: "Oro / Metales",    etf: "GLD",  holdings: ["NEM","GOLD","FCX","AEM","WPM","FNV"] },
+  { key: "healthcare", name: "Salud",             etf: "XLV",  holdings: ["UNH","LLY","JNJ","ABBV","MRK","TMO"] },
+  { key: "semis",      name: "Semiconductores",  etf: "SOXX", holdings: ["NVDA","AMD","INTC","QCOM","AVGO","TXN"] },
+  { key: "software",   name: "Software / IA",    etf: "IGV",  holdings: ["MSFT","ORCL","CRM","NOW","INTU","ADBE"] },
+  { key: "banks",      name: "Bancos",           etf: "KBE",  holdings: ["JPM","BAC","WFC","C","GS","MS"] },
+  { key: "energy",     name: "Energía",          etf: "XLE",  holdings: ["XOM","CVX","COP","EOG","SLB","MPC"] },
+  { key: "tech",       name: "Tecnología",       etf: "XLK",  holdings: ["AAPL","MSFT","NVDA","AVGO","ORCL","ACN"] },
 ];
 
 // ─── EOD: Original sector leaders (unchanged) ─────────────────────────────────
@@ -198,29 +200,33 @@ async function handleIntraday(res) {
     .sort((a, b) => b.flowScore - a.flowScore)
     .map((s, i) => ({ ...s, rank: i + 1 }));
 
-  // 3. For top 2 inflow + bottom 1 outflow sectors: fetch individual movers
-  const inflow  = sectors.slice(0, 2);
-  const outflow = sectors.slice(-1);
-  const moversNeeded = [...new Set([...inflow, ...outflow])];
-
+  // 3. Fetch top stock for ALL sectors in parallel
+  // Each sector: fetch all holdings, pick the ONE with highest intraday % (green) or lowest (red)
+  // All are S&P500 stocks — in our 606-stock universe
   const moverResults = await Promise.all(
-    moversNeeded.map(sector =>
-      Promise.all(sector.holdings.slice(0, 3).map(fetchStockQuote))
-        .then(quotes => ({
-          key: sector.key,
-          movers: quotes
-            .filter(Boolean)
-            .sort((a, b) => b.change - a.change)
-            .slice(0, 3),
-        }))
+    sectors.map(sector =>
+      Promise.all(sector.holdings.map(fetchStockQuote))
+        .then(quotes => {
+          const valid = quotes.filter(Boolean);
+          const sectorPositive = sector.intradayChange >= 0;
+          // For green sectors: pick highest gainer; for red sectors: pick highest gainer too
+          // (shows the stock holding up best or leading the move)
+          const sorted = valid.sort((a, b) => b.change - a.change);
+          return {
+            key: sector.key,
+            // topMover: the single best stock to watch in this sector today
+            topMover: sorted[0] ?? null,
+          };
+        })
     )
   );
 
-  // Inject movers into sectors
-  const moverMap = Object.fromEntries(moverResults.map(r => [r.key, r.movers]));
+  // Inject single best mover into each sector
+  const moverMap = Object.fromEntries(moverResults.map(r => [r.key, r.topMover]));
   const enrichedSectors = sectors.map(s => ({
     ...s,
-    topMovers: moverMap[s.key] ?? [],
+    topMover: moverMap[s.key] ?? null,   // ONE stock: best candidate in this sector today
+    topMovers: moverMap[s.key] ? [moverMap[s.key]] : [], // keep array for backward compat
   }));
 
   // 4. Determine if market is actually open (US Eastern time)

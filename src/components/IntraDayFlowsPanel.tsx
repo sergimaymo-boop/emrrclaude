@@ -20,7 +20,8 @@ interface SectorFlow {
   relativeVolume: number;
   flowScore: number;
   direction: "STRONG_IN" | "IN" | "NEUTRAL" | "OUT" | "STRONG_OUT";
-  topMovers: StockMover[];
+  topMover: StockMover | null;    // single best stock in this sector today
+  topMovers: StockMover[];        // backward compat (same as [topMover])
 }
 
 export interface IntraDayFlowsState {
@@ -77,72 +78,68 @@ function fmt(v: number, digits = 2): string {
 
 function SectorTile({ sector }: { sector: SectorFlow }) {
   const c = tileColors(sector.intradayChange);
-  const topMover = sector.topMovers[0];
+  const m = sector.topMover;
 
   return (
     <div style={{
       background: c.bg,
       border: `1px solid ${c.border}`,
       borderRadius: 12,
-      padding: "12px 10px 10px",
+      padding: "11px 10px 10px",
       display: "flex",
       flexDirection: "column",
-      gap: 4,
-      minHeight: 90,
+      gap: 3,
+      minHeight: 100,
       position: "relative",
-      transition: "opacity 200ms",
     }}>
       {/* Rank badge */}
       <span style={{
-        position: "absolute", top: 7, right: 8,
+        position: "absolute", top: 7, right: 9,
         fontSize: 9, fontWeight: 700, color: c.textSecondary,
       }}>
         #{sector.rank}
       </span>
 
-      {/* Sector name */}
-      <div style={{
-        fontSize: 11, fontWeight: 800, color: c.textPrimary,
-        lineHeight: 1.2, paddingRight: 18,
-      }}>
+      {/* Sector name + ETF */}
+      <div style={{ fontSize: 10, fontWeight: 800, color: c.textPrimary, lineHeight: 1.2, paddingRight: 18 }}>
         {sector.name}
       </div>
-
-      {/* ETF label */}
       <div style={{ fontSize: 8, fontWeight: 600, color: c.textSecondary, letterSpacing: "0.05em" }}>
         {sector.etf}
       </div>
 
-      {/* BIG % change — hero number */}
+      {/* BIG sector % — hero */}
       <div style={{
-        fontSize: 20, fontWeight: 900, color: c.textPrimary,
+        fontSize: 19, fontWeight: 900, color: c.textPrimary,
         letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums",
-        lineHeight: 1, marginTop: 2,
+        lineHeight: 1, marginTop: 3,
       }}>
         {fmt(sector.intradayChange)}
       </div>
 
-      {/* Top mover */}
-      {topMover && (
-        <div style={{
-          marginTop: "auto",
-          fontSize: 10, fontWeight: 700,
-          color: c.textSecondary,
-          display: "flex", alignItems: "center", gap: 4,
-        }}>
-          <span style={{ fontWeight: 900, color: c.textPrimary }}>{topMover.ticker}</span>
-          <span>{fmt(topMover.change)}</span>
-        </div>
-      )}
+      {/* Divider */}
+      <div style={{ height: 1, background: `${c.border}40`, margin: "4px 0 3px" }} />
 
-      {/* RVol indicator (subtle dot) */}
-      {sector.relativeVolume >= 2 && (
-        <div style={{
-          position: "absolute", bottom: 8, right: 9,
-          fontSize: 8, fontWeight: 700, color: c.textSecondary,
-        }}>
-          Vol {sector.relativeVolume.toFixed(1)}x
+      {/* TOP STOCK — the ONE to watch */}
+      {m ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: c.textPrimary, letterSpacing: "0.04em" }}>
+              {m.ticker}
+            </div>
+            <div style={{ fontSize: 8, fontWeight: 600, color: c.textSecondary }}>
+              mejor hoy
+            </div>
+          </div>
+          <div style={{
+            fontSize: 13, fontWeight: 900, color: c.textPrimary,
+            fontVariantNumeric: "tabular-nums",
+          }}>
+            {fmt(m.change)}
+          </div>
         </div>
+      ) : (
+        <div style={{ fontSize: 9, color: c.textSecondary }}>—</div>
       )}
     </div>
   );
@@ -152,50 +149,56 @@ function SectorTile({ sector }: { sector: SectorFlow }) {
 
 function DetailRow({ sector }: { sector: SectorFlow }) {
   const c = tileColors(sector.intradayChange);
-  const isPositive = sector.intradayChange >= 0;
+  const m = sector.topMover;
 
   return (
     <div style={{
-      display: "flex",
-      alignItems: "center",
-      padding: "8px 12px",
-      borderRadius: 10,
+      display: "flex", alignItems: "center",
+      padding: "9px 12px", borderRadius: 10,
       background: "rgba(255,255,255,0.025)",
       border: `1px solid ${c.border}30`,
       gap: 10,
     }}>
       {/* Colored left accent */}
-      <div style={{
-        width: 3, height: 36, borderRadius: 2,
-        background: c.border, flexShrink: 0,
-      }} />
+      <div style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: c.border, flexShrink: 0 }} />
 
-      {/* Name + ETF */}
+      {/* Rank */}
+      <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", minWidth: 18, flexShrink: 0 }}>
+        #{sector.rank}
+      </span>
+
+      {/* Sector name + ETF */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9" }}>{sector.name}</div>
-        <div style={{ display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-          {sector.topMovers.map(m => (
-            <span key={m.ticker} style={{
-              fontSize: 10, fontWeight: 700,
-              color: m.change >= 0 ? "#34d399" : "#f87171",
-            }}>
-              {m.ticker} {fmt(m.change)}
-            </span>
-          ))}
+        <div style={{ fontSize: 8, color: "#475569", marginTop: 1 }}>
+          {sector.etf} · 30m {fmt(sector.change30min)} · Vol {sector.relativeVolume.toFixed(1)}x
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ textAlign: "right", flexShrink: 0 }}>
+      {/* TOP STOCK — one, prominent */}
+      {m && (
         <div style={{
-          fontSize: 16, fontWeight: 900, color: c.textPrimary,
-          fontVariantNumeric: "tabular-nums",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          padding: "4px 10px", borderRadius: 8,
+          background: `${c.border}20`,
+          border: `1px solid ${c.border}40`,
+          flexShrink: 0,
         }}>
+          <span style={{ fontSize: 12, fontWeight: 900, color: c.textPrimary, letterSpacing: "0.04em" }}>
+            {m.ticker}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 800, color: c.textPrimary, fontVariantNumeric: "tabular-nums" }}>
+            {fmt(m.change)}
+          </span>
+        </div>
+      )}
+
+      {/* Sector % */}
+      <div style={{ textAlign: "right", flexShrink: 0, minWidth: 52 }}>
+        <div style={{ fontSize: 15, fontWeight: 900, color: c.textPrimary, fontVariantNumeric: "tabular-nums" }}>
           {fmt(sector.intradayChange)}
         </div>
-        <div style={{ fontSize: 9, color: "#475569", marginTop: 1 }}>
-          30m {fmt(sector.change30min)} · Vol {sector.relativeVolume.toFixed(1)}x
-        </div>
+        <div style={{ fontSize: 8, color: "#475569" }}>sector</div>
       </div>
     </div>
   );
