@@ -1,167 +1,119 @@
 import type { SystemStatus } from "../types";
 
+// Scan phase shown inside the button
+export type ScanPhase =
+  | "idle"
+  | "flows"    // step 1/3
+  | "rally"    // step 2/3
+  | "full"     // step 3/3
+  | "done";
+
 interface StickyMiniHeaderProps {
   systemStatus: SystemStatus;
-  onScan: () => void;
-  isScanning: boolean;
-  onScanRally: () => void;
-  isRallyScanning: boolean;
-  onScanFlows: () => void;
-  isFlowsScanning: boolean;
+  onScanAll: () => void;
+  scanPhase: ScanPhase;
   onLogout: () => void;
 }
 
 function marketStates(marketMode: SystemStatus["marketMode"]) {
   return {
     europe: marketMode === "EU_OPEN" || marketMode === "BOTH_OPEN" ? "OPEN" : "CLOSED",
-    us: marketMode === "US_OPEN" || marketMode === "BOTH_OPEN" ? "OPEN" : "CLOSED",
+    us:     marketMode === "US_OPEN" || marketMode === "BOTH_OPEN" ? "OPEN" : "CLOSED",
   };
 }
 
-// ─── OLD GOLD — color único para los 3 botones de scan ───────────────────────
-const GOLD = {
-  bg:     "linear-gradient(160deg, #c9a227 0%, #9a7510 60%, #7a5c0a 100%)",
-  border: "1px solid rgba(201,162,39,0.55)",
-  bbot:   "3px solid #5a3f05",
-  text:   "#fef9e6",
-  shadow: "0 5px 20px rgba(180,130,10,0.45), 0 2px 6px rgba(0,0,0,0.4)",
-  shadowPress: "0 1px 5px rgba(180,130,10,0.2)",
-  pulse:  "#fde68a",
-};
-
-const SCAN_BTN: React.CSSProperties = {
-  flex: 1,
-  minHeight: 52,
-  padding: "0 8px",
-  background: GOLD.bg,
-  border: GOLD.border,
-  borderBottom: GOLD.bbot,
-  borderRadius: 10,
-  color: GOLD.text,
-  fontSize: 12,
-  fontWeight: 900,
-  letterSpacing: "0.10em",
-  textTransform: "uppercase" as const,
-  boxShadow: GOLD.shadow,
-  cursor: "pointer",
-  transition: "transform 80ms ease, box-shadow 80ms ease, border-bottom 80ms ease, opacity 150ms",
-  WebkitTapHighlightColor: "transparent",
-  touchAction: "manipulation",
-  display: "flex",
-  flexDirection: "column" as const,
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 3,
-};
-
-function pressDown(e: React.PointerEvent<HTMLButtonElement>) {
-  e.currentTarget.style.transform = "translateY(2px)";
-  e.currentTarget.style.borderBottom = "1px solid #5a3f05";
-  e.currentTarget.style.boxShadow = GOLD.shadowPress;
-}
-function pressUp(e: React.PointerEvent<HTMLButtonElement>) {
-  e.currentTarget.style.transform = "";
-  e.currentTarget.style.borderBottom = GOLD.bbot;
-  e.currentTarget.style.boxShadow = GOLD.shadow;
-}
-
-// ─── Market indicator ─────────────────────────────────────────────────────────
 function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED" }) {
   const open = status === "OPEN";
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 5,
-      padding: "4px 10px", borderRadius: 999,
-      background: open ? "rgba(16,185,129,0.12)" : "rgba(100,116,139,0.12)",
-      border: `1px solid ${open ? "rgba(16,185,129,0.3)" : "rgba(100,116,139,0.25)"}`,
+      padding: "3px 9px", borderRadius: 999,
+      background: open ? "rgba(16,185,129,0.10)" : "rgba(100,116,139,0.10)",
+      border: `1px solid ${open ? "rgba(16,185,129,0.25)" : "rgba(100,116,139,0.20)"}`,
     }}>
       <span style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: open ? "#10b981" : "#64748b",
-        boxShadow: open ? "0 0 6px #10b981" : "none",
-        flexShrink: 0,
+        width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+        background: open ? "#10b981" : "#475569",
+        boxShadow: open ? "0 0 5px #10b981" : "none",
       }} />
-      <span style={{ fontSize: 9, fontWeight: 800, color: open ? "#10b981" : "#64748b", letterSpacing: "0.05em" }}>
+      <span style={{ fontSize: 9, fontWeight: 800, color: open ? "#10b981" : "#475569", letterSpacing: "0.04em" }}>
         {label}
       </span>
-      <span style={{ fontSize: 9, fontWeight: 700, color: open ? "#34d399" : "#475569" }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color: open ? "#34d399" : "#374151" }}>
         {status}
       </span>
     </div>
   );
 }
 
-// ─── Scanning pulse dot ───────────────────────────────────────────────────────
-function PulseDot() {
-  return (
-    <span style={{
-      width: 8, height: 8, borderRadius: "50%",
-      background: GOLD.pulse,
-      display: "inline-block",
-      animation: "pulse 1s infinite",
-      flexShrink: 0,
-    }} />
-  );
-}
+// Button phase config
+const PHASE_CONFIG: Record<ScanPhase, { label: string; sub: string; progress: number }> = {
+  idle:  { label: "SCAN  EMRR",  sub: "Flujos  ·  Líderes  ·  TOP 8", progress: 0 },
+  flows: { label: "Flujos…",     sub: "Paso 1 / 3  —  Rotación sectorial",  progress: 15 },
+  rally: { label: "Líderes…",    sub: "Paso 2 / 3  —  Rally Leaders",        progress: 42 },
+  full:  { label: "TOP 8…",      sub: "Paso 3 / 3  —  Análisis completo",    progress: 68 },
+  done:  { label: "✓  Listo",    sub: "Señal Óptima actualizada",             progress: 100 },
+};
 
-// ─── Main component ───────────────────────────────────────────────────────────
 export function StickyMiniHeader({
-  systemStatus, onScan, isScanning, onScanRally, isRallyScanning,
-  onScanFlows, isFlowsScanning, onLogout,
+  systemStatus, onScanAll, scanPhase, onLogout,
 }: StickyMiniHeaderProps) {
   const markets = marketStates(systemStatus.marketMode);
   const dateStr = systemStatus.updatedAt.local;
-  const anyScanning = isScanning || isRallyScanning || isFlowsScanning;
+  const scanning = scanPhase !== "idle" && scanPhase !== "done";
+  const done = scanPhase === "done";
+  const cfg = PHASE_CONFIG[scanPhase];
+
+  // Gold → green when done
+  const btnGradient = done
+    ? "linear-gradient(160deg, #10b981 0%, #059669 100%)"
+    : "linear-gradient(160deg, #c9a227 0%, #9a7510 60%, #7a5c0a 100%)";
+  const btnBorder  = done ? "1px solid rgba(16,185,129,0.5)" : "1px solid rgba(201,162,39,0.5)";
+  const btnBBot    = done ? "3px solid #047857" : "3px solid #5a3f05";
+  const btnShadow  = done
+    ? "0 5px 20px rgba(16,185,129,0.30), 0 2px 6px rgba(0,0,0,0.4)"
+    : "0 5px 22px rgba(180,130,10,0.40), 0 2px 6px rgba(0,0,0,0.4)";
+  const btnText    = done ? "#a7f3d0" : "#fef9e6";
+  const btnSub     = done ? "rgba(167,243,208,0.65)" : "rgba(254,249,230,0.55)";
+
+  function pressDown(e: React.PointerEvent<HTMLButtonElement>) {
+    e.currentTarget.style.transform = "translateY(2px)";
+    e.currentTarget.style.borderBottom = done ? "1px solid #047857" : "1px solid #5a3f05";
+    e.currentTarget.style.boxShadow = "0 1px 5px rgba(0,0,0,0.3)";
+  }
+  function pressUp(e: React.PointerEvent<HTMLButtonElement>) {
+    e.currentTarget.style.transform = "";
+    e.currentTarget.style.borderBottom = btnBBot;
+    e.currentTarget.style.boxShadow = btnShadow;
+  }
 
   return (
-    <div
-      className="sticky-mini-header"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        padding: "8px 12px 10px",
-        paddingTop: "max(8px, env(safe-area-inset-top))",
-      }}
-    >
-      {/* ── ROW 1: Info bar ─────────────────────────────────────────────── */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexWrap: "wrap",
-      }}>
-        {/* Date + time */}
+    <div className="sticky-mini-header" style={{
+      display: "flex", flexDirection: "column", gap: 8,
+      padding: "8px 12px 10px",
+      paddingTop: "max(8px, env(safe-area-inset-top))",
+    }}>
+
+      {/* ── INFO ROW ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
         <span style={{
           fontSize: 11, fontWeight: 700, color: "#64748b",
-          fontVariantNumeric: "tabular-nums",
+          fontVariantNumeric: "tabular-nums", flex: "0 0 auto",
           letterSpacing: "0.02em",
-          flex: "0 0 auto",
         }}>
           {dateStr}
         </span>
-
         <span style={{ flex: 1 }} />
-
-        {/* Market status pills */}
-        <MarketPill label="EU"    status={markets.europe as "OPEN" | "CLOSED"} />
-        <MarketPill label="EEUU"  status={markets.us     as "OPEN" | "CLOSED"} />
-
-        {/* Logout — small, unobtrusive */}
+        <MarketPill label="EU"   status={markets.europe as "OPEN" | "CLOSED"} />
+        <MarketPill label="EEUU" status={markets.us     as "OPEN" | "CLOSED"} />
         <button
           type="button"
           onClick={onLogout}
           style={{
-            padding: "4px 12px",
-            fontSize: 9, fontWeight: 700,
-            color: "#475569",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: 999,
-            cursor: "pointer",
-            letterSpacing: "0.06em",
-            WebkitTapHighlightColor: "transparent",
-            transition: "opacity 120ms",
+            padding: "3px 11px", fontSize: 9, fontWeight: 700,
+            color: "#475569", background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.09)", borderRadius: 999,
+            cursor: "pointer", WebkitTapHighlightColor: "transparent",
           }}
           onPointerDown={e => { e.currentTarget.style.opacity = "0.6"; }}
           onPointerUp={e   => { e.currentTarget.style.opacity = "1"; }}
@@ -171,88 +123,87 @@ export function StickyMiniHeader({
         </button>
       </div>
 
-      {/* ── ROW 2: 3 large gold SCAN buttons ────────────────────────────── */}
-      <div style={{ display: "flex", gap: 8 }}>
+      {/* ── SINGLE SCAN BUTTON ── */}
+      <button
+        type="button"
+        onClick={onScanAll}
+        disabled={scanning}
+        tabIndex={-1}
+        style={{
+          width: "100%", minHeight: 58,
+          background: btnGradient,
+          border: btnBorder,
+          borderBottom: btnBBot,
+          borderRadius: 12,
+          boxShadow: btnShadow,
+          color: btnText,
+          cursor: scanning ? "not-allowed" : "pointer",
+          transition: "transform 80ms ease, box-shadow 80ms ease, border-bottom 80ms ease, background 400ms ease",
+          WebkitTapHighlightColor: "transparent",
+          touchAction: "manipulation",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 3,
+          position: "relative",
+          overflow: "hidden",
+          opacity: scanning ? 0.92 : 1,
+        }}
+        onPointerDown={e => { e.preventDefault(); if (!scanning) pressDown(e); }}
+        onPointerUp={pressUp}
+        onPointerLeave={pressUp}
+      >
+        {/* Progress fill (behind text) */}
+        {scanning && (
+          <div style={{
+            position: "absolute", inset: 0, left: 0,
+            width: `${cfg.progress}%`,
+            background: "rgba(0,0,0,0.18)",
+            transition: "width 600ms ease",
+            pointerEvents: "none",
+          }} />
+        )}
 
-        {/* SCAN FLOWS */}
-        <button
-          type="button"
-          onClick={onScanFlows}
-          disabled={anyScanning}
-          tabIndex={-1}
-          style={{ ...SCAN_BTN, opacity: anyScanning && !isFlowsScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
-          onPointerUp={pressUp}
-          onPointerLeave={pressUp}
-        >
-          {isFlowsScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <PulseDot />
-              <span>Escaneando…</span>
-            </span>
-          ) : (
-            <>
-              <span>SCAN FLOWS</span>
-              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
-                FLUJOS
-              </span>
-            </>
+        {/* Scanning shimmer overlay */}
+        {scanning && (
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)",
+            animation: "shimmer 1.8s infinite linear",
+            backgroundSize: "200% 100%",
+            pointerEvents: "none",
+          }} />
+        )}
+
+        {/* Label */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative", zIndex: 1 }}>
+          {scanning && (
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: btnText, display: "inline-block",
+              animation: "pulse 1s infinite", flexShrink: 0,
+            }} />
           )}
-        </button>
+          <span style={{
+            fontSize: 15, fontWeight: 900,
+            letterSpacing: scanning ? "0.06em" : "0.12em",
+            textTransform: "uppercase" as const,
+          }}>
+            {cfg.label}
+          </span>
+        </div>
 
-        {/* SCAN RALLY */}
-        <button
-          type="button"
-          onClick={onScanRally}
-          disabled={anyScanning}
-          tabIndex={-1}
-          style={{ ...SCAN_BTN, opacity: anyScanning && !isRallyScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
-          onPointerUp={pressUp}
-          onPointerLeave={pressUp}
-        >
-          {isRallyScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <PulseDot />
-              <span>Escaneando…</span>
-            </span>
-          ) : (
-            <>
-              <span>SCAN RALLY</span>
-              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
-                LÍDERES
-              </span>
-            </>
-          )}
-        </button>
-
-        {/* SCAN FULL */}
-        <button
-          type="button"
-          onClick={onScan}
-          disabled={anyScanning}
-          tabIndex={-1}
-          style={{ ...SCAN_BTN, opacity: anyScanning && !isScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
-          onPointerUp={pressUp}
-          onPointerLeave={pressUp}
-        >
-          {isScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <PulseDot />
-              <span>Escaneando…</span>
-            </span>
-          ) : (
-            <>
-              <span>SCAN FULL</span>
-              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
-                TOP 8
-              </span>
-            </>
-          )}
-        </button>
-
-      </div>
+        {/* Subtitle */}
+        <span style={{
+          fontSize: 9, fontWeight: 600,
+          color: btnSub,
+          letterSpacing: "0.05em",
+          position: "relative", zIndex: 1,
+        }}>
+          {cfg.sub}
+        </span>
+      </button>
     </div>
   );
 }

@@ -47,8 +47,8 @@ import {
   startRallyScan,
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
-// ScanProgressBars removed — each module shows its own progress bar inline
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
+import { type ScanPhase } from "../components/StickyMiniHeader";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -184,6 +184,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [marketRegime, setMarketRegime] = useState<MarketRegime>("UNKNOWN");
   const rallyAbortRef = useRef(false);
   const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
+  const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -728,6 +729,94 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
+  // ─── SCAN ALL — chains Flows → Rally → Full in sequence ─────────────────
+
+  async function handleScanAll() {
+    if (scanPhase !== "idle" && scanPhase !== "done") return;
+    const savedScroll = window.scrollY;
+    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
+
+    // Step 1: SCAN FLOWS
+    setScanPhase("flows");
+    setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
+    try {
+      const res = await fetch("/api/sector-leaders-data?mode=intraday");
+      const data = await res.json();
+      if (data.ok) {
+        setFlowsState({
+          status: "DONE",
+          scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
+          marketOpen: data.marketOpen ?? false,
+          spy: data.spy ?? null,
+          sectors: data.sectors ?? [],
+          note: data.note ?? "",
+        });
+      } else {
+        setFlowsState(prev => ({ ...prev, status: "ERROR" }));
+      }
+    } catch {
+      setFlowsState(prev => ({ ...prev, status: "ERROR" }));
+    }
+
+    // Step 2: SCAN RALLY
+    setScanPhase("rally");
+    rallyAbortRef.current = false;
+    try {
+      let response = await startRallyScan();
+      if (!response.ok) throw new Error(response.message ?? "Rally failed");
+      setRallyState(prev => ({
+        ...prev, status: "RALLY_SCANNING", isScanning: true,
+        scanId: response.scanId ?? null, rallyToken: response.rallyToken ?? null,
+        coveragePercent: response.coveragePercent ?? 0,
+        batchesCompleted: response.batchesCompleted ?? 0,
+        batchesTotal: response.batchesTotal ?? 0,
+        top10: response.top10 ?? [],
+      }));
+      while (!response.isRallyFinal && response.rallyToken && !rallyAbortRef.current) {
+        response = await continueRallyScan(response.rallyToken);
+        setRallyState(prev => ({
+          ...prev,
+          rallyToken: response.rallyToken ?? null,
+          coveragePercent: response.coveragePercent ?? prev.coveragePercent,
+          batchesCompleted: response.batchesCompleted ?? prev.batchesCompleted,
+          top10: response.top10 ?? prev.top10,
+        }));
+      }
+      setRallyState(prev => ({
+        ...prev, status: "RALLY_FINAL", isScanning: false, rallyToken: null,
+        top10: response.top10 ?? prev.top10,
+        coveragePercent: response.coveragePercent ?? prev.coveragePercent,
+        lastRun: new Date().toLocaleString(),
+      }));
+    } catch {
+      setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false }));
+    }
+
+    // Step 3: SCAN FULL
+    setScanPhase("full");
+    try {
+      clearSessionCacheForNewScan();
+      const startedAt = createTimestampPair();
+      setScanState(current => ({
+        ...current, label: "SCAN FULL running...", isScanning: true,
+        lastRun: startedAt, lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT",
+      }));
+      setSystemStatus(current =>
+        updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "SCANNING", current.lastRealDataUpdate),
+      );
+      await runAutoChainedScan(startedAt);
+    } catch (error) {
+      setScanState(current => ({
+        ...current, label: "Scan failed", isScanning: false, scanExecutionMode: "ERROR",
+      }));
+    }
+
+    // Done
+    setScanPhase("done");
+    showToast("✓ Análisis completo — Señal Óptima actualizada", "success");
+    setTimeout(() => setScanPhase("idle"), 4000);
+  }
+
   // ─── Intraday Flows handler ───────────────────────────────────────────────
 
   async function handleScanFlows() {
@@ -779,12 +868,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     <main className="dashboard-shell">
       <StickyMiniHeader
         systemStatus={systemStatus}
-        onScan={handleScan}
-        isScanning={scanState.isScanning}
-        onScanRally={handleScanRally}
-        isRallyScanning={rallyState.isScanning}
-        onScanFlows={handleScanFlows}
-        isFlowsScanning={flowsState.status === "SCANNING"}
+        onScanAll={handleScanAll}
+        scanPhase={scanPhase}
         onLogout={onLogout}
       />
       {/* ── SEÑAL ÓPTIMA — arriba del todo, evalúa los 4 filtros automáticamente ── */}
