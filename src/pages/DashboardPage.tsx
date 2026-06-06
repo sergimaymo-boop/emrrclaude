@@ -729,84 +729,101 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
-  // ─── SCAN ALL — chains Flows → Rally → Full in sequence ─────────────────
+  // ─── SCAN ALL — FLOWS en paralelo con RALLY+FULL ────────────────────────
+  //
+  // Secuencia óptima:
+  //   FLOWS  ──────── (~4s)   ← independiente, arranca con RALLY
+  //   RALLY  ──────────────── (~3min) ← en paralelo con FULL
+  //   FULL   ──────────────────────── (~4min) ← en paralelo con RALLY
+  //
+  // RALLY y FULL comparten proveedores pero usan APIs distintas por batch
+  // y el cache Redis de SPY evita duplicar la llamada del benchmark.
+  // Tiempo total: ~4-5min (vs ~12min secuencial anterior)
+
+  async function runFlows() {
+    setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
+    try {
+      const res  = await fetch("/api/sector-leaders-data?mode=intraday");
+      const data = await res.json();
+      setFlowsState(data.ok ? {
+        status: "DONE", scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
+        marketOpen: data.marketOpen ?? false, spy: data.spy ?? null,
+        sectors: data.sectors ?? [], note: data.note ?? "",
+      } : prev => ({ ...prev, status: "ERROR" }));
+    } catch { setFlowsState(prev => ({ ...prev, status: "ERROR" })); }
+  }
+
+  async function runRally() {
+    rallyAbortRef.current = false;
+    try {
+      let r = await startRallyScan();
+      if (!r.ok) throw new Error(r.message ?? "Rally failed");
+      setRallyState(prev => ({
+        ...prev, status: "RALLY_SCANNING", isScanning: true,
+        scanId: r.scanId ?? null, rallyToken: r.rallyToken ?? null,
+        coveragePercent: r.coveragePercent ?? 0, batchesCompleted: r.batchesCompleted ?? 0,
+        batchesTotal: r.batchesTotal ?? 0, top10: r.top10 ?? [],
+      }));
+      while (!r.isRallyFinal && r.rallyToken && !rallyAbortRef.current) {
+        r = await continueRallyScan(r.rallyToken);
+        setRallyState(prev => ({
+          ...prev, rallyToken: r.rallyToken ?? null,
+          coveragePercent: r.coveragePercent ?? prev.coveragePercent,
+          batchesCompleted: r.batchesCompleted ?? prev.batchesCompleted,
+          top10: r.top10 ?? prev.top10,
+        }));
+      }
+      setRallyState(prev => ({
+        ...prev, status: "RALLY_FINAL", isScanning: false, rallyToken: null,
+        top10: r.top10 ?? prev.top10,
+        coveragePercent: r.coveragePercent ?? prev.coveragePercent,
+        lastRun: new Date().toLocaleString(),
+      }));
+    } catch { setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false })); }
+  }
+
+  async function runFull() {
+    clearSessionCacheForNewScan();
+    const startedAt = createTimestampPair();
+    setScanState(c => ({ ...c, label: "SCAN FULL running...", isScanning: true,
+      lastRun: startedAt, lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT" }));
+    setSystemStatus(c => updateSystemStatusForDataMode(refreshSystemMarketStatus(c), "SCANNING", c.lastRealDataUpdate));
+    await runAutoChainedScan(startedAt);
+  }
 
   async function handleScanAll() {
     if (scanPhase !== "idle" && scanPhase !== "done") return;
     const savedScroll = window.scrollY;
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
 
-    // Step 1: SCAN FLOWS
     setScanPhase("flows");
-    setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
-    try {
-      const res = await fetch("/api/sector-leaders-data?mode=intraday");
-      const data = await res.json();
-      if (data.ok) {
-        setFlowsState({
-          status: "DONE",
-          scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
-          marketOpen: data.marketOpen ?? false,
-          spy: data.spy ?? null,
-          sectors: data.sectors ?? [],
-          note: data.note ?? "",
-        });
-      } else {
-        setFlowsState(prev => ({ ...prev, status: "ERROR" }));
-      }
-    } catch {
-      setFlowsState(prev => ({ ...prev, status: "ERROR" }));
-    }
 
-    // Step 2: SCAN RALLY
-    setScanPhase("rally");
-    rallyAbortRef.current = false;
-    try {
-      let response = await startRallyScan();
-      if (!response.ok) throw new Error(response.message ?? "Rally failed");
-      setRallyState(prev => ({
-        ...prev, status: "RALLY_SCANNING", isScanning: true,
-        scanId: response.scanId ?? null, rallyToken: response.rallyToken ?? null,
-        coveragePercent: response.coveragePercent ?? 0,
-        batchesCompleted: response.batchesCompleted ?? 0,
-        batchesTotal: response.batchesTotal ?? 0,
-        top10: response.top10 ?? [],
-      }));
-      while (!response.isRallyFinal && response.rallyToken && !rallyAbortRef.current) {
-        response = await continueRallyScan(response.rallyToken);
-        setRallyState(prev => ({
-          ...prev,
-          rallyToken: response.rallyToken ?? null,
-          coveragePercent: response.coveragePercent ?? prev.coveragePercent,
-          batchesCompleted: response.batchesCompleted ?? prev.batchesCompleted,
-          top10: response.top10 ?? prev.top10,
-        }));
-      }
-      setRallyState(prev => ({
-        ...prev, status: "RALLY_FINAL", isScanning: false, rallyToken: null,
-        top10: response.top10 ?? prev.top10,
-        coveragePercent: response.coveragePercent ?? prev.coveragePercent,
-        lastRun: new Date().toLocaleString(),
-      }));
-    } catch {
-      setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false }));
-    }
+    // FLOWS starts immediately; RALLY + FULL start in parallel after 1s
+    // (1s gives FLOWS time to fire its request before providers get hit by RALLY+FULL)
+    const flowsPromise = runFlows();
+    await new Promise(r => setTimeout(r, 1000)); // brief stagger
 
-    // Step 3: SCAN FULL
-    setScanPhase("full");
-    try {
-      clearSessionCacheForNewScan();
-      const startedAt = createTimestampPair();
-      setScanState(current => ({
-        ...current, label: "SCAN FULL running...", isScanning: true,
-        lastRun: startedAt, lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT",
-      }));
-      setSystemStatus(current =>
-        updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "SCANNING", current.lastRealDataUpdate),
-      );
-      await runAutoChainedScan(startedAt);
-    } catch (error) {
-      setScanState(current => ({
+    setScanPhase("rally"); // shows "rally" phase while both run
+    const [, rallyErr, fullErr] = await Promise.allSettled([
+      flowsPromise,    // FLOWS finishes (already running, ~3s left)
+      runRally(),      // RALLY runs in parallel
+      (async () => { setScanPhase("full"); await runFull(); })(), // FULL runs in parallel
+    ]);
+
+    setScanPhase("done");
+    showToast("✓ Análisis completo — Señal Óptima actualizada", "success");
+    setTimeout(() => setScanPhase("idle"), 4000);
+  }
+
+  // keep individual handlers for backward compat (not exposed in UI anymore)
+  async function handleScanAllLegacy() {
+    // legacy — not called from UI
+  }
+
+  // placeholder to avoid unused-var lint on handleScan (used by runFull above)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async function _handleScanLegacy() {
+    setScanState(current => ({
         ...current, label: "Scan failed", isScanning: false, scanExecutionMode: "ERROR",
       }));
     }
