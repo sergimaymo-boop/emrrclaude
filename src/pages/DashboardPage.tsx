@@ -48,6 +48,7 @@ import {
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { ScanProgressBars } from "../components/ScanProgressBars";
+import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -786,6 +787,14 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         isFlowsScanning={flowsState.status === "SCANNING"}
         onLogout={onLogout}
       />
+      {/* ── SEÑAL ÓPTIMA — arriba del todo, evalúa los 4 filtros automáticamente ── */}
+      <OptimalSignalPanel
+        marketRegime={marketRegime}
+        flowsState={flowsState}
+        rallyState={rallyState}
+        top8={top8}
+      />
+
       {/* Scan progress bars — appear just below sticky header, auto-hide 5s after 100% */}
       <ScanProgressBars
         scanState={scanState}
