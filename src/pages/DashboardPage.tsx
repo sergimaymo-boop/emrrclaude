@@ -48,7 +48,9 @@ import {
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
+import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
+import { pushNotifications } from "../services/pushNotifications";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -189,6 +191,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
   }
+
+  // Initialize push notifications on mount
+  useEffect(() => {
+    pushNotifications.initialize().catch(err => console.error("Push notifications init failed:", err));
+  }, []);
 
   useEffect(() => {
     const sessionCache = loadSessionCache();
@@ -905,6 +912,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         rallyState={rallyState}
         top8={top8}
       />
+
+      {/* Signal History — Last 5 confluences detected */}
+      <SignalHistoryPanel />
 
       {/* Progress bars are now inside each module: ScanStatusPanel, RallyLeadersPanel, IntraDayFlowsPanel */}
 

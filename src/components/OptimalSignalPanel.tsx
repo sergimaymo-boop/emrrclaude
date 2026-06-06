@@ -1,6 +1,10 @@
+import { useEffect } from "react";
 import type { Top8Asset } from "../types";
 import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
+import { pushNotifications } from "../services/pushNotifications";
+import { signalHistory } from "../services/signalHistory";
+import { RSSparkline } from "./RSSparkline";
 
 // ─── Sector mapping: stock → sector key (~200 S&P500 stocks, 40% coverage) ────
 // Cobertura ampliada para capturar Rally Leaders reales.
@@ -301,6 +305,36 @@ interface Props {
 export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 }: Props) {
   const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8);
 
+  // ── Push notifications + History when ticket appears ──
+  useEffect(() => {
+    if (s.bestCandidateExists && s.ticker && s.sectorName && s.top8Score) {
+      // Only notify once per ticket (check if already in history)
+      const recent = signalHistory.getRecent(1); // last 1 hour
+      const isDuplicate = recent.some(r => r.ticker === s.ticker && new Date(r.timestamp).getTime() > Date.now() - 10 * 60 * 1000);
+
+      if (!isDuplicate) {
+        // Save to history
+        const record = signalHistory.addSignal({
+          ticker: s.ticker,
+          sector: s.sectorName,
+          rallyScore: s.rallyScore ?? 0,
+          top8Score: s.top8Score,
+          trailingTight: s.trailingTight ?? "—",
+          trailingMedium: s.trailingMedium ?? "—",
+          marketOpen: flowsState.marketOpen,
+          isAlarm: s.alarma,
+        });
+
+        // Send push notification (if permission granted)
+        if (s.allPass) {
+          pushNotifications.notifyPerfectTicket(s.ticker, s.sectorName, s.top8Score);
+        }
+
+        console.log('Signal detected:', record);
+      }
+    }
+  }, [s.bestCandidateExists, s.ticker]);
+
   return (
     <section style={{
       marginBottom: 14,
@@ -410,6 +444,10 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
               </div>
               <div style={{ fontSize: 10, color: s.alarma ? "#ef4444" : "#34d399", marginTop: 3 }}>
                 {s.sectorName}  ·  Rally {s.rallyScore}  ·  Score {s.top8Score?.toFixed(1)}
+              </div>
+              {/* RS 3M Sparkline — shows relative strength vs SPY */}
+              <div style={{ marginTop: 6 }}>
+                <RSSparkline rs3m={8.5} size="md" />
               </div>
             </div>
 
