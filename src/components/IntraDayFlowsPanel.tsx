@@ -120,15 +120,15 @@ function SectorTile({ sector }: { sector: SectorFlow }) {
       {/* Divider */}
       <div style={{ height: 1, background: `${c.border}40`, margin: "4px 0 3px" }} />
 
-      {/* TOP STOCK — the ONE to watch */}
+      {/* TOP STOCK — acción individual S&P500, invertible SL española */}
       {m ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 900, color: c.textPrimary, letterSpacing: "0.04em" }}>
               {m.ticker}
             </div>
-            <div style={{ fontSize: 8, fontWeight: 600, color: c.textSecondary }}>
-              mejor hoy
+            <div style={{ fontSize: 7, fontWeight: 700, color: c.textSecondary, letterSpacing: "0.03em" }}>
+              NYSE · S&P500
             </div>
           </div>
           <div style={{
@@ -175,7 +175,7 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
         </div>
       </div>
 
-      {/* TOP STOCK — one, prominent */}
+      {/* TOP STOCK — acción S&P500, sin restricción PRIIP para SL española */}
       {m && (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
@@ -189,6 +189,9 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
           </span>
           <span style={{ fontSize: 10, fontWeight: 800, color: c.textPrimary, fontVariantNumeric: "tabular-nums" }}>
             {fmt(m.change)}
+          </span>
+          <span style={{ fontSize: 7, color: `${c.textSecondary}`, marginTop: 1, letterSpacing: "0.03em" }}>
+            S&P500
           </span>
         </div>
       )}
