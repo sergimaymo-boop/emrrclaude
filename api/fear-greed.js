@@ -38,11 +38,14 @@ function hygScore(change) {
 }
 
 function moveScore(move) {
-  if (move < 70)  return 90;
-  if (move < 85)  return 70;
+  // MOVE = bond volatility index
+  // High MOVE (>110) = high volatility = FEAR (lower greed score)
+  // Low MOVE (<70) = low volatility = COMPLACENCY (not true greed, but less fear)
+  if (move < 70)  return 15;      // Low volatility = low fear
+  if (move < 85)  return 30;
   if (move < 100) return 50;
-  if (move < 115) return 30;
-  return 15;
+  if (move < 115) return 70;
+  return 90;                      // High volatility = high fear
 }
 
 function vvixScore(vvix) {
