@@ -18,166 +18,237 @@ function marketStates(marketMode: SystemStatus["marketMode"]) {
   };
 }
 
-const PILL_STYLE: React.CSSProperties = {
-  minWidth: 80, minHeight: 30, fontSize: 9, padding: "4px 8px",
+// ─── OLD GOLD — color único para los 3 botones de scan ───────────────────────
+const GOLD = {
+  bg:     "linear-gradient(160deg, #c9a227 0%, #9a7510 60%, #7a5c0a 100%)",
+  border: "1px solid rgba(201,162,39,0.55)",
+  bbot:   "3px solid #5a3f05",
+  text:   "#fef9e6",
+  shadow: "0 5px 20px rgba(180,130,10,0.45), 0 2px 6px rgba(0,0,0,0.4)",
+  shadowPress: "0 1px 5px rgba(180,130,10,0.2)",
+  pulse:  "#fde68a",
 };
 
-const SCAN_BTN_BASE: React.CSSProperties = {
-  background: "linear-gradient(135deg, #8b1a1a 0%, #6b1212 100%)",
-  border: "1px solid rgba(180,50,50,0.5)",
-  borderBottom: "3px solid #4a0d0d",
-  minWidth: 80, minHeight: 30, padding: "4px 10px",
-  fontSize: 9, fontWeight: 900, letterSpacing: "0.06em",
-  color: "#ffd5d5", boxShadow: "0 4px 12px rgba(139,26,26,0.4)",
-  borderRadius: 999, transition: "transform 80ms, box-shadow 80ms, border-bottom 80ms",
-  WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
+const SCAN_BTN: React.CSSProperties = {
+  flex: 1,
+  minHeight: 52,
+  padding: "0 8px",
+  background: GOLD.bg,
+  border: GOLD.border,
+  borderBottom: GOLD.bbot,
+  borderRadius: 10,
+  color: GOLD.text,
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: "0.10em",
+  textTransform: "uppercase" as const,
+  boxShadow: GOLD.shadow,
+  cursor: "pointer",
+  transition: "transform 80ms ease, box-shadow 80ms ease, border-bottom 80ms ease, opacity 150ms",
+  WebkitTapHighlightColor: "transparent",
+  touchAction: "manipulation",
+  display: "flex",
+  flexDirection: "column" as const,
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 3,
 };
 
-function pushDown(e: React.PointerEvent<HTMLButtonElement>) {
+function pressDown(e: React.PointerEvent<HTMLButtonElement>) {
   e.currentTarget.style.transform = "translateY(2px)";
-  e.currentTarget.style.borderBottom = "1px solid #4a0d0d";
-  e.currentTarget.style.boxShadow = "0 1px 4px rgba(139,26,26,0.2)";
+  e.currentTarget.style.borderBottom = "1px solid #5a3f05";
+  e.currentTarget.style.boxShadow = GOLD.shadowPress;
 }
-function pushUp(e: React.PointerEvent<HTMLButtonElement>) {
-  e.currentTarget.style.transform = "none";
-  e.currentTarget.style.borderBottom = "3px solid #4a0d0d";
-  e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
-}
-
-const FLOWS_BTN_STYLE: React.CSSProperties = {
-  background: "linear-gradient(135deg, #0e7490 0%, #0c4a6e 100%)",
-  border: "1px solid rgba(6,182,212,0.4)",
-  borderBottom: "3px solid #075985",
-  minWidth: 80, minHeight: 30, padding: "4px 10px",
-  fontSize: 9, fontWeight: 900, letterSpacing: "0.06em",
-  color: "#a5f3fc", boxShadow: "0 4px 12px rgba(6,182,212,0.3)",
-  borderRadius: 999, transition: "transform 80ms, box-shadow 80ms, border-bottom 80ms",
-  WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
-};
-
-function pushDownFlows(e: React.PointerEvent<HTMLButtonElement>) {
-  e.currentTarget.style.transform = "translateY(2px)";
-  e.currentTarget.style.borderBottom = "1px solid #075985";
-  e.currentTarget.style.boxShadow = "0 1px 4px rgba(6,182,212,0.15)";
-}
-function pushUpFlows(e: React.PointerEvent<HTMLButtonElement>) {
-  e.currentTarget.style.transform = "none";
-  e.currentTarget.style.borderBottom = "3px solid #075985";
-  e.currentTarget.style.boxShadow = "0 4px 12px rgba(6,182,212,0.3)";
+function pressUp(e: React.PointerEvent<HTMLButtonElement>) {
+  e.currentTarget.style.transform = "";
+  e.currentTarget.style.borderBottom = GOLD.bbot;
+  e.currentTarget.style.boxShadow = GOLD.shadow;
 }
 
+// ─── Market indicator ─────────────────────────────────────────────────────────
+function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED" }) {
+  const open = status === "OPEN";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 5,
+      padding: "4px 10px", borderRadius: 999,
+      background: open ? "rgba(16,185,129,0.12)" : "rgba(100,116,139,0.12)",
+      border: `1px solid ${open ? "rgba(16,185,129,0.3)" : "rgba(100,116,139,0.25)"}`,
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: open ? "#10b981" : "#64748b",
+        boxShadow: open ? "0 0 6px #10b981" : "none",
+        flexShrink: 0,
+      }} />
+      <span style={{ fontSize: 9, fontWeight: 800, color: open ? "#10b981" : "#64748b", letterSpacing: "0.05em" }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: open ? "#34d399" : "#475569" }}>
+        {status}
+      </span>
+    </div>
+  );
+}
+
+// ─── Scanning pulse dot ───────────────────────────────────────────────────────
+function PulseDot() {
+  return (
+    <span style={{
+      width: 8, height: 8, borderRadius: "50%",
+      background: GOLD.pulse,
+      display: "inline-block",
+      animation: "pulse 1s infinite",
+      flexShrink: 0,
+    }} />
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export function StickyMiniHeader({
-  systemStatus, onScan, isScanning, onScanRally, isRallyScanning, onScanFlows, isFlowsScanning, onLogout,
+  systemStatus, onScan, isScanning, onScanRally, isRallyScanning,
+  onScanFlows, isFlowsScanning, onLogout,
 }: StickyMiniHeaderProps) {
   const markets = marketStates(systemStatus.marketMode);
   const dateStr = systemStatus.updatedAt.local;
+  const anyScanning = isScanning || isRallyScanning || isFlowsScanning;
 
   return (
-    <div className="sticky-mini-header" style={{
-      display: "flex", flexDirection: "column", gap: 6,
-      padding: "8px 14px", paddingTop: "max(8px, env(safe-area-inset-top))",
-    }}>
-      {/* ROW 1: fecha/hora | pills mercado | logout | scans */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-
-        {/* Fecha y hora — visible y compacto */}
+    <div
+      className="sticky-mini-header"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: "8px 12px 10px",
+        paddingTop: "max(8px, env(safe-area-inset-top))",
+      }}
+    >
+      {/* ── ROW 1: Info bar ─────────────────────────────────────────────── */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+      }}>
+        {/* Date + time */}
         <span style={{
-          fontSize: 11, fontWeight: 700, color: "#94a3b8",
-          fontVariantNumeric: "tabular-nums", flex: "0 0 auto",
+          fontSize: 11, fontWeight: 700, color: "#64748b",
+          fontVariantNumeric: "tabular-nums",
           letterSpacing: "0.02em",
+          flex: "0 0 auto",
         }}>
           {dateStr}
         </span>
 
-        {/* Spacer */}
         <span style={{ flex: 1 }} />
 
-        {/* EU pill */}
-        <span className={`market-pill market-pill-${markets.europe.toLowerCase()}`} style={PILL_STYLE}>
-          <b style={{ fontSize: 9 }}>EU</b>
-          <strong style={{ fontSize: 9 }}>{markets.europe}</strong>
-        </span>
+        {/* Market status pills */}
+        <MarketPill label="EU"    status={markets.europe as "OPEN" | "CLOSED"} />
+        <MarketPill label="EEUU"  status={markets.us     as "OPEN" | "CLOSED"} />
 
-        {/* EEUU pill */}
-        <span className={`market-pill market-pill-${markets.us.toLowerCase()}`} style={PILL_STYLE}>
-          <b style={{ fontSize: 9 }}>EEUU</b>
-          <strong style={{ fontSize: 9 }}>{markets.us}</strong>
-        </span>
-
-        {/* LOGOUT — mismo tamaño que pills */}
+        {/* Logout — small, unobtrusive */}
         <button
           type="button"
           onClick={onLogout}
           style={{
-            minWidth: 80, minHeight: 30, padding: "4px 10px",
-            fontSize: 9, fontWeight: 800, letterSpacing: "0.06em",
-            color: "#94a3b8", background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999,
-            cursor: "pointer", transition: "opacity 120ms",
+            padding: "4px 12px",
+            fontSize: 9, fontWeight: 700,
+            color: "#475569",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 999,
+            cursor: "pointer",
+            letterSpacing: "0.06em",
             WebkitTapHighlightColor: "transparent",
+            transition: "opacity 120ms",
           }}
-          onPointerDown={e => { e.currentTarget.style.opacity = "0.7"; }}
-          onPointerUp={e => { e.currentTarget.style.opacity = "1"; }}
+          onPointerDown={e => { e.currentTarget.style.opacity = "0.6"; }}
+          onPointerUp={e   => { e.currentTarget.style.opacity = "1"; }}
           onPointerLeave={e => { e.currentTarget.style.opacity = "1"; }}
         >
           LOGOUT
         </button>
+      </div>
 
-        {/* SCAN FLOWS — teal, independent module */}
+      {/* ── ROW 2: 3 large gold SCAN buttons ────────────────────────────── */}
+      <div style={{ display: "flex", gap: 8 }}>
+
+        {/* SCAN FLOWS */}
         <button
           type="button"
           onClick={onScanFlows}
-          disabled={isFlowsScanning || isScanning || isRallyScanning}
-          style={{ ...FLOWS_BTN_STYLE, cursor: isFlowsScanning || isScanning || isRallyScanning ? "not-allowed" : "pointer", opacity: isFlowsScanning || isScanning || isRallyScanning ? 0.7 : 1 }}
-          onPointerDown={e => { if (!isFlowsScanning && !isScanning && !isRallyScanning) pushDownFlows(e); }}
-          onPointerUp={pushUpFlows}
-          onPointerLeave={pushUpFlows}
+          disabled={anyScanning}
+          style={{ ...SCAN_BTN, opacity: anyScanning && !isFlowsScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
+          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerUp={pressUp}
+          onPointerLeave={pressUp}
         >
           {isFlowsScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#a5f3fc", display: "inline-block", animation: "pulse 1s infinite" }} />
-              Flows…
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <PulseDot />
+              <span>Escaneando…</span>
             </span>
-          ) : "SCAN FLOWS"}
+          ) : (
+            <>
+              <span>SCAN FLOWS</span>
+              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
+                FLUJOS
+              </span>
+            </>
+          )}
         </button>
 
         {/* SCAN RALLY */}
         <button
-          className="mini-scan-button mini-scan-rally"
           type="button"
           onClick={onScanRally}
-          disabled={isRallyScanning || isScanning}
-          style={{ ...SCAN_BTN_BASE, cursor: isRallyScanning || isScanning ? "not-allowed" : "pointer", opacity: isRallyScanning || isScanning ? 0.7 : 1 }}
-          onPointerDown={e => { if (!isRallyScanning && !isScanning) pushDown(e); }}
-          onPointerUp={pushUp}
-          onPointerLeave={pushUp}
+          disabled={anyScanning}
+          style={{ ...SCAN_BTN, opacity: anyScanning && !isRallyScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
+          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerUp={pressUp}
+          onPointerLeave={pressUp}
         >
           {isRallyScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "inline-block", animation: "pulse 1s infinite" }} />
-              Rally…
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <PulseDot />
+              <span>Escaneando…</span>
             </span>
-          ) : "SCAN RALLY"}
+          ) : (
+            <>
+              <span>SCAN RALLY</span>
+              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
+                LÍDERES
+              </span>
+            </>
+          )}
         </button>
 
         {/* SCAN FULL */}
         <button
-          className="mini-scan-button"
           type="button"
           onClick={onScan}
-          disabled={isScanning || isRallyScanning}
-          style={{ ...SCAN_BTN_BASE, cursor: isScanning || isRallyScanning ? "not-allowed" : "pointer", opacity: isScanning || isRallyScanning ? 0.7 : 1 }}
-          onPointerDown={e => { if (!isScanning && !isRallyScanning) pushDown(e); }}
-          onPointerUp={pushUp}
-          onPointerLeave={pushUp}
+          disabled={anyScanning}
+          style={{ ...SCAN_BTN, opacity: anyScanning && !isScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
+          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerUp={pressUp}
+          onPointerLeave={pressUp}
         >
           {isScanning ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,0.8)", display: "inline-block", animation: "pulse 1s infinite" }} />
-              Scanning
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <PulseDot />
+              <span>Escaneando…</span>
             </span>
-          ) : "SCAN FULL"}
+          ) : (
+            <>
+              <span>SCAN FULL</span>
+              <span style={{ fontSize: 8, fontWeight: 600, color: "rgba(254,249,230,0.55)", letterSpacing: "0.04em" }}>
+                TOP 8
+              </span>
+            </>
+          )}
         </button>
+
       </div>
     </div>
   );
