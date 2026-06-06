@@ -6,6 +6,8 @@ interface StickyMiniHeaderProps {
   isScanning: boolean;
   onScanRally: () => void;
   isRallyScanning: boolean;
+  onScanFlows: () => void;
+  isFlowsScanning: boolean;
   onLogout: () => void;
 }
 
@@ -42,8 +44,30 @@ function pushUp(e: React.PointerEvent<HTMLButtonElement>) {
   e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,26,26,0.4)";
 }
 
+const FLOWS_BTN_STYLE: React.CSSProperties = {
+  background: "linear-gradient(135deg, #0e7490 0%, #0c4a6e 100%)",
+  border: "1px solid rgba(6,182,212,0.4)",
+  borderBottom: "3px solid #075985",
+  minWidth: 80, minHeight: 30, padding: "4px 10px",
+  fontSize: 9, fontWeight: 900, letterSpacing: "0.06em",
+  color: "#a5f3fc", boxShadow: "0 4px 12px rgba(6,182,212,0.3)",
+  borderRadius: 999, transition: "transform 80ms, box-shadow 80ms, border-bottom 80ms",
+  WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
+};
+
+function pushDownFlows(e: React.PointerEvent<HTMLButtonElement>) {
+  e.currentTarget.style.transform = "translateY(2px)";
+  e.currentTarget.style.borderBottom = "1px solid #075985";
+  e.currentTarget.style.boxShadow = "0 1px 4px rgba(6,182,212,0.15)";
+}
+function pushUpFlows(e: React.PointerEvent<HTMLButtonElement>) {
+  e.currentTarget.style.transform = "none";
+  e.currentTarget.style.borderBottom = "3px solid #075985";
+  e.currentTarget.style.boxShadow = "0 4px 12px rgba(6,182,212,0.3)";
+}
+
 export function StickyMiniHeader({
-  systemStatus, onScan, isScanning, onScanRally, isRallyScanning, onLogout,
+  systemStatus, onScan, isScanning, onScanRally, isRallyScanning, onScanFlows, isFlowsScanning, onLogout,
 }: StickyMiniHeaderProps) {
   const markets = marketStates(systemStatus.marketMode);
   const dateStr = systemStatus.updatedAt.local;
@@ -97,6 +121,24 @@ export function StickyMiniHeader({
           onPointerLeave={e => { e.currentTarget.style.opacity = "1"; }}
         >
           LOGOUT
+        </button>
+
+        {/* SCAN FLOWS — teal, independent module */}
+        <button
+          type="button"
+          onClick={onScanFlows}
+          disabled={isFlowsScanning || isScanning || isRallyScanning}
+          style={{ ...FLOWS_BTN_STYLE, cursor: isFlowsScanning || isScanning || isRallyScanning ? "not-allowed" : "pointer", opacity: isFlowsScanning || isScanning || isRallyScanning ? 0.7 : 1 }}
+          onPointerDown={e => { if (!isFlowsScanning && !isScanning && !isRallyScanning) pushDownFlows(e); }}
+          onPointerUp={pushUpFlows}
+          onPointerLeave={pushUpFlows}
+        >
+          {isFlowsScanning ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#a5f3fc", display: "inline-block", animation: "pulse 1s infinite" }} />
+              Flows…
+            </span>
+          ) : "SCAN FLOWS"}
         </button>
 
         {/* SCAN RALLY */}

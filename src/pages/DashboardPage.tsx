@@ -46,6 +46,7 @@ import {
   initialRallyState,
   startRallyScan,
 } from "../services/rallyRefresh";
+import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -180,6 +181,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [rallyState, setRallyState] = useState<RallyState>(initialRallyState());
   const [marketRegime, setMarketRegime] = useState<MarketRegime>("UNKNOWN");
   const rallyAbortRef = useRef(false);
+  const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -718,6 +720,30 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
+  // ─── Intraday Flows handler ───────────────────────────────────────────────
+
+  async function handleScanFlows() {
+    if (flowsState.status === "SCANNING") return;
+    setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
+    try {
+      const res = await fetch("/api/sector-leaders-data?mode=intraday");
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? "Flows scan failed");
+      setFlowsState({
+        status: "DONE",
+        scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
+        marketOpen: data.marketOpen ?? false,
+        spy: data.spy ?? null,
+        sectors: data.sectors ?? [],
+        note: data.note ?? "",
+      });
+      showToast(`Flujos detectados — ${data.sectors?.length ?? 0} sectores analizados`, "success");
+    } catch (error) {
+      setFlowsState(prev => ({ ...prev, status: "ERROR" }));
+      showToast("Error en scan de flujos", "error");
+    }
+  }
+
   // Load last rally scan + market regime on mount
   useEffect(() => {
     fetchLastRallyScan().then(snapshot => {
@@ -747,6 +773,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         isScanning={scanState.isScanning}
         onScanRally={handleScanRally}
         isRallyScanning={rallyState.isScanning}
+        onScanFlows={handleScanFlows}
+        isFlowsScanning={flowsState.status === "SCANNING"}
         onLogout={onLogout}
       />
       {/* Market Regime semaphore — internal analysis, only label shown */}
@@ -783,6 +811,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <ScanStatusPanel scanState={scanState} />
       <FearGreedPanel fearGreed={fearGreed} />
+      <IntraDayFlowsPanel flowsState={flowsState} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <Top8Grid assets={top8} />
