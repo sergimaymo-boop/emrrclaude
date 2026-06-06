@@ -573,6 +573,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   async function handleScan() {
     if (scanState.isScanning) return;
+    const savedScroll = window.scrollY; // keep user's position
 
     clearSessionCacheForNewScan();
     const startedAt = createTimestampPair();
@@ -587,6 +588,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setSystemStatus((current) =>
       updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "SCANNING", current.lastRealDataUpdate),
     );
+
+    // Restore scroll after state update (prevents sticky-header click triggering scroll-to-top on iOS)
+    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
 
     const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
     try {
@@ -638,6 +642,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   async function handleScanRally() {
     if (rallyState.isScanning || scanState.isScanning) return;
+    const savedScroll = window.scrollY;
+    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
     rallyAbortRef.current = false;
 
     setRallyState(prev => ({
@@ -725,6 +731,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   async function handleScanFlows() {
     if (flowsState.status === "SCANNING") return;
+    const savedScroll = window.scrollY;
+    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
     setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
     try {
       const res = await fetch("/api/sector-leaders-data?mode=intraday");

@@ -49,6 +49,8 @@
 html {
   min-width: 320px;
   background: var(--bg);
+  /* Prevent browser from auto-scrolling when content above viewport changes (ScanProgressBars mount) */
+  overflow-anchor: none;
 }
 
 body {

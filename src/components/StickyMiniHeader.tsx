@@ -179,8 +179,9 @@ export function StickyMiniHeader({
           type="button"
           onClick={onScanFlows}
           disabled={anyScanning}
+          tabIndex={-1}
           style={{ ...SCAN_BTN, opacity: anyScanning && !isFlowsScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
           onPointerUp={pressUp}
           onPointerLeave={pressUp}
         >
@@ -204,8 +205,9 @@ export function StickyMiniHeader({
           type="button"
           onClick={onScanRally}
           disabled={anyScanning}
+          tabIndex={-1}
           style={{ ...SCAN_BTN, opacity: anyScanning && !isRallyScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
           onPointerUp={pressUp}
           onPointerLeave={pressUp}
         >
@@ -229,8 +231,9 @@ export function StickyMiniHeader({
           type="button"
           onClick={onScan}
           disabled={anyScanning}
+          tabIndex={-1}
           style={{ ...SCAN_BTN, opacity: anyScanning && !isScanning ? 0.55 : 1, cursor: anyScanning ? "not-allowed" : "pointer" }}
-          onPointerDown={e => { if (!anyScanning) pressDown(e); }}
+          onPointerDown={e => { e.preventDefault(); if (!anyScanning) pressDown(e); }}
           onPointerUp={pressUp}
           onPointerLeave={pressUp}
         >
