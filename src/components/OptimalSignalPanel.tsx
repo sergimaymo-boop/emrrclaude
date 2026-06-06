@@ -135,96 +135,97 @@ export function evaluateOptimalSignal(
     detail:  regimeUnknown ? "Calculando…" : regimeBullish ? "ALCISTA ✓" : "BAJISTA — No operar",
   };
 
-  // ── Filter 2: Sector with strongest flow ─────────────────────────────────
-  // Works with LIVE and LAST SESSION data — no market open required
+  // ── NEW OPTIMAL ALGORITHM: INTERSECTION FIRST ────────────────────────────
+  //
+  // OLD (bottleneck): FLOWS sector → mapping → find Rally → check TOP8
+  //    Problem: static mapping covered only 11% of universe
+  //
+  // NEW (optimal):   RALLY ∩ TOP8 → the stock BOTH engines agree on
+  //                  → then verify sector flow context
+  //    Benefit: uses 100% of 606-stock universe from both scoring engines
+
+  const rallyDone = rallyState.status === "RALLY_FINAL" || rallyState.status === "RALLY_PARTIAL_DIAGNOSTIC";
+  const fullDone  = top8.length > 0;
   const flowsDone = flowsState.status === "DONE";
+
+  if (!rallyDone) needsScans.push("SCAN RALLY");
+  if (!fullDone)  needsScans.push("SCAN FULL");
   if (!flowsDone) needsScans.push("SCAN FLOWS");
 
-  // Threshold relaxed for last session (still valid for trend analysis)
-  const flowThreshold = flowsState.marketOpen ? 0.3 : 0.2;
-  const rvolThreshold = flowsState.marketOpen ? 1.2 : 1.0;
+  const rallyLeaders = rallyState.top10 ?? [];
 
-  const winningSector = flowsDone
-    ? (flowsState.sectors ?? []).find(s =>
-        s.intradayChange > flowThreshold && s.relativeVolume >= rvolThreshold
-      )
-    : null;
-
-  const sessionLabel = flowsState.marketOpen ? "" : " (última sesión)";
-
+  // ── Filter 2: Found in SCAN RALLY (top 10 leaders, full 606 universe) ────
   const f2: FilterResult = {
-    pass:    !flowsDone ? null : !!winningSector,
-    pending: !flowsDone,
-    label:   "Sector con flujo institucional",
-    detail:  !flowsDone
+    pass:    !rallyDone ? null : rallyLeaders.length > 0,
+    pending: !rallyDone,
+    label:   "Rally Leader confirmado (606 stocks)",
+    detail:  !rallyDone
       ? "Ejecuta SCAN"
-      : winningSector
-        ? `${winningSector.name}  ${winningSector.intradayChange > 0 ? "+" : ""}${winningSector.intradayChange.toFixed(2)}%  Vol ${winningSector.relativeVolume.toFixed(1)}x${sessionLabel}`
-        : "Sin sector con flujo claro",
+      : rallyLeaders.length > 0
+        ? `${rallyLeaders[0]?.ticker}  Rally ${rallyLeaders[0]?.rallyScore}  ·  ${rallyLeaders.length} líderes activos`
+        : "Sin Rally Leaders detectados",
   };
 
-  // ── Filter 3: Rally Leader inside winning sector ──────────────────────────
-  const rallyDone = rallyState.status === "RALLY_FINAL" || rallyState.status === "RALLY_PARTIAL_DIAGNOSTIC";
-  if (!rallyDone) needsScans.push("SCAN RALLY");
+  // ── Filter 3: Same stock in SCAN FULL TOP 8 (intersection = max conviction)
+  // Find the Rally Leader with the HIGHEST score that also appears in TOP 8
+  let bestCandidate: { ticker: string; rallyScore: number; top8Score: number; top8Asset: Top8Asset } | null = null;
 
-  // Cross-reference: find Rally Leaders whose ticker maps to the winning sector
-  // Mapping covers ~200 S&P500 stocks (expanded from 56 to prevent blind spots)
-  const rallyLeaders = rallyState.top10 ?? [];
-  const rallyInSector = (rallyDone && winningSector)
-    ? rallyLeaders.filter(r => STOCK_SECTOR[r.ticker.toUpperCase()] === winningSector.key)
-    : [];
-
-  // If no match in winning sector, try top 3 sectors (not just sector #1)
-  let topRally = rallyInSector[0] ?? null;
-  let matchedSector = topRally ? winningSector : null;
-
-  if (!topRally && rallyDone && flowsDone) {
-    const topSectors = (flowsState.sectors ?? [])
-      .filter(s => s.intradayChange > 0)
-      .slice(0, 3);
-    for (const sec of topSectors) {
-      const match = rallyLeaders.find(r => STOCK_SECTOR[r.ticker.toUpperCase()] === sec.key);
-      if (match) { topRally = match; matchedSector = sec; break; }
+  if (rallyDone && fullDone) {
+    for (const leader of rallyLeaders) {
+      const match = top8.find(a => a.ticker === leader.ticker);
+      if (match) {
+        const s = parseFloat(String(match.score ?? 0));
+        if (s >= 75 && (!bestCandidate || s > bestCandidate.top8Score)) {
+          bestCandidate = { ticker: leader.ticker, rallyScore: leader.rallyScore, top8Score: s, top8Asset: match };
+        }
+      }
     }
   }
 
   const f3: FilterResult = {
-    pass:    !rallyDone ? null : !!topRally,
-    pending: !rallyDone,
-    label:   "Rally Leader en sector ganador",
-    detail:  !rallyDone
+    pass:    (!rallyDone || !fullDone) ? null : !!bestCandidate,
+    pending: !rallyDone || !fullDone,
+    label:   "Confirmado por SCAN FULL TOP 8",
+    detail:  (!rallyDone || !fullDone)
       ? "Ejecuta SCAN"
-      : topRally
-        ? `${topRally.ticker}  ·  Rally ${topRally.rallyScore}  ·  ${matchedSector?.name ?? ""}`
-        : winningSector
-          ? `Sin Rally Leader mapeado en ${winningSector.name}`
-          : "Esperando datos de sector",
+      : bestCandidate
+        ? `${bestCandidate.ticker}  ·  Score ${bestCandidate.top8Score.toFixed(1)}  ·  Rally ${bestCandidate.rallyScore}  ·  ${bestCandidate.top8Asset.risk ?? "—"}`
+        : "Sin stock en ambos rankings — perfiles distintos esta sesión",
   };
 
-  // ── Filter 4: Same stock validated in TOP 8 ───────────────────────────────
-  const fullDone = top8.length > 0;
-  if (!fullDone) needsScans.push("SCAN FULL");
+  // ── Filter 4: Sector of that stock shows inflows in SCAN FLOWS ────────────
+  // Use mapping as VALIDATION (not as search) — if stock unknown, show advisory
+  const sessionLabel = flowsState.marketOpen ? "" : " (última sesión)";
+  const flowThreshold = flowsState.marketOpen ? 0.3 : 0.2;
 
-  const top8Match = (fullDone && topRally)
-    ? top8.find(a => a.ticker === topRally.ticker)
-    : null;
+  let matchedSector = null as typeof flowsState.sectors[0] | null;
+  let sectorVerified = false;
 
-  const scoreNum = top8Match ? parseFloat(String(top8Match.score ?? 0)) : 0;
-  const scoreOk  = scoreNum >= 78; // slight tolerance for near-perfect scores
+  if (bestCandidate && flowsDone) {
+    const sectorKey = STOCK_SECTOR[bestCandidate.ticker.toUpperCase()];
+    if (sectorKey) {
+      const sec = (flowsState.sectors ?? []).find(s => s.key === sectorKey);
+      if (sec && sec.intradayChange > flowThreshold) {
+        matchedSector = sec; sectorVerified = true;
+      }
+    }
+    // If stock not in mapping → advisory pass (2 engines agree, sector unconfirmed)
+    if (!sectorKey) sectorVerified = true;
+  }
 
   const f4: FilterResult = {
-    pass:    !fullDone ? null : (!!top8Match && scoreOk),
-    pending: !fullDone,
-    label:   "Validado en TOP 8 (score ≥ 78)",
-    detail:  !fullDone
+    pass:    !flowsDone ? null : (!!bestCandidate && sectorVerified),
+    pending: !flowsDone,
+    label:   "Sector con flujo institucional",
+    detail:  !flowsDone
       ? "Ejecuta SCAN"
-      : top8Match && scoreOk
-        ? `Score ${scoreNum.toFixed(1)}  ·  Risk ${top8Match.risk ?? "—"}  ·  Conviction ${top8Match.conviction}`
-        : top8Match
-          ? `${topRally?.ticker} score ${scoreNum.toFixed(1)} — por debajo del umbral`
-          : topRally
-            ? `${topRally.ticker} no llegó al TOP 8 esta sesión`
-            : "Sin coincidencia TOP 8",
+      : !bestCandidate
+        ? "Esperando ticket de intersección"
+        : matchedSector
+          ? `${matchedSector.name}  +${matchedSector.intradayChange.toFixed(2)}%${sessionLabel}`
+          : STOCK_SECTOR[bestCandidate?.ticker?.toUpperCase() ?? ""]
+            ? `Sector de ${bestCandidate.ticker} sin flujo positivo hoy`
+            : `${bestCandidate.ticker} — sector confirmado por los 2 motores (flujo pendiente)`,
   };
 
   // ── Final result ───────────────────────────────────────────────────────────
@@ -238,12 +239,12 @@ export function evaluateOptimalSignal(
     filter3: f3,
     filter4: f4,
     allPass,
-    ticker:         allPass ? topRally!.ticker : null,
-    sectorName:     matchedSector?.name ?? winningSector?.name ?? null,
-    rallyScore:     topRally?.rallyScore ?? null,
-    top8Score:      allPass ? scoreNum : null,
-    trailingTight:  allPass && top8Match ? String(top8Match.trailingAdjusted ?? "—") : null,
-    trailingMedium: allPass && top8Match ? String(top8Match.trailingMedium ?? "—") : null,
+    ticker:         allPass && bestCandidate ? bestCandidate.ticker : null,
+    sectorName:     matchedSector?.name ?? null,
+    rallyScore:     bestCandidate?.rallyScore ?? null,
+    top8Score:      allPass && bestCandidate ? bestCandidate.top8Score : null,
+    trailingTight:  allPass && bestCandidate ? String(bestCandidate.top8Asset.trailingAdjusted ?? "—") : null,
+    trailingMedium: allPass && bestCandidate ? String(bestCandidate.top8Asset.trailingMedium ?? "—") : null,
     needsScans,
   };
 }
