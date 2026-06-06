@@ -745,11 +745,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     try {
       const res  = await fetch("/api/sector-leaders-data?mode=intraday");
       const data = await res.json();
-      setFlowsState(data.ok ? {
-        status: "DONE", scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
-        marketOpen: data.marketOpen ?? false, spy: data.spy ?? null,
-        sectors: data.sectors ?? [], note: data.note ?? "",
-      } : prev => ({ ...prev, status: "ERROR" }));
+      if (data.ok) {
+        setFlowsState({
+          status: "DONE", scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
+          marketOpen: data.marketOpen ?? false, spy: data.spy ?? null,
+          sectors: data.sectors ?? [], note: data.note ?? "",
+        });
+      } else {
+        setFlowsState(prev => ({ ...prev, status: "ERROR" }));
+      }
     } catch { setFlowsState(prev => ({ ...prev, status: "ERROR" })); }
   }
 
@@ -804,11 +808,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     await new Promise(r => setTimeout(r, 1000)); // brief stagger
 
     setScanPhase("rally"); // shows "rally" phase while both run
-    const [, rallyErr, fullErr] = await Promise.allSettled([
-      flowsPromise,    // FLOWS finishes (already running, ~3s left)
-      runRally(),      // RALLY runs in parallel
-      (async () => { setScanPhase("full"); await runFull(); })(), // FULL runs in parallel
-    ]);
+    const rallyPromise = runRally();
+    const fullPromise = (async () => {
+      // Wait slightly so UI shows "rally" phase first, then transition to "full"
+      await new Promise(r => setTimeout(r, 500));
+      setScanPhase("full");
+      await runFull();
+    })();
+
+    // Wait for all three to complete
+    await Promise.allSettled([flowsPromise, rallyPromise, fullPromise]);
 
     setScanPhase("done");
     showToast("✓ Análisis completo — Señal Óptima actualizada", "success");

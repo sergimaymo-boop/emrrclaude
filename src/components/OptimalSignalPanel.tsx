@@ -98,19 +98,20 @@ interface FilterResult {
 }
 
 interface OptimalSignal {
-  alarma: boolean;        // market bearish → red alarm
-  filter1: FilterResult;  // Regime
-  filter2: FilterResult;  // Flows sector
-  filter3: FilterResult;  // Rally in sector
-  filter4: FilterResult;  // TOP 8 validated
-  allPass: boolean;
+  alarma: boolean;         // market bearish → red alarm
+  filter1: FilterResult;   // Regime
+  filter2: FilterResult;   // Flows sector
+  filter3: FilterResult;   // Rally in sector
+  filter4: FilterResult;   // TOP 8 validated
+  allPass: boolean;        // all filters + no alarm (ideal green state)
+  bestCandidateExists: boolean; // ticket exists (shows in green OR red if alarma)
   ticker: string | null;
   sectorName: string | null;
   rallyScore: number | null;
   top8Score: number | null;
   trailingTight: string | null;
   trailingMedium: string | null;
-  needsScans: string[];   // which scans still need to run
+  needsScans: string[];    // which scans still need to run
 }
 
 // ─── Signal evaluation (pure client-side, no API calls) ───────────────────────
@@ -229,8 +230,11 @@ export function evaluateOptimalSignal(
   };
 
   // ── Final result ───────────────────────────────────────────────────────────
+  // allPass = todos los filtros + mercado alcista (condición ideal)
+  // bestCandidateExists = hay confluencia RALLY ∩ TOP8 (se muestra SIEMPRE)
   const allPass = !alarma &&
     f1.pass === true && f2.pass === true && f3.pass === true && f4.pass === true;
+  const bestCandidateExists = !!bestCandidate && f2.pass === true && f3.pass === true && f4.pass === true;
 
   return {
     alarma,
@@ -239,12 +243,13 @@ export function evaluateOptimalSignal(
     filter3: f3,
     filter4: f4,
     allPass,
-    ticker:         allPass && bestCandidate ? bestCandidate.ticker : null,
+    bestCandidateExists, // NUEVO: ticket se muestra aunque alarma sea true
+    ticker:         bestCandidateExists ? bestCandidate.ticker : null,
     sectorName:     matchedSector?.name ?? null,
     rallyScore:     bestCandidate?.rallyScore ?? null,
-    top8Score:      allPass && bestCandidate ? bestCandidate.top8Score : null,
-    trailingTight:  allPass && bestCandidate ? String(bestCandidate.top8Asset.trailingAdjusted ?? "—") : null,
-    trailingMedium: allPass && bestCandidate ? String(bestCandidate.top8Asset.trailingMedium ?? "—") : null,
+    top8Score:      bestCandidate ? bestCandidate.top8Score : null,
+    trailingTight:  bestCandidate ? String(bestCandidate.top8Asset.trailingAdjusted ?? "—") : null,
+    trailingMedium: bestCandidate ? String(bestCandidate.top8Asset.trailingMedium ?? "—") : null,
     needsScans,
   };
 }
@@ -379,26 +384,31 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
         <FilterRow index={4} filter={s.filter4} alarma={s.alarma} />
       </div>
 
-      {/* ── PERFECT TICKET ── */}
-      {s.allPass && s.ticker && (
+      {/* ── TICKET OPTIMAL — SIEMPRE VISIBLE (verde si ok, rojo si bearish) ── */}
+      {s.bestCandidateExists && s.ticker && (
         <div style={{
           margin: "0 12px 12px",
           padding: "14px 16px",
           borderRadius: 10,
-          background: "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)",
-          border: "1px solid rgba(16,185,129,0.35)",
+          background: s.alarma
+            ? "linear-gradient(135deg, rgba(239,68,68,0.18) 0%, rgba(239,68,68,0.08) 100%)"
+            : "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)",
+          border: `1px solid ${s.alarma ? "rgba(239,68,68,0.35)" : "rgba(16,185,129,0.35)"}`,
         }}>
-          <div style={{ fontSize: 9, fontWeight: 800, color: "#10b981", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>
-            Ticket perfecto · Comprar en Interactive Brokers
+          <div style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8,
+            color: s.alarma ? "#ef4444" : "#10b981",
+          }}>
+            {s.alarma ? "⚠️ Confluencia detectada · Mercado bajista" : "✓ Ticket perfecto · Comprar en Interactive Brokers"}
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
 
             {/* Ticker */}
             <div>
-              <div style={{ fontSize: 36, fontWeight: 900, color: "#ffffff", letterSpacing: "-1px", lineHeight: 1 }}>
+              <div style={{ fontSize: 36, fontWeight: 900, color: s.alarma ? "#f87171" : "#ffffff", letterSpacing: "-1px", lineHeight: 1 }}>
                 {s.ticker}
               </div>
-              <div style={{ fontSize: 10, color: "#34d399", marginTop: 3 }}>
+              <div style={{ fontSize: 10, color: s.alarma ? "#ef4444" : "#34d399", marginTop: 3 }}>
                 {s.sectorName}  ·  Rally {s.rallyScore}  ·  Score {s.top8Score?.toFixed(1)}
               </div>
             </div>
@@ -410,11 +420,11 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: "#10b981" }}>{s.trailingTight}</div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: s.alarma ? "#f87171" : "#10b981" }}>{s.trailingTight}</div>
                   <div style={{ fontSize: 8, color: "#475569" }}>TIGHT</div>
                 </div>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: "#34d399" }}>{s.trailingMedium}</div>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: s.alarma ? "#ef4444" : "#34d399" }}>{s.trailingMedium}</div>
                   <div style={{ fontSize: 8, color: "#475569" }}>MEDIUM</div>
                 </div>
               </div>
