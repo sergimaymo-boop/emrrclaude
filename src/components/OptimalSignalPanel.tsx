@@ -214,18 +214,23 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
   return (
     <section style={{
       marginBottom: 14,
-      borderRadius: 12,
+      borderRadius: 14,
       overflow: "hidden",
       border: s.alarma
-        ? "2px solid rgba(239,68,68,0.6)"
+        ? "2px solid #ef4444"
         : s.allPass
-          ? "2px solid rgba(16,185,129,0.5)"
-          : "1px solid rgba(255,255,255,0.08)",
+          ? "2px solid #10b981"
+          : "1px solid rgba(201,162,39,0.25)",   // gold tint — always visible
       background: s.alarma
-        ? "rgba(239,68,68,0.06)"
+        ? "rgba(239,68,68,0.08)"
         : s.allPass
-          ? "rgba(16,185,129,0.06)"
-          : "rgba(255,255,255,0.02)",
+          ? "rgba(16,185,129,0.08)"
+          : "rgba(201,162,39,0.04)",
+      boxShadow: s.alarma
+        ? "0 0 20px rgba(239,68,68,0.15)"
+        : s.allPass
+          ? "0 0 20px rgba(16,185,129,0.15)"
+          : "none",
     }}>
 
       {/* ── Header ── */}
@@ -233,16 +238,16 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
         display: "flex", justifyContent: "space-between", alignItems: "center",
         padding: "10px 14px",
         background: s.alarma
-          ? "rgba(239,68,68,0.12)"
+          ? "rgba(239,68,68,0.14)"
           : s.allPass
-            ? "rgba(16,185,129,0.12)"
-            : "rgba(255,255,255,0.03)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+            ? "rgba(16,185,129,0.14)"
+            : "rgba(201,162,39,0.08)",
+        borderBottom: `1px solid ${s.alarma ? "rgba(239,68,68,0.2)" : s.allPass ? "rgba(16,185,129,0.2)" : "rgba(201,162,39,0.15)"}`,
       }}>
         <span style={{
           fontSize: 11, fontWeight: 900, letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: s.alarma ? "#ef4444" : s.allPass ? "#10b981" : "#64748b",
+          color: s.alarma ? "#ef4444" : s.allPass ? "#10b981" : "#c9a227",
         }}>
           🎯 Señal Óptima
         </span>

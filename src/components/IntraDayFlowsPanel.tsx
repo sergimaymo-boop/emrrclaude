@@ -287,12 +287,24 @@ export function IntraDayFlowsPanel({ flowsState }: Props) {
       )}
 
       {isScanning && (
-        <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <div style={{ fontSize: 12, color: "#c9a227", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#c9a227", display: "inline-block", animation: "pulse 1s infinite" }} />
-            Analizando flujos intraday…
+        <div style={{ padding: "16px 0 10px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: "#c9a227", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#c9a227", display: "inline-block", animation: "pulse 1s infinite" }} />
+              Analizando flujos intraday…
+            </div>
+            <span style={{ fontSize: 10, color: "#475569" }}>10 ETFs · 30 stocks</span>
           </div>
-          <div style={{ marginTop: 6, fontSize: 10, color: "#475569" }}>10 ETFs · 30 stocks · Yahoo Finance 5-min</div>
+          {/* Animated progress bar */}
+          <div style={{ height: 6, background: "rgba(255,255,255,0.07)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{
+              height: "100%",
+              background: "linear-gradient(90deg, #9a7510, #c9a227, #e8c347)",
+              borderRadius: 3,
+              animation: "flows-scan-progress 3s ease-in-out infinite",
+              backgroundSize: "200% 100%",
+            }} />
+          </div>
         </div>
       )}
 

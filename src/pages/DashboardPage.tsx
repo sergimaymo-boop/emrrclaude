@@ -47,7 +47,7 @@ import {
   startRallyScan,
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
-import { ScanProgressBars } from "../components/ScanProgressBars";
+// ScanProgressBars removed — each module shows its own progress bar inline
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 
 interface DashboardPageProps {
@@ -795,12 +795,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         top8={top8}
       />
 
-      {/* Scan progress bars — appear just below sticky header, auto-hide 5s after 100% */}
-      <ScanProgressBars
-        scanState={scanState}
-        rallyState={rallyState}
-        flowsState={flowsState}
-      />
+      {/* Progress bars are now inside each module: ScanStatusPanel, RallyLeadersPanel, IntraDayFlowsPanel */}
 
       {/* Market Regime semaphore — internal analysis, only label shown */}
       {marketRegime !== "UNKNOWN" && (
