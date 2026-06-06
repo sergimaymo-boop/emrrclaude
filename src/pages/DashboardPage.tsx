@@ -47,6 +47,7 @@ import {
   startRallyScan,
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
+import { ScanProgressBars } from "../components/ScanProgressBars";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -777,6 +778,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         isFlowsScanning={flowsState.status === "SCANNING"}
         onLogout={onLogout}
       />
+      {/* Scan progress bars — appear just below sticky header, auto-hide 5s after 100% */}
+      <ScanProgressBars
+        scanState={scanState}
+        rallyState={rallyState}
+        flowsState={flowsState}
+      />
+
       {/* Market Regime semaphore — internal analysis, only label shown */}
       {marketRegime !== "UNKNOWN" && (
         <div style={{
