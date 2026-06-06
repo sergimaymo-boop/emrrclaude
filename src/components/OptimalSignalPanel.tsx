@@ -2,28 +2,90 @@ import type { Top8Asset } from "../types";
 import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
 
-// ─── Sector mapping: stock → sector key (same keys as SCAN FLOWS) ─────────────
+// ─── Sector mapping: stock → sector key (~200 S&P500 stocks, 40% coverage) ────
+// Cobertura ampliada para capturar Rally Leaders reales.
+// Basado en clasificación GICS → mapeado a nuestros 10 sector keys de SCAN FLOWS.
 const STOCK_SECTOR: Record<string, string> = {
-  // Consumo Básico
-  KO:"staples", PG:"staples", PEP:"staples", COST:"staples", WMT:"staples", CL:"staples",
-  // Utilities
-  NEE:"utilities", SO:"utilities", DUK:"utilities", AEP:"utilities", SRE:"utilities", EXC:"utilities",
-  // Defensa
-  LMT:"defense", RTX:"defense", NOC:"defense", GD:"defense", LHX:"defense", HII:"defense",
-  // Oro/Metales
-  NEM:"gold", GOLD:"gold", FCX:"gold", AEM:"gold", WPM:"gold", FNV:"gold",
-  // Salud
-  UNH:"healthcare", LLY:"healthcare", JNJ:"healthcare", ABBV:"healthcare", MRK:"healthcare", TMO:"healthcare",
-  // Semiconductores
-  NVDA:"semis", AMD:"semis", INTC:"semis", QCOM:"semis", AVGO:"semis", TXN:"semis",
-  // Software / IA
-  MSFT:"software", ORCL:"software", CRM:"software", NOW:"software", INTU:"software", ADBE:"software",
-  // Bancos
-  JPM:"banks", BAC:"banks", WFC:"banks", C:"banks", GS:"banks", MS:"banks",
-  // Energía
-  XOM:"energy", CVX:"energy", COP:"energy", EOG:"energy", SLB:"energy", MPC:"energy",
-  // Tecnología
-  AAPL:"tech", ACN:"tech", AVGO:"tech",
+  // ── CONSUMO BÁSICO (XLP) ─────────────────────────────────────────────────
+  KO:"staples", PEP:"staples", PG:"staples", WMT:"staples", COST:"staples",
+  CL:"staples", MO:"staples", PM:"staples", KHC:"staples", GIS:"staples",
+  HSY:"staples", K:"staples", SJM:"staples", CPB:"staples", CAG:"staples",
+  TSN:"staples", HRL:"staples", MKC:"staples", CHD:"staples", CLX:"staples",
+  EL:"staples", KMB:"staples", COTY:"staples",
+
+  // ── UTILITIES (XLU) ──────────────────────────────────────────────────────
+  NEE:"utilities", SO:"utilities", DUK:"utilities", AEP:"utilities",
+  SRE:"utilities", EXC:"utilities", XEL:"utilities", PCG:"utilities",
+  WEC:"utilities", CMS:"utilities", ETR:"utilities", PPL:"utilities",
+  EIX:"utilities", FE:"utilities", CNP:"utilities", NI:"utilities",
+  ATO:"utilities", LNT:"utilities", OGE:"utilities",
+
+  // ── DEFENSA / INDUSTRIALES (ITA) ─────────────────────────────────────────
+  LMT:"defense", RTX:"defense", NOC:"defense", GD:"defense",
+  LHX:"defense", HII:"defense", TDG:"defense", BA:"defense",
+  TXT:"defense", LDOS:"defense", CACI:"defense", SAIC:"defense",
+  CAT:"defense", DE:"defense", HON:"defense", GE:"defense",
+  MMM:"defense", EMR:"defense", ROK:"defense", PH:"defense",
+  ITW:"defense", IR:"defense", CMI:"defense", PCAR:"defense",
+
+  // ── ORO / METALES / MATERIALES (GLD) ─────────────────────────────────────
+  NEM:"gold", GOLD:"gold", FCX:"gold", AEM:"gold", WPM:"gold",
+  FNV:"gold", AUY:"gold", KGC:"gold", HL:"gold", PAAS:"gold",
+  CF:"gold", MOS:"gold", NUE:"gold", STLD:"gold", RS:"gold",
+  ECL:"gold", DD:"gold", DOW:"gold", LYB:"gold", PPG:"gold",
+
+  // ── SALUD (XLV) ──────────────────────────────────────────────────────────
+  UNH:"healthcare", LLY:"healthcare", JNJ:"healthcare", ABBV:"healthcare",
+  MRK:"healthcare", TMO:"healthcare", ABT:"healthcare", DHR:"healthcare",
+  BMY:"healthcare", AMGN:"healthcare", GILD:"healthcare", ISRG:"healthcare",
+  SYK:"healthcare", BSX:"healthcare", MDT:"healthcare", EW:"healthcare",
+  HUM:"healthcare", CVS:"healthcare", MCK:"healthcare", CI:"healthcare",
+  CNC:"healthcare", HCA:"healthcare", ZBH:"healthcare", BAX:"healthcare",
+  BDX:"healthcare", HOLX:"healthcare", IQV:"healthcare", RMD:"healthcare",
+  DXCM:"healthcare", PODD:"healthcare", ALGN:"healthcare", IDXX:"healthcare",
+  BIIB:"healthcare", REGN:"healthcare", VRTX:"healthcare", ILMN:"healthcare",
+  MRNA:"healthcare", PFE:"healthcare", JAZZ:"healthcare", ALNY:"healthcare",
+
+  // ── SEMICONDUCTORES (SOXX) ───────────────────────────────────────────────
+  NVDA:"semis", AMD:"semis", INTC:"semis", QCOM:"semis", AVGO:"semis",
+  TXN:"semis", MU:"semis", LRCX:"semis", KLAC:"semis", AMAT:"semis",
+  ADI:"semis", ON:"semis", MCHP:"semis", SWKS:"semis", QRVO:"semis",
+  MRVL:"semis", MPWR:"semis", ENPH:"semis", STM:"semis", WOLF:"semis",
+
+  // ── SOFTWARE / IA / COMUNICACIONES (IGV) ─────────────────────────────────
+  MSFT:"software", ORCL:"software", CRM:"software", NOW:"software",
+  INTU:"software", ADBE:"software", IBM:"software", CSCO:"software",
+  AKAM:"software", NET:"software", FTNT:"software", PANW:"software",
+  CRWD:"software", ZS:"software", OKTA:"software", DDOG:"software",
+  SNOW:"software", MDB:"software", TEAM:"software", WDAY:"software",
+  VEEV:"software", HUBS:"software", ZM:"software", DOCU:"software",
+  SPLK:"software", COUP:"software", NICE:"software", PAYC:"software",
+  GOOGL:"software", GOOG:"software", META:"software", NFLX:"software",
+  DIS:"software", CMCSA:"software", CHTR:"software", TMUS:"software",
+  VZ:"software", T:"software", ATVI:"software", EA:"software",
+
+  // ── BANCOS / FINANCIEROS (KBE) ───────────────────────────────────────────
+  JPM:"banks", BAC:"banks", WFC:"banks", C:"banks", GS:"banks",
+  MS:"banks", AXP:"banks", BLK:"banks", SCHW:"banks", USB:"banks",
+  TFC:"banks", PNC:"banks", COF:"banks", STT:"banks", BK:"banks",
+  MTB:"banks", RF:"banks", KEY:"banks", CFG:"banks", FITB:"banks",
+  HBAN:"banks", ZION:"banks", CMA:"banks", SIVB:"banks",
+  V:"banks", MA:"banks", PYPL:"banks", SQ:"banks", FIS:"banks",
+  FISV:"banks", GPN:"banks", WEX:"banks", ALLY:"banks",
+
+  // ── ENERGÍA (XLE) ────────────────────────────────────────────────────────
+  XOM:"energy", CVX:"energy", COP:"energy", EOG:"energy", SLB:"energy",
+  MPC:"energy", PXD:"energy", DVN:"energy", HES:"energy", OXY:"energy",
+  FANG:"energy", PSX:"energy", VLO:"energy", HAL:"energy", BKR:"energy",
+  APA:"energy", MRO:"energy", CXO:"energy", WMB:"energy", KMI:"energy",
+  OKE:"energy", ET:"energy", EPD:"energy", MPLX:"energy",
+
+  // ── TECNOLOGÍA HARDWARE / INFRAESTRUCTURA (XLK) ──────────────────────────
+  AAPL:"tech", ACN:"tech", HPQ:"tech", HPE:"tech", DELL:"tech",
+  NTAP:"tech", WDC:"tech", STX:"tech", CDW:"tech", KEYS:"tech",
+  TRMB:"tech", JNPR:"tech", ZBRA:"tech", FFIV:"tech", VIAV:"tech",
+  CTSH:"tech", DXC:"tech", EPAM:"tech", GLOB:"tech", AMZN:"tech",
+  TSLA:"tech", UBER:"tech", LYFT:"tech", SHOP:"tech", TWLO:"tech",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,51 +135,73 @@ export function evaluateOptimalSignal(
     detail:  regimeUnknown ? "Calculando…" : regimeBullish ? "ALCISTA ✓" : "BAJISTA — No operar",
   };
 
-  // ── Filter 2: Sector with strongest inflow ─────────────────────────────────
+  // ── Filter 2: Sector with strongest flow ─────────────────────────────────
+  // Works with LIVE and LAST SESSION data — no market open required
   const flowsDone = flowsState.status === "DONE";
   if (!flowsDone) needsScans.push("SCAN FLOWS");
 
+  // Threshold relaxed for last session (still valid for trend analysis)
+  const flowThreshold = flowsState.marketOpen ? 0.3 : 0.2;
+  const rvolThreshold = flowsState.marketOpen ? 1.2 : 1.0;
+
   const winningSector = flowsDone
-    ? (flowsState.sectors ?? []).find(s => s.intradayChange > 0.3 && s.relativeVolume >= 1.2)
+    ? (flowsState.sectors ?? []).find(s =>
+        s.intradayChange > flowThreshold && s.relativeVolume >= rvolThreshold
+      )
     : null;
+
+  const sessionLabel = flowsState.marketOpen ? "" : " (última sesión)";
 
   const f2: FilterResult = {
     pass:    !flowsDone ? null : !!winningSector,
     pending: !flowsDone,
     label:   "Sector con flujo institucional",
     detail:  !flowsDone
-      ? "Ejecuta SCAN FLOWS"
+      ? "Ejecuta SCAN"
       : winningSector
-        ? `${winningSector.name}  +${winningSector.intradayChange.toFixed(2)}%  Vol ${winningSector.relativeVolume.toFixed(1)}x`
-        : "Sin sector claro hoy",
+        ? `${winningSector.name}  ${winningSector.intradayChange > 0 ? "+" : ""}${winningSector.intradayChange.toFixed(2)}%  Vol ${winningSector.relativeVolume.toFixed(1)}x${sessionLabel}`
+        : "Sin sector con flujo claro",
   };
 
-  // ── Filter 3: Rally Leader inside winning sector ───────────────────────────
+  // ── Filter 3: Rally Leader inside winning sector ──────────────────────────
   const rallyDone = rallyState.status === "RALLY_FINAL" || rallyState.status === "RALLY_PARTIAL_DIAGNOSTIC";
   if (!rallyDone) needsScans.push("SCAN RALLY");
 
+  // Cross-reference: find Rally Leaders whose ticker maps to the winning sector
+  // Mapping covers ~200 S&P500 stocks (expanded from 56 to prevent blind spots)
+  const rallyLeaders = rallyState.top10 ?? [];
   const rallyInSector = (rallyDone && winningSector)
-    ? (rallyState.top10 ?? []).filter(r => {
-        const sector = STOCK_SECTOR[r.ticker.toUpperCase()];
-        return sector === winningSector.key;
-      })
+    ? rallyLeaders.filter(r => STOCK_SECTOR[r.ticker.toUpperCase()] === winningSector.key)
     : [];
-  const topRally = rallyInSector[0] ?? null;
+
+  // If no match in winning sector, try top 3 sectors (not just sector #1)
+  let topRally = rallyInSector[0] ?? null;
+  let matchedSector = topRally ? winningSector : null;
+
+  if (!topRally && rallyDone && flowsDone) {
+    const topSectors = (flowsState.sectors ?? [])
+      .filter(s => s.intradayChange > 0)
+      .slice(0, 3);
+    for (const sec of topSectors) {
+      const match = rallyLeaders.find(r => STOCK_SECTOR[r.ticker.toUpperCase()] === sec.key);
+      if (match) { topRally = match; matchedSector = sec; break; }
+    }
+  }
 
   const f3: FilterResult = {
     pass:    !rallyDone ? null : !!topRally,
     pending: !rallyDone,
-    label:   "Rally Leader en el sector",
+    label:   "Rally Leader en sector ganador",
     detail:  !rallyDone
-      ? "Ejecuta SCAN RALLY"
+      ? "Ejecuta SCAN"
       : topRally
-        ? `${topRally.ticker}  Rally Score ${topRally.rallyScore}`
+        ? `${topRally.ticker}  ·  Rally ${topRally.rallyScore}  ·  ${matchedSector?.name ?? ""}`
         : winningSector
-          ? `Sin Rally Leader en ${winningSector.name}`
-          : "Esperando sector",
+          ? `Sin Rally Leader mapeado en ${winningSector.name}`
+          : "Esperando datos de sector",
   };
 
-  // ── Filter 4: Same stock in TOP 8 ─────────────────────────────────────────
+  // ── Filter 4: Same stock validated in TOP 8 ───────────────────────────────
   const fullDone = top8.length > 0;
   if (!fullDone) needsScans.push("SCAN FULL");
 
@@ -126,21 +210,21 @@ export function evaluateOptimalSignal(
     : null;
 
   const scoreNum = top8Match ? parseFloat(String(top8Match.score ?? 0)) : 0;
-  const scoreOk  = scoreNum >= 80;
+  const scoreOk  = scoreNum >= 78; // slight tolerance for near-perfect scores
 
   const f4: FilterResult = {
     pass:    !fullDone ? null : (!!top8Match && scoreOk),
     pending: !fullDone,
-    label:   "Validado en TOP 8 (score ≥ 80)",
+    label:   "Validado en TOP 8 (score ≥ 78)",
     detail:  !fullDone
-      ? "Ejecuta SCAN FULL"
+      ? "Ejecuta SCAN"
       : top8Match && scoreOk
-        ? `Score ${scoreNum.toFixed(1)}  ·  ${top8Match.risk ?? "—"}  ·  Conviction ${top8Match.conviction}`
+        ? `Score ${scoreNum.toFixed(1)}  ·  Risk ${top8Match.risk ?? "—"}  ·  Conviction ${top8Match.conviction}`
         : top8Match
-          ? `Score ${scoreNum.toFixed(1)} — insuficiente (< 80)`
+          ? `${topRally?.ticker} score ${scoreNum.toFixed(1)} — por debajo del umbral`
           : topRally
-            ? `${topRally.ticker} no está en el TOP 8`
-            : "Esperando coincidencia",
+            ? `${topRally.ticker} no llegó al TOP 8 esta sesión`
+            : "Sin coincidencia TOP 8",
   };
 
   // ── Final result ───────────────────────────────────────────────────────────
@@ -155,7 +239,7 @@ export function evaluateOptimalSignal(
     filter4: f4,
     allPass,
     ticker:         allPass ? topRally!.ticker : null,
-    sectorName:     winningSector?.name ?? null,
+    sectorName:     matchedSector?.name ?? winningSector?.name ?? null,
     rallyScore:     topRally?.rallyScore ?? null,
     top8Score:      allPass ? scoreNum : null,
     trailingTight:  allPass && top8Match ? String(top8Match.trailingAdjusted ?? "—") : null,
