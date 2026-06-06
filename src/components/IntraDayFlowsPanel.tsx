@@ -120,19 +120,25 @@ function SectorTile({ sector }: { sector: SectorFlow }) {
       {/* Divider */}
       <div style={{ height: 1, background: `${c.border}40`, margin: "4px 0 3px" }} />
 
-      {/* TOP STOCK — acción individual S&P500, invertible SL española */}
+      {/* PICK INVERTIBLE — acción S&P500, sin restricción PRIIPs para SL española */}
       {m ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 900, color: c.textPrimary, letterSpacing: "0.04em" }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: c.textPrimary, letterSpacing: "0.04em" }}>
               {m.ticker}
             </div>
-            <div style={{ fontSize: 7, fontWeight: 700, color: c.textSecondary, letterSpacing: "0.03em" }}>
-              NYSE · S&P500
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+              <span style={{
+                fontSize: 7, fontWeight: 800, padding: "1px 4px",
+                background: `${c.border}30`, border: `1px solid ${c.border}60`,
+                borderRadius: 3, color: c.textSecondary, letterSpacing: "0.04em",
+              }}>
+                ✓ INVERTIBLE
+              </span>
             </div>
           </div>
           <div style={{
-            fontSize: 13, fontWeight: 900, color: c.textPrimary,
+            fontSize: 14, fontWeight: 900, color: c.textPrimary,
             fontVariantNumeric: "tabular-nums",
           }}>
             {fmt(m.change)}

@@ -10,8 +10,21 @@
  */
 
 // ─── INTRADAY: Sectors with ETFs and top holdings ────────────────────────────
+//
+// ARQUITECTURA DE INVERTIBILIDAD — SL española / PRIIPs:
+//
+//   ETF (etf field):   SOLO para calcular el flujo del sector (precio intraday, volumen relativo)
+//                      NUNCA se recomienda como inversión directa.
+//                      Motivo: ETFs USA sin KID europeo = bloqueados por PRIIPs para inversores EU.
+//
+//   holdings[]:        SOLO acciones individuales Common Stock NYSE/NASDAQ del S&P500.
+//                      Las acciones individuales NO son PRIIPs → invertibles sin restricción
+//                      para cualquier SL española, independientemente de su clasificación MiFID II.
+//                      Regla: NUNCA añadir ETFs, CEFs, warrants o productos estructurados aquí.
+//
+// El sistema detecta flujos usando ETFs (análisis) y recomienda stocks (acción).
+// ────────────────────────────────────────────────────────────────────────────────
 
-// Holdings: S&P500 stocks only (all in our 606-stock universe)
 // 6 candidates per sector → pick the ONE with highest intraday % change
 const FLOW_SECTORS = [
   { key: "defense",    name: "Defensa",         etf: "ITA",  holdings: ["LMT","RTX","NOC","GD","LHX","HII"] },
