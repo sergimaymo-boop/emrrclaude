@@ -4,7 +4,6 @@ import { FearGreedPanel } from "../components/FearGreedPanel";
 import { MasterIndicatorsGrid } from "../components/MasterIndicatorsGrid";
 import { RallyLeadersPanel } from "../components/RallyLeadersPanel";
 import { ScanStatusPanel } from "../components/ScanStatusPanel";
-import { SectorLeaders } from "../components/SectorLeaders";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
 import { SystemStatusCards } from "../components/SystemStatusCards";
 import { TechnicalHeader } from "../components/TechnicalHeader";
@@ -14,7 +13,6 @@ import {
   initialSystemStatus,
   unavailableFearGreed,
   unavailableMasterIndicators,
-  unavailableSectors,
   unavailableTop8,
 } from "../data/emptyDashboardData";
 import {
@@ -32,7 +30,7 @@ import {
   startScanSnapshot,
   updateSystemStatusForDataMode,
 } from "../services/realDataRefresh";
-import type { FearGreed, MasterIndicator, ScanState, SectorLeader, SystemStatus, TimestampPair, Top8Asset } from "../types";
+import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair, Top8Asset } from "../types";
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
 import { shareTop8 } from "../utils/export";
@@ -158,7 +156,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>(initialSystemStatus);
   const [fearGreed, setFearGreed] = useState<FearGreed>(unavailableFearGreed);
   const [masterIndicators, setMasterIndicators] = useState<MasterIndicator[]>(unavailableMasterIndicators);
-  const [sectors, setSectors] = useState<SectorLeader[]>(unavailableSectors);
   const [top8, setTop8] = useState<Top8Asset[]>(unavailableTop8);
   const [scanState, setScanState] = useState<ScanState>({
     label: "Ready for SCAN FULL",
@@ -534,7 +531,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       operationalBlockReasons: ["NO_APPROVED_REAL_FEAR_GREED_SOURCE"],
     });
     setMasterIndicators(nextIndicators);
-    setSectors(unavailableSectors);
     setTop8(nextTop8);
     const nextCachedScanState = {
       ...nextSnapshotFields,
@@ -961,7 +957,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <MasterIndicatorsGrid indicators={masterIndicators} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <Top8Grid assets={top8} />
-      <SectorLeaders sectors={sectors} />
       <ActionButtons
         onScan={handleScan}
         onContinueScan={handleContinueScan}

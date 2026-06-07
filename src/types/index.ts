@@ -16,8 +16,6 @@ export type {
   ScanState,
   ScoreInputIntegrity,
   ScoreInputIntegrityStatus,
-  SectorLeader,
-  SectorState,
   SystemStatus,
   TimestampPair,
   Top8Asset,

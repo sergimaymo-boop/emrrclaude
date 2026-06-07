@@ -32,20 +32,6 @@ function displayAction(action: Top8Asset["action"]): string {
   return action;
 }
 
-function displayTrend(asset: Top8Asset): { label: string; title: string } {
-  if (asset.action === "EXEC" || asset.marketStatus === "OPEN") {
-    return {
-      label: asset.action === "EXEC" ? "Bull Strong" : "Bullish",
-      title: "Bullish trend confirmed",
-    };
-  }
-
-  return {
-    label: "EMA20 > EMA50",
-    title: "EMA20 above EMA50",
-  };
-}
-
 function valueWidth(value: number): string {
   return `${Math.max(0, Math.min(value, 100))}%`;
 }
@@ -96,10 +82,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
               <span>Continue the same scan snapshot to complete coverage</span>
             </div>
           </article>
-        ) : visibleAssets.map((asset) => {
-          const trendDisplay = displayTrend(asset);
-
-          return (
+        ) : visibleAssets.map((asset) => (
             <article className="asset-row" key={asset.ticker}>
               <div className="asset-rank-cell">
                 <div className="rank">{asset.rank}</div>
@@ -108,16 +91,18 @@ export function Top8Grid({ assets }: Top8GridProps) {
               <div className="asset-title-cell">
                 <div className="asset-symbol-row">
                   <strong>{asset.ticker}</strong>
+                  <span className="asset-name" title={asset.name}>{asset.name}</span>
+                </div>
+                <div className="asset-badges-row">
                   <Badge token={actionToken(asset.action)}>{displayAction(asset.action)}</Badge>
                   {asset.dataMode !== "REAL" && (
                     <Badge token={dataModeToken(asset.dataMode)}>{asset.dataMode}</Badge>
                   )}
                 </div>
-                <span>{asset.name}</span>
               </div>
 
               <div className="asset-market-cell">
-                <span>{asset.market}</span>
+                <span className="asset-market-tag">{asset.market}</span>
                 <strong className="asset-price">{formatDisplayPrice(asset.price)}</strong>
                 <div className="market-state-line">
                   <Badge token={asset.marketStatus === "OPEN" ? "GREEN_SOFT" : "WHITE_GREY"}>
@@ -129,43 +114,41 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="bar-metric">
-                <div>
-                  <span>Score</span>
-                  <strong>{asset.score}</strong>
+              <div className="asset-scores-cell">
+                <div className="bar-metric">
+                  <div>
+                    <span>Score</span>
+                    <strong>{asset.score}</strong>
+                  </div>
+                  <div className="metric-track" aria-hidden="true">
+                    <span className="metric-fill score-fill" style={{ width: valueWidth(asset.score) }} />
+                  </div>
                 </div>
-                <div className="metric-track" aria-hidden="true">
-                  <span className="metric-fill score-fill" style={{ width: valueWidth(asset.score) }} />
+
+                <div className="bar-metric conviction-line">
+                  <div>
+                    <span>Conviction</span>
+                    <strong>{asset.conviction}</strong>
+                  </div>
+                  <div className="metric-track" aria-hidden="true">
+                    <span className="metric-fill conviction-fill" style={{ width: valueWidth(asset.conviction) }} />
+                  </div>
                 </div>
               </div>
 
-              <div className="bar-metric conviction-line">
-                <div>
-                  <span>Conviction</span>
-                  <strong>{asset.conviction}</strong>
+              <div className="asset-meta-cell">
+                <div className="compact-metric risk-line">
+                  <span>Risk</span>
+                  <strong>{asset.risk}</strong>
                 </div>
-                <div className="metric-track" aria-hidden="true">
-                  <span className="metric-fill conviction-fill" style={{ width: valueWidth(asset.conviction) }} />
+                <div className="compact-metric momentum-line">
+                  <span>Momentum</span>
+                  <strong>{asset.momentum}</strong>
                 </div>
-              </div>
-
-              <div className="compact-metric risk-line">
-                <span>Risk</span>
-                <strong>{asset.risk}</strong>
-              </div>
-
-              <div className="compact-metric momentum-line">
-                <span>Momentum</span>
-                <strong>{asset.momentum}</strong>
-              </div>
-
-              <div className="compact-metric trend-line">
-                <span>Trend</span>
-                <strong title={trendDisplay.title}>{trendDisplay.label}</strong>
               </div>
 
               <div className="trailing-line">
-                <span>Trailing</span>
+                <span>Trailing stop</span>
                 <div className="trailing-values">
                   <strong>Tight <b>{asset.trailingAdjusted}</b></strong>
                   <strong>Medium <b>{asset.trailingMedium}</b></strong>
@@ -176,12 +159,10 @@ export function Top8Grid({ assets }: Top8GridProps) {
               <div className="card-footer">
                 <span>{asset.dataQuality}</span>
                 <span>{asset.provider === "none" ? "no provider" : asset.provider}</span>
-                <span>{asset.resultScope}</span>
                 <span>{asset.priceTimestamp.local}</span>
               </div>
             </article>
-          );
-        })}
+        ))}
       </div>
     </section>
   );

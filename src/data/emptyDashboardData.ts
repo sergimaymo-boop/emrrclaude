@@ -1,4 +1,4 @@
-import type { FearGreed, MasterIndicator, SectorLeader, SystemStatus, TimestampPair, Top8Asset } from "../types";
+import type { FearGreed, MasterIndicator, SystemStatus, TimestampPair, Top8Asset } from "../types";
 import { createTimestampPair } from "../utils/time";
 
 function unavailableTimestamp(): TimestampPair {
@@ -93,7 +93,5 @@ export const unavailableMasterIndicators: MasterIndicator[] = masterIndicatorDef
   operationalBlockReasons: ["MASTER_INDICATOR_DATA_NOT_LOADED"],
   timestamp: initialTimestamp,
 }));
-
-export const unavailableSectors: SectorLeader[] = [];
 
 export const unavailableTop8: Top8Asset[] = [];
