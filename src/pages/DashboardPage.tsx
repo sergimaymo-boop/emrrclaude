@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
 import { FearGreedPanel } from "../components/FearGreedPanel";
-import { MasterIndicatorsGrid } from "../components/MasterIndicatorsGrid";
 import { RallyLeadersPanel } from "../components/RallyLeadersPanel";
 import { ScanStatusPanel } from "../components/ScanStatusPanel";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
@@ -954,7 +953,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ScanStatusPanel scanState={scanState} />
       <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
       <IntraDayFlowsPanel flowsState={flowsState} />
-      <MasterIndicatorsGrid indicators={masterIndicators} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       <Top8Grid assets={top8} />
       <ActionButtons

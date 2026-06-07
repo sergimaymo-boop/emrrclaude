@@ -1,8 +1,10 @@
 import type { MasterIndicator } from "../types";
 
-interface MasterIndicatorsGridProps {
-  indicators: MasterIndicator[];
-}
+// NOTE: The standalone "Master Indicators" section was removed from the dashboard
+// (redundant with the Fear & Greed panel, which now shows the same raw indicator
+// values via IndicatorRow below). This module is kept only as the shared
+// renderer/color-logic source so the F&G panel stays byte-identical to what
+// Master Indicators used to display.
 
 export function getIndicatorColor(symbol: string, value: string, changePercent: number): string {
   const n = parseFloat(value);
@@ -74,21 +76,5 @@ export function IndicatorRow({ ind }: { ind: MasterIndicator }) {
         {isLive ? "LIVE" : "CACHE"}
       </span>
     </div>
-  );
-}
-
-export function MasterIndicatorsGrid({ indicators }: MasterIndicatorsGridProps) {
-  return (
-    <section className="section-block">
-      <div className="section-title-row" style={{ marginBottom: 8 }}>
-        <h2>Master Indicators</h2>
-        <span style={{ fontSize: 10, color: "#64748b" }}>Informational only</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {indicators.map(ind => (
-          <IndicatorRow key={ind.symbol} ind={ind} />
-        ))}
-      </div>
-    </section>
   );
 }
