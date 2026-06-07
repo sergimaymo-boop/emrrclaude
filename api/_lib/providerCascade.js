@@ -23,7 +23,9 @@ const EODHD_TO_FINNHUB = {
   "VIX.INDX":   "^VIX",
   "VVIX.INDX":  "^VVIX",
   "US10Y.GBOND":"^TNX",
-  "MOVE.INDX":  "MOVE",
+  // NOTE: Finnhub's "MOVE" symbol resolves to "Corvex, Inc." (an unrelated equity, ~$18-19),
+  // NOT the ICE BofA MOVE Index (bond market volatility, ~75-90). Omit this mapping so the
+  // cascade skips Finnhub and falls through to Yahoo's "^MOVE" (the correct index, see YAHOO_DIRECT).
 };
 
 // EODHD exchange suffix → Yahoo Finance suffix

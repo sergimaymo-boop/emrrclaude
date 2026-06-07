@@ -9,7 +9,7 @@ const SYMBOL_DETAILS = {
   VIX: { name: "Equity Volatility", eodhdSymbol: "VIX.INDX", finnhubSymbol: "^VIX", currency: "index" },
   VVIX: { name: "VIX Volatility", eodhdSymbol: "VVIX.INDX", finnhubSymbol: "^VVIX", currency: "index" },
   TNX: { name: "10Y Yield", eodhdSymbol: "US10Y.GBOND", finnhubSymbol: "^TNX", currency: "%" },
-  MOVE: { name: "Treasury Volatility", eodhdSymbol: "MOVE.INDX", finnhubSymbol: "MOVE", currency: "index" },
+  MOVE: { name: "Treasury Volatility", eodhdSymbol: "MOVE.INDX", finnhubSymbol: null, currency: "index" }, // Finnhub "MOVE" = wrong equity (Corvex Inc); resolved via Yahoo "^MOVE" instead
 };
 
 const PLACEHOLDER_PARTS = ["your_", "_here", "placeholder"];
