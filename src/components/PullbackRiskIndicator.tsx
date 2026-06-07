@@ -25,32 +25,58 @@ export interface PullbackRisk {
   ticker: string;
 }
 
+// AUDIT FIX: `asset.price` is always rendered with a currency prefix/format via
+// formatCurrencyValue() in realDataRefresh.ts — "$123.45" (USD), "EUR 123.45",
+// or "GBX 1,234" (with thousands separators for GBX pence). The previous version
+// only stripped "%"/"+", so parseFloat("$123.45") / parseFloat("EUR 123.45") / etc.
+// returned NaN → `price` was ALWAYS null → the "Extension above EMA20" factor
+// (the single LARGEST weight in the model, 30 pts) silently never fired for ANY
+// asset. Stripping currency symbols/codes and thousands separators here restores
+// that factor for all three currencies (USD/EUR/GBX).
 function toNumber(value: unknown): number | null {
-  const parsed = parseFloat(String(value ?? "").replace("%", "").replace("+", ""));
+  const cleaned = String(value ?? "")
+    .replace(/^(EUR|GBX)\s*/i, "")
+    .replace(/[$%+,]/g, "")
+    .trim();
+  const parsed = parseFloat(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
 // Re-derives the RALLY ∩ TOP8 intersection candidate (mirrors OptimalSignalPanel's
 // "intersection-first" search) — duplicated intentionally to keep this indicator
 // fully isolated from the Ticket Perfecto evaluation (zero risk of cross-breakage).
+//
+// Selection order (always run AFTER the TOP8 scan has data):
+//   1) "Ticket Perfecto" — the RALLY-top10 ∩ TOP8 intersection asset with the
+//      highest score (score >= 75), exactly like OptimalSignalPanel surfaces it.
+//   2) Fallback — when there is no Ticket Perfecto yet (rally scan pending, or no
+//      intersection clears the score bar), use TOP8 #1: the asset is already
+//      ranked/sorted by score descending server-side (see scoreEngine.js /
+//      scan-snapshot continue.js — `.sort((a,b) => b.score - a.score)` then
+//      `rank: index + 1`), so `top8[0]` IS the highest-scoring TOP8 candidate.
 function findCandidateAsset(rallyState: RallyState, top8: Top8Asset[]): Top8Asset | null {
+  if (top8.length === 0) return null; // nothing to evaluate until the TOP8 scan has data
+
   const rallyDone = rallyState.status === "RALLY_FINAL" || rallyState.status === "RALLY_PARTIAL_DIAGNOSTIC";
-  if (!rallyDone || top8.length === 0) return null;
+  if (rallyDone) {
+    const rallyLeaders = rallyState.top10 ?? [];
+    let best: { asset: Top8Asset; score: number } | null = null;
 
-  const rallyLeaders = rallyState.top10 ?? [];
-  let best: { asset: Top8Asset; score: number } | null = null;
-
-  for (const leader of rallyLeaders) {
-    const match = top8.find((a) => a.ticker === leader.ticker);
-    if (match) {
-      const s = toNumber(match.score) ?? 0;
-      if (s >= 75 && (!best || s > best.score)) {
-        best = { asset: match, score: s };
+    for (const leader of rallyLeaders) {
+      const match = top8.find((a) => a.ticker === leader.ticker);
+      if (match) {
+        const s = toNumber(match.score) ?? 0;
+        if (s >= 75 && (!best || s > best.score)) {
+          best = { asset: match, score: s };
+        }
       }
     }
+
+    if (best) return best.asset;
   }
 
-  return best?.asset ?? null;
+  // No Ticket Perfecto available — fall back to the #1 TOP8 asset by score.
+  return top8[0] ?? null;
 }
 
 export function evaluatePullbackRisk(asset: Top8Asset): PullbackRisk {
@@ -100,10 +126,16 @@ export function evaluatePullbackRisk(asset: Top8Asset): PullbackRisk {
   return { level, score: Math.round(score), reasons, ticker: asset.ticker };
 }
 
-const LEVEL_META = {
-  LOW:    { color: "#10b981", bg: "rgba(16,185,129,0.1)",  border: "rgba(16,185,129,0.3)",  label: "Sin señales de pullback inminente" },
-  MEDIUM: { color: "#f59e0b", bg: "rgba(245,158,11,0.1)",  border: "rgba(245,158,11,0.3)",  label: "Vigilar — señales mixtas de agotamiento" },
-  HIGH:   { color: "#ef4444", bg: "rgba(239,68,68,0.1)",   border: "rgba(239,68,68,0.3)",   label: "Riesgo de pullback / corrección cercana" },
+// Simplified binary semaphore (per user request — collapse the previous 3-tier
+// LOW/MEDIUM/HIGH read-out into just two states):
+//   - "PULLBACK SIN SEÑALES" (green)  → score < 30  (the original LOW cutoff —
+//      already meant "no meaningful warning signs" in the weighted model)
+//   - "PULLBACK INMINENTE"   (red)    → score >= 30 (folds the old MEDIUM
+//      "mixed exhaustion signals" reading into the alert state too — for an
+//      EARLY-WARNING tool it's safer to flag borderline cases than to hide them)
+const PULLBACK_META = {
+  CLEAR:    { color: "#10b981", bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.3)", label: "PULLBACK SIN SEÑALES" },
+  IMMINENT: { color: "#ef4444", bg: "rgba(239,68,68,0.1)",  border: "rgba(239,68,68,0.3)",  label: "PULLBACK INMINENTE" },
 } as const;
 
 export function PullbackRiskIndicator({ rallyState, top8 }: { rallyState: RallyState; top8: Top8Asset[] }) {
@@ -111,7 +143,8 @@ export function PullbackRiskIndicator({ rallyState, top8 }: { rallyState: RallyS
   if (!candidate) return null;
 
   const risk = evaluatePullbackRisk(candidate);
-  const meta = LEVEL_META[risk.level];
+  const imminent = risk.level !== "LOW";
+  const meta = imminent ? PULLBACK_META.IMMINENT : PULLBACK_META.CLEAR;
 
   return (
     <div style={{
@@ -132,10 +165,10 @@ export function PullbackRiskIndicator({ rallyState, top8 }: { rallyState: RallyS
         <span style={{
           fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: meta.color,
         }}>
-          Pullback {risk.ticker} · {meta.label}
+          {risk.ticker} · {meta.label}
         </span>
       </div>
-      {risk.reasons.length > 0 && (
+      {imminent && risk.reasons.length > 0 && (
         <div style={{ fontSize: 9, color: "#64748b", textAlign: "center", lineHeight: 1.5 }}>
           {risk.reasons.join("  ·  ")}
         </div>
