@@ -3,7 +3,8 @@
  * Primary source: CNN Business Fear & Greed Index (public dataviz feed) —
  * matches the reference value users compare against (cnn.com/markets/fear-and-greed).
  * Fallback (only if CNN is unreachable): internal composite calculated from
- * market indicators — VIX (35%), SPY change (20%), HYG change (20%), MOVE (15%), VVIX (10%)
+ * the SAME 7 market indicators shown in the "Master Indicators" panel —
+ * VIX (25%), SPY (15%), HYG (15%), MOVE (15%), VVIX (10%), LQD (10%), TNX (10%)
  */
 
 import { cascadeQuote } from "./_lib/providerCascade.js";
@@ -93,14 +94,15 @@ function hygScore(change) {
 }
 
 function moveScore(move) {
-  // MOVE = bond volatility index
-  // High MOVE (>110) = high volatility = FEAR (lower greed score)
-  // Low MOVE (<70) = low volatility = COMPLACENCY (not true greed, but less fear)
-  if (move < 70)  return 15;      // Low volatility = low fear
-  if (move < 85)  return 30;
+  // MOVE = bond market volatility index — same fear/greed convention as VIX:
+  // LOW MOVE = calm bond market = LESS fear → HIGH score (greed-leaning)
+  // HIGH MOVE = stressed bond market = MORE fear → LOW score (fear-leaning)
+  // (previous version had these buckets inverted — fixed to match VIX/VVIX direction)
+  if (move < 70)  return 90;      // Low volatility = calm = less fear
+  if (move < 85)  return 70;
   if (move < 100) return 50;
-  if (move < 115) return 70;
-  return 90;                      // High volatility = high fear
+  if (move < 115) return 30;
+  return 10;                      // High volatility = stress = more fear
 }
 
 function vvixScore(vvix) {
@@ -109,6 +111,25 @@ function vvixScore(vvix) {
   if (vvix < 100) return 50;
   if (vvix < 110) return 35;
   return 15;
+}
+
+// Investment-grade credit ETF (LQD) — same "% change → risk-on score" convention as HYG,
+// just with tighter thresholds (LQD typically moves less than high-yield credit)
+function lqdScore(change) {
+  if (change > 0.15) return 85;
+  if (change > 0)    return 65;
+  if (change < -0.2) return 20;
+  return 35;
+}
+
+// 10Y Treasury yield (TNX) — large daily moves in either direction = macro stress = fear
+// (small/calm moves = less fear → higher score), mirrors api/_lib/marketPulse.js::tnxScore
+function tnxScore(changePercent) {
+  const magnitude = Math.abs(changePercent);
+  if (magnitude < 1) return 80;
+  if (magnitude < 2) return 60;
+  if (magnitude < 4) return 40;
+  return 20;
 }
 
 function toRating(score) {
@@ -123,14 +144,18 @@ export default async function handler(req, res) {
   try {
     const env = process.env;
 
-    // Fetch the CNN reference index and all 5 internal indicators in parallel
-    const [cnnResult, spyResult, vixResult, hygResult, moveResult, vvixResult] = await Promise.all([
+    // Fetch the CNN reference index and all 7 internal indicators in parallel —
+    // the SAME set (and symbols) shown in the "Master Indicators" panel, so the
+    // breakdown displayed here is consistent with what the user sees there.
+    const [cnnResult, spyResult, vixResult, hygResult, moveResult, vvixResult, lqdResult, tnxResult] = await Promise.all([
       fetchCnnFearGreed(),
-      cascadeQuote("SPY.US",    env),
-      cascadeQuote("VIX.INDX",  env),
-      cascadeQuote("HYG.US",    env),
-      cascadeQuote("MOVE.INDX", env),
-      cascadeQuote("VVIX.INDX", env),
+      cascadeQuote("SPY.US",     env),
+      cascadeQuote("VIX.INDX",   env),
+      cascadeQuote("HYG.US",     env),
+      cascadeQuote("MOVE.INDX",  env),
+      cascadeQuote("VVIX.INDX",  env),
+      cascadeQuote("LQD.US",     env),
+      cascadeQuote("US10Y.GBOND",env),
     ]);
 
     // Extract values — fall back to neutral if unavailable
@@ -138,7 +163,7 @@ export default async function handler(req, res) {
     const moveValue = moveResult.ok  ? moveResult.price     : null;
     const vvixValue = vvixResult.ok  ? vvixResult.price     : null;
 
-    // For SPY/HYG: prefer changePercent, but if 0 (closed market) calculate from price/previousClose
+    // For SPY/HYG/LQD/TNX: prefer changePercent, but if 0 (closed market) calculate from price/previousClose
     function resolveChange(result) {
       if (!result.ok) return null;
       const change = result.changePercent;
@@ -151,6 +176,8 @@ export default async function handler(req, res) {
     }
     const spyChange = resolveChange(spyResult);
     const hygChange = resolveChange(hygResult);
+    const lqdChange = resolveChange(lqdResult);
+    const tnxChange = resolveChange(tnxResult);
 
     // Individual component scores (null = use neutral 50)
     const sVix  = vixValue  !== null ? vixScore(vixValue)   : 50;
@@ -158,9 +185,19 @@ export default async function handler(req, res) {
     const sHyg  = hygChange !== null ? hygScore(hygChange)  : 50;
     const sMove = moveValue !== null ? moveScore(moveValue) : 50;
     const sVvix = vvixValue !== null ? vvixScore(vvixValue) : 50;
+    const sLqd  = lqdChange !== null ? lqdScore(lqdChange)  : 50;
+    const sTnx  = tnxChange !== null ? tnxScore(tnxChange)  : 50;
 
-    // Weighted composite (weights sum to 1.00) — internal fallback / diagnostic reference
-    const internalRawScore = sVix * 0.35 + sSpy * 0.20 + sHyg * 0.20 + sMove * 0.15 + sVvix * 0.10;
+    // Weighted composite (weights sum to 1.00) — internal fallback / diagnostic reference.
+    // Mirrors the 7 indicators of the Master Indicators panel (VIX/SPY/HYG/MOVE/VVIX/LQD/TNX).
+    const internalRawScore =
+      sVix  * 0.25 +
+      sSpy  * 0.15 +
+      sHyg  * 0.15 +
+      sMove * 0.15 +
+      sVvix * 0.10 +
+      sLqd  * 0.10 +
+      sTnx  * 0.10;
     const internalScore    = Math.round(internalRawScore);
     const internalRating   = toRating(internalScore);
 
@@ -189,8 +226,10 @@ export default async function handler(req, res) {
         HYG_chg:   hygChange !== null ? +hygChange.toFixed(2)  : null,
         MOVE:      moveValue !== null ? Math.round(moveValue)  : null,
         VVIX:      vvixValue !== null ? Math.round(vvixValue)  : null,
+        LQD_chg:   lqdChange !== null ? +lqdChange.toFixed(2)  : null,
+        TNX_chg:   tnxChange !== null ? +tnxChange.toFixed(2)  : null,
       },
-      componentScores: { VIX: sVix, SPY: sSpy, HYG: sHyg, MOVE: sMove, VVIX: sVvix },
+      componentScores: { VIX: sVix, SPY: sSpy, HYG: sHyg, MOVE: sMove, VVIX: sVvix, LQD: sLqd, TNX: sTnx },
       internalScore,
       internalRating,
       timestamp: new Date().toISOString(),
