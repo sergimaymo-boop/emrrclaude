@@ -4,6 +4,9 @@ interface FearGreedData {
   score: number;
   rating: string;
   label: string;
+  source?: string;
+  sourceLabel?: string;
+  cnnAsOfUtc?: string | null;
   components?: Record<string, number | null>;
 }
 
@@ -56,7 +59,9 @@ export function FearGreedPanel({ fearGreed }: { fearGreed: any }) {
     <section className="section-block">
       <div className="section-title-row" style={{ marginBottom: 12 }}>
         <h2>Fear &amp; Greed</h2>
-        <span style={{ fontSize: 10, color: "#64748b" }}>Calculado internamente</span>
+        <span style={{ fontSize: 10, color: "#64748b" }}>
+          {fgData.sourceLabel ?? "Calculado internamente"}
+        </span>
       </div>
       {/* DATA UNAVAILABLE fallback — Fear & Greed unavailable — not used for Score, Ranking or EXEC */}
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -92,9 +97,16 @@ export function FearGreedPanel({ fearGreed }: { fearGreed: any }) {
         </div>
         {/* Label + component SCORES (not raw values) */}
         <div>
-          <div style={{ fontSize: 16, fontWeight: 900, color, marginBottom: 6 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color, marginBottom: 2 }}>
             {fgData.label ?? fgData.rating}
           </div>
+          {fgData.cnnAsOfUtc && (
+            <div style={{ fontSize: 9, color: "#64748b", marginBottom: 6 }}>
+              Cierre de referencia: {new Date(fgData.cnnAsOfUtc).toLocaleString("es-ES", {
+                day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+              })}
+            </div>
+          )}
           {(fgData as any).componentScores && (
             <div style={{ fontSize: 10, color: "#475569", lineHeight: 1.7 }}>
               {Object.entries((fgData as any).componentScores).map(([k, v]) => {

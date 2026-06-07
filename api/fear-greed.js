@@ -1,7 +1,9 @@
 /**
  * GET /api/fear-greed
- * Calculates a Fear & Greed score (0–100) from market indicators:
- * VIX (35%), SPY change (20%), HYG change (20%), MOVE (15%), VVIX (10%)
+ * Primary source: CNN Business Fear & Greed Index (public dataviz feed) —
+ * matches the reference value users compare against (cnn.com/markets/fear-and-greed).
+ * Fallback (only if CNN is unreachable): internal composite calculated from
+ * market indicators — VIX (35%), SPY change (20%), HYG change (20%), MOVE (15%), VVIX (10%)
  */
 
 import { cascadeQuote } from "./_lib/providerCascade.js";
@@ -13,6 +15,59 @@ const RATING_LABELS = {
   GREED:        "Codicia",
   EXTREME_GREED:"Codicia Extrema",
 };
+
+const CNN_FNG_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata";
+const CNN_FETCH_TIMEOUT_MS = 6000;
+const CNN_RATING_MAP = {
+  "extreme fear": "EXTREME_FEAR",
+  "fear":         "FEAR",
+  "neutral":      "NEUTRAL",
+  "greed":        "GREED",
+  "extreme greed":"EXTREME_GREED",
+};
+
+async function fetchCnnFearGreed() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CNN_FETCH_TIMEOUT_MS);
+
+  try {
+    const providerResponse = await fetch(CNN_FNG_URL, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        referer: "https://www.cnn.com/markets/fear-and-greed",
+      },
+      signal: controller.signal,
+    });
+
+    if (!providerResponse.ok) {
+      return { ok: false, reason: `CNN feed returned HTTP ${providerResponse.status}.` };
+    }
+
+    const payload = await providerResponse.json();
+    const fg = payload?.fear_and_greed;
+
+    if (!fg || typeof fg.score !== "number" || !Number.isFinite(fg.score)) {
+      return { ok: false, reason: "CNN feed payload missing a valid score." };
+    }
+
+    const ratingKey = CNN_RATING_MAP[String(fg.rating ?? "").trim().toLowerCase()] ?? toRating(Math.round(fg.score));
+
+    return {
+      ok: true,
+      score: Math.round(fg.score),
+      rawScore: fg.score,
+      rating: ratingKey,
+      label: RATING_LABELS[ratingKey],
+      asOfUtc: typeof fg.timestamp === "string" ? fg.timestamp : null,
+      previousClose: typeof fg.previous_close === "number" ? Math.round(fg.previous_close) : null,
+    };
+  } catch {
+    return { ok: false, reason: "CNN feed request failed or timed out." };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function vixScore(vix) {
   if (vix < 12)  return 100;
@@ -68,8 +123,9 @@ export default async function handler(req, res) {
   try {
     const env = process.env;
 
-    // Fetch all 5 indicators in parallel
-    const [spyResult, vixResult, hygResult, moveResult, vvixResult] = await Promise.all([
+    // Fetch the CNN reference index and all 5 internal indicators in parallel
+    const [cnnResult, spyResult, vixResult, hygResult, moveResult, vvixResult] = await Promise.all([
+      fetchCnnFearGreed(),
       cascadeQuote("SPY.US",    env),
       cascadeQuote("VIX.INDX",  env),
       cascadeQuote("HYG.US",    env),
@@ -103,17 +159,30 @@ export default async function handler(req, res) {
     const sMove = moveValue !== null ? moveScore(moveValue) : 50;
     const sVvix = vvixValue !== null ? vvixScore(vvixValue) : 50;
 
-    // Weighted composite (weights sum to 1.00)
-    const rawScore = sVix * 0.35 + sSpy * 0.20 + sHyg * 0.20 + sMove * 0.15 + sVvix * 0.10;
-    const score    = Math.round(rawScore);
-    const rating   = toRating(score);
-    const label    = RATING_LABELS[rating];
+    // Weighted composite (weights sum to 1.00) — internal fallback / diagnostic reference
+    const internalRawScore = sVix * 0.35 + sSpy * 0.20 + sHyg * 0.20 + sMove * 0.15 + sVvix * 0.10;
+    const internalScore    = Math.round(internalRawScore);
+    const internalRating   = toRating(internalScore);
+
+    // Primary source: CNN Business Fear & Greed Index (the reference value users compare against).
+    // Fall back to the internal composite ONLY when the CNN feed is unreachable.
+    const useCnn = cnnResult.ok;
+    const score  = useCnn ? cnnResult.score  : internalScore;
+    const rating = useCnn ? cnnResult.rating : internalRating;
+    const label  = RATING_LABELS[rating];
 
     res.status(200).json({
       ok: true,
       score,
       rating,
       label,
+      source: useCnn ? "CNN_BUSINESS" : "INTERNAL_COMPOSITE_FALLBACK",
+      sourceLabel: useCnn
+        ? "Fuente: CNN Business — Índice de Miedo y Codicia"
+        : "Fuente: composite interno (CNN no disponible)",
+      cnnAsOfUtc: useCnn ? cnnResult.asOfUtc : null,
+      cnnPreviousClose: useCnn ? cnnResult.previousClose : null,
+      cnnFeedStatus: useCnn ? "OK" : `UNAVAILABLE (${cnnResult.reason})`,
       components: {
         VIX:       vixValue  !== null ? Math.round(vixValue)   : null,
         SPY_chg:   spyChange !== null ? +spyChange.toFixed(2)  : null,
@@ -122,6 +191,8 @@ export default async function handler(req, res) {
         VVIX:      vvixValue !== null ? Math.round(vvixValue)  : null,
       },
       componentScores: { VIX: sVix, SPY: sSpy, HYG: sHyg, MOVE: sMove, VVIX: sVvix },
+      internalScore,
+      internalRating,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
