@@ -952,7 +952,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <ScanStatusPanel scanState={scanState} />
-      <FearGreedPanel fearGreed={fearGreed} />
+      <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
       <IntraDayFlowsPanel flowsState={flowsState} />
       <MasterIndicatorsGrid indicators={masterIndicators} />
       <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />

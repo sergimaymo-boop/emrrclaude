@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { MasterIndicator } from "../types";
+import { IndicatorRow } from "./MasterIndicatorsGrid";
 
 interface FearGreedData {
   score: number;
@@ -10,7 +12,13 @@ interface FearGreedData {
   components?: Record<string, number | null>;
 }
 
-export function FearGreedPanel({ fearGreed }: { fearGreed: any }) {
+// Same 6 indicators shown in "Master Indicators" (SPY excluded), in the exact
+// top-to-bottom order requested: HYG, MOVE, VIX, VVIX, TNX, LQD.
+// Reusing the SAME `masterIndicators` data + the SAME `IndicatorRow` renderer
+// guarantees byte-identical values, colors and LIVE/CACHE status.
+const FG_INDICATOR_ORDER: MasterIndicator["symbol"][] = ["HYG", "MOVE", "VIX", "VVIX", "TNX", "LQD"];
+
+export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any; masterIndicators?: MasterIndicator[] }) {
   const [fgData, setFgData] = useState<FearGreedData | null>(null);
 
   useEffect(() => {
@@ -107,25 +115,23 @@ export function FearGreedPanel({ fearGreed }: { fearGreed: any }) {
               })}
             </div>
           )}
-          {(fgData as any).componentScores && (
-            <div style={{ fontSize: 10, color: "#475569", lineHeight: 1.7 }}>
-              {Object.entries((fgData as any).componentScores).map(([k, v]) => {
-                const score = v as number;
-                const barColor = score >= 60 ? "#10b981" : score >= 40 ? "#eab308" : "#ef4444";
-                return (
-                  <div key={k} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ minWidth: 38, fontSize: 9, fontWeight: 700, color: "#6b7280" }}>{k}</span>
-                    <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
-                      <div style={{ width: `${score}%`, height: "100%", background: barColor, borderRadius: 2 }} />
-                    </div>
-                    <span style={{ minWidth: 22, fontSize: 9, color: "#94a3b8", textAlign: "right" }}>{score}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
+      {/* Market indicators behind the index — SAME data/calculation as "Master Indicators"
+          (SPY removed, ordered HYG → MOVE → VIX → VVIX → TNX → LQD) */}
+      {masterIndicators && masterIndicators.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: "#64748b", letterSpacing: "0.05em", marginBottom: 6, textTransform: "uppercase" }}>
+            Indicadores de mercado
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {FG_INDICATOR_ORDER
+              .map((symbol) => masterIndicators.find((ind) => ind.symbol === symbol))
+              .filter((ind): ind is MasterIndicator => Boolean(ind))
+              .map((ind) => <IndicatorRow key={ind.symbol} ind={ind} />)}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

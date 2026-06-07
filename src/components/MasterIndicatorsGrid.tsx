@@ -4,7 +4,7 @@ interface MasterIndicatorsGridProps {
   indicators: MasterIndicator[];
 }
 
-function getColor(symbol: string, value: string, changePercent: number): string {
+export function getIndicatorColor(symbol: string, value: string, changePercent: number): string {
   const n = parseFloat(value);
   if (symbol === "VIX")  return n < 15 ? "#10b981" : n < 20 ? "#eab308" : "#ef4444";
   if (symbol === "VVIX") return n < 80 ? "#10b981" : n < 110 ? "#eab308" : "#ef4444";
@@ -13,9 +13,9 @@ function getColor(symbol: string, value: string, changePercent: number): string 
   return changePercent > 0.05 ? "#10b981" : changePercent < -0.05 ? "#ef4444" : "#6366f1";
 }
 
-function IndicatorRow({ ind }: { ind: MasterIndicator }) {
+export function IndicatorRow({ ind }: { ind: MasterIndicator }) {
   const avail  = ind.value !== "N/A";
-  const color  = avail ? getColor(ind.symbol, ind.value, ind.changePercent) : "#334155";
+  const color  = avail ? getIndicatorColor(ind.symbol, ind.value, ind.changePercent) : "#334155";
   const change = ind.changePercent;
   const arrow  = change > 0.05 ? "▲" : change < -0.05 ? "▼" : "—";
   const arrowColor = change > 0.05 ? "#10b981" : change < -0.05 ? "#ef4444" : "#475569";
