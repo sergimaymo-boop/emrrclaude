@@ -842,7 +842,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setScanState(current => ({
         ...current, label: "Scan failed", isScanning: false, scanExecutionMode: "ERROR",
       }));
-    }
 
     // Done
     setScanPhase("done");
