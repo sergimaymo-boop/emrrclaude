@@ -30,12 +30,19 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
       .catch(() => {});
   }, []);
 
+  // Gauge color strictly by score range (matches the CNN Fear & Greed scale,
+  // which is the live primary source — see sourceLabel/source below):
+  //   0-25   Extreme Fear   → red
+  //   26-45  Fear           → orange
+  //   46-55  Neutral        → strong grey
+  //   56-75  Greed          → soft green
+  //   76-100 Extreme Greed  → very strong green
   const getColor = (score: number) => {
-    if (score >= 76) return "#ef4444"; // extreme greed — red warning
-    if (score >= 56) return "#f59e0b"; // greed — amber
-    if (score >= 46) return "#94a3b8"; // neutral — grey
-    if (score >= 26) return "#6366f1"; // fear — indigo
-    return "#3b82f6";                  // extreme fear — blue
+    if (score <= 25) return "#ef4444"; // 0-25: red
+    if (score <= 45) return "#f97316"; // 26-45: orange
+    if (score <= 55) return "#64748b"; // 46-55: strong grey
+    if (score <= 75) return "#4ade80"; // 56-75: soft green
+    return "#15803d";                  // 76-100: very strong green
   };
 
   if (!fgData) {
