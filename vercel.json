@@ -2,5 +2,11 @@
   "framework": "vite",
   "installCommand": "npm install",
   "buildCommand": "npx vite build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/cron/market-pulse",
+      "schedule": "0 14 * * 1-5"
+    }
+  ]
 }

@@ -1,0 +1,205 @@
+/**
+ * GET /api/cron/market-pulse
+ *
+ * Daily Telegram "Market Pulse" push — triggered by Vercel Cron at 14:00 UTC
+ * on weekdays (≈15:00 Canary Islands time in summer / DST), ~30 min after the
+ * US market opens (per institutional recommendation: avoid the noisy opening
+ * range, use confirmed intraday data for the entry decision).
+ *
+ * Message structure (optimized to be readable from the notification preview,
+ * almost without opening the app):
+ *   Line 1 → 🟢/🔴 binary entry semaphore (ENTRAR / NO ENTRAR)
+ *   Then  → compact rationale (regime · indicators · pullback risk)
+ *   Then  → top US-market news headlines (super-condensed)
+ *
+ * The semaphore combines THREE signals (see api/_lib/marketPulse.js):
+ *   1) Market Regime (SPY vs EMA200)            — 40% (hard override if BEARISH)
+ *   2) Weighted Master Indicators                — 35%
+ *      (VIX 30% · MOVE 20% · HYG 20% · VVIX 15% · TNX 10% · LQD 5% — NOT equal weight)
+ *   3) Broad-market (SPY) pullback risk          — 25%
+ */
+
+import { cascadeQuote, cascadeHistory } from "../_lib/providerCascade.js";
+import { calculateEma, calculateTechnicals } from "../_lib/technicalEngine.js";
+import {
+  computeIndicatorsComposite, indicatorsLabel,
+  computeBroadMarketPullbackRisk, pullbackLabel,
+  computeEntrySemaphore,
+} from "../_lib/marketPulse.js";
+import { fetchUsMarketNewsDigest } from "../_lib/newsDigest.js";
+import { sendTelegramMessage } from "../_lib/telegram.js";
+
+const APP_NAME = "EMRR 2.0 / Tendencias";
+const ENDPOINT = "MARKET_PULSE_TELEGRAM";
+const BENCHMARK = "SPY.US";
+
+function getEnv() { return globalThis.process?.env ?? {}; }
+
+function isConfiguredSecret(value) {
+  if (!value || !value.trim()) return false;
+  const normalized = value.trim().toLowerCase();
+  return !["your_", "_here", "placeholder"].some((part) => normalized.includes(part));
+}
+
+function sendJson(response, status, payload) {
+  return response.status(status).json({ ...payload, app: APP_NAME, endpoint: ENDPOINT, timestampUtc: new Date().toISOString() });
+}
+
+// Vercel automatically calls Cron-triggered routes with `Authorization: Bearer ${CRON_SECRET}`
+// IF CRON_SECRET is configured. We verify it when present; otherwise allow (manual testing).
+function isAuthorizedCronCall(request, env) {
+  const secret = env.CRON_SECRET;
+  if (!isConfiguredSecret(secret)) return true; // not configured → no gate (manual testing allowed)
+  const auth = request.headers?.authorization ?? request.headers?.Authorization ?? "";
+  return auth === `Bearer ${secret}`;
+}
+
+async function resolveMarketRegime(env) {
+  const result = await cascadeHistory(BENCHMARK, 260, {
+    TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
+  });
+
+  if (!result.ok || result.bars.length < 200) {
+    return { regime: "UNKNOWN", technicals: null, bars: [] };
+  }
+
+  const closes = result.bars.map((bar) => bar.close).filter(Number.isFinite);
+  const ema200 = calculateEma(closes, 200);
+  const lastClose = closes.at(-1);
+
+  if (!ema200 || !lastClose) {
+    return { regime: "UNKNOWN", technicals: null, bars: result.bars };
+  }
+
+  const regime = lastClose > ema200 ? "BULLISH" : "BEARISH";
+  const tech = calculateTechnicals(result.bars, result.bars);
+
+  return { regime, technicals: tech.ok ? tech.technicals : null, bars: result.bars };
+}
+
+function pct(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatCanaryTime(isoUtc) {
+  try {
+    return new Date(isoUtc).toLocaleString("es-ES", {
+      timeZone: "Atlantic/Canary",
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return isoUtc;
+  }
+}
+
+function buildMessage({ semaphore, regime, indicators, pullback, news, generatedAtUtc }) {
+  const isGreen = semaphore.signal === "GREEN";
+  const headline = isGreen
+    ? "🟢 VERDE — ENTRAR / MANTENER POSICIONES"
+    : "🔴 ROJO — NO ENTRAR / FUERA DE MERCADO";
+
+  const regimeText = regime === "BULLISH" ? "Alcista (SPY > EMA200)"
+    : regime === "BEARISH" ? "Bajista (SPY < EMA200)"
+    : "Sin datos";
+
+  const lines = [];
+  lines.push(`<b>${headline}</b>`);
+  lines.push(`Score combinado: <b>${semaphore.composite}/100</b>`);
+  lines.push("");
+  lines.push(`📊 Régimen de mercado: <b>${regimeText}</b>`);
+  lines.push(`📈 Indicadores ponderados (VIX 30·MOVE 20·HYG 20·VVIX 15·TNX 10·LQD 5): <b>${indicators.composite}/100</b> — ${indicatorsLabel(indicators.composite)}`);
+  lines.push(`⚠️ Riesgo de pullback S&amp;P 500: <b>${pullbackLabel(pullback.level)}</b>${pullback.score != null ? ` (${pullback.score}/100)` : ""}`);
+  if (pullback.reasons?.length) {
+    lines.push(`   ↳ ${pullback.reasons.map(escapeHtml).join(" · ")}`);
+  }
+
+  lines.push("");
+  lines.push("📰 <b>Noticias clave EE.UU.</b> (últimas ~20h):");
+  if (news.ok && news.headlines.length > 0) {
+    for (const item of news.headlines) {
+      const sourceTag = item.source ? ` [${escapeHtml(item.source)}]` : "";
+      lines.push(`• ${escapeHtml(item.headline)}${sourceTag}`);
+    }
+  } else {
+    lines.push("• (sin noticias relevantes disponibles en este momento)");
+  }
+
+  lines.push("");
+  lines.push(`🕐 Generado: ${formatCanaryTime(generatedAtUtc)} (Canarias)`);
+
+  return lines.join("\n");
+}
+
+export default async function handler(request, response) {
+  response.setHeader("Cache-Control", "no-store");
+  const env = getEnv();
+
+  if (request.method !== "GET" && request.method !== "POST") {
+    return sendJson(response, 405, { ok: false, error: "METHOD_NOT_ALLOWED" });
+  }
+
+  if (!isAuthorizedCronCall(request, env)) {
+    return sendJson(response, 401, { ok: false, error: "UNAUTHORIZED_CRON_CALL" });
+  }
+
+  if (env.ENABLE_REAL_API_CALLS !== "true") {
+    return sendJson(response, 200, { ok: false, error: "REAL_API_CALLS_DISABLED" });
+  }
+
+  const cascadeEnv = {
+    FINNHUB_API_KEY:     isConfiguredSecret(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
+    FRED_API_KEY:        isConfiguredSecret(env.FRED_API_KEY)        ? env.FRED_API_KEY        : null,
+    TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
+    FMP_API_KEY:         isConfiguredSecret(env.FMP_API_KEY)         ? env.FMP_API_KEY         : null,
+  };
+
+  const [regimeResult, vixQ, moveQ, hygQ, vvixQ, tnxQ, lqdQ, news] = await Promise.all([
+    resolveMarketRegime(env),
+    cascadeQuote("VIX.INDX",   cascadeEnv),
+    cascadeQuote("MOVE.INDX",  cascadeEnv),
+    cascadeQuote("HYG.US",     cascadeEnv),
+    cascadeQuote("VVIX.INDX",  cascadeEnv),
+    cascadeQuote("US10Y.GBOND",cascadeEnv),
+    cascadeQuote("LQD.US",     cascadeEnv),
+    fetchUsMarketNewsDigest(env),
+  ]);
+
+  const indicatorInputs = {
+    vix:  vixQ.ok  ? pct(vixQ.price)  : null,
+    move: moveQ.ok ? pct(moveQ.price) : null,
+    vvix: vvixQ.ok ? pct(vvixQ.price) : null,
+    hygChangePercent: hygQ.ok ? pct(hygQ.changePercent) : null,
+    lqdChangePercent: lqdQ.ok ? pct(lqdQ.changePercent) : null,
+    tnxChangePercent: tnxQ.ok ? pct(tnxQ.changePercent) : null,
+  };
+
+  const indicators = computeIndicatorsComposite(indicatorInputs);
+  const pullback = computeBroadMarketPullbackRisk(regimeResult.technicals);
+  const semaphore = computeEntrySemaphore({
+    regime: regimeResult.regime,
+    indicatorsComposite: indicators.composite,
+    pullbackRisk: pullback,
+  });
+
+  const generatedAtUtc = new Date().toISOString();
+  const message = buildMessage({ semaphore, regime: regimeResult.regime, indicators, pullback, news, generatedAtUtc });
+
+  const sendResult = await sendTelegramMessage(message, env);
+
+  return sendJson(response, sendResult.ok ? 200 : 502, {
+    ok: sendResult.ok,
+    telegram: sendResult,
+    semaphore,
+    regime: regimeResult.regime,
+    indicators,
+    pullback,
+    indicatorInputs,
+    newsStatus: news.ok ? "OK" : `UNAVAILABLE (${news.reason})`,
+    headlinesCount: news.ok ? news.headlines.length : 0,
+    messagePreview: message,
+  });
+}
