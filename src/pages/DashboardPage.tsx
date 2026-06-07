@@ -48,6 +48,7 @@ import {
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
+import { PullbackRiskIndicator } from "../components/PullbackRiskIndicator";
 import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
@@ -948,6 +949,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           </span>
         </div>
       )}
+
+      {/* Pullback Risk semaphore — early-warning for the current Ticket Perfecto candidate
+          (NOT the market regime; this flags an imminent pullback/drop on THAT specific stock) */}
+      <PullbackRiskIndicator rallyState={rallyState} top8={top8} />
+
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <ScanStatusPanel scanState={scanState} />
       <FearGreedPanel fearGreed={fearGreed} />
