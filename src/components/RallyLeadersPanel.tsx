@@ -72,7 +72,7 @@ function ScoreBar({ score, label, color }: { score: number; label: string; color
 
 // ─── Single dense Bloomberg-style row ─────────────────────────────────────────
 
-function AssetRow({ asset }: { asset: RallyAsset }) {
+function AssetRow({ asset, detailed }: { asset: RallyAsset; detailed: boolean }) {
   const m = asset.metrics;
   const priceChange = m?.mom1m ?? null;
   const changeColor = priceChange === null ? "#64748b" : priceChange >= 0 ? "#10b981" : "#ef4444";
@@ -81,7 +81,9 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
   return (
     <article style={{
       display: "grid",
-      gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
+      // Modo COMPACTO: 3 columnas (rank · ticker+name · score)
+      // Modo DETALLE: todas las 5 columnas
+      gridTemplateColumns: detailed ? "20px minmax(0,1.5fr) 62px 84px 130px" : "20px minmax(0,1.5fr) 84px",
       gap: 10,
       alignItems: "center",
       padding: "7px 12px",
@@ -111,8 +113,8 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
         </div>
       </div>
 
-      {/* Price + Change */}
-      <div style={{ textAlign: "right" }}>
+      {/* Price + Change — solo en DETALLE */}
+      <div style={{ textAlign: "right", display: detailed ? "block" : "none" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", fontVariantNumeric: "tabular-nums" }}>
           {m?.lastClose ? m.lastClose.toFixed(2) : "—"}
         </div>
@@ -121,11 +123,11 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
         </div>
       </div>
 
-      {/* Score — inline bar (replaces the old circle) */}
+      {/* Score — inline bar (siempre visible) */}
       <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
 
-      {/* Optimal trailing stops — Ajustado / Medio / Amplio */}
-      <div>
+      {/* Optimal trailing stops — solo en DETALLE */}
+      <div style={{ display: detailed ? "block" : "none" }}>
         <div style={{ fontSize: 7, color: "#334155", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
           Trailing stop óptimo
         </div>
@@ -172,6 +174,7 @@ function TopProgressBar({
 
 export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanelProps) {
   const [showAll, setShowAll] = useState(false);
+  const [density, setDensity] = useState<"compact" | "detail">("compact");
   const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal, lastRun } = rallyState;
   const isIdle = status === "RALLY_IDLE";
   const isFinal = status === "RALLY_FINAL";
@@ -221,8 +224,30 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
             Top 10 Institutional Rally Leaders · Independent engine
           </p>
         </div>
-        <div style={{ fontSize: 10, color: "#475569", textAlign: "right" }}>
-          {isFinal || isPartial ? `${top10.length} leaders found` : ""}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+          {top10.length > 0 && (
+            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
+              {(["compact", "detail"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setDensity(v)}
+                  style={{
+                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
+                    border: "none", letterSpacing: "0.05em",
+                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
+                    color: density === v ? "#f1f5f9" : "#475569",
+                    transition: "background 120ms",
+                  }}
+                >
+                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
+                </button>
+              ))}
+            </div>
+          )}
+          <span style={{ fontSize: 10, color: "#475569" }}>
+            {isFinal || isPartial ? `${top10.length} leaders found` : ""}
+          </span>
         </div>
       </div>
 
@@ -273,7 +298,7 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
             </div>
           </div>
 
-          {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} />)}
+          {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} detailed={density === "detail"} />)}
 
           {/* Expandir/colapsar — mismo patrón visual que el toggle de Flujos de Capital */}
           {canExpand && (

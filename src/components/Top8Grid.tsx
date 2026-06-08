@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ColorToken, Top8Asset } from "../types";
 import { Badge } from "./Badge";
 
@@ -56,14 +57,38 @@ export function Top8Grid({ assets }: Top8GridProps) {
   const hiddenCount = Math.max(assets.length - visibleAssets.length, 0);
   const top8Source = visibleAssets[0]?.top8Source ?? "UNAVAILABLE";
   const resultScope = visibleAssets[0]?.resultScope ?? "UNAVAILABLE";
+  const [density, setDensity] = useState<"compact" | "detail">("compact");
+  const detailed = density === "detail";
 
   return (
     <section className="section-block top8-section">
       <div className="section-title-row">
         <h2>TOP 8</h2>
-        <span>
-          Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {visibleAssets.length > 0 && (
+            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
+              {(["compact", "detail"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setDensity(v)}
+                  style={{
+                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
+                    border: "none", letterSpacing: "0.05em",
+                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
+                    color: density === v ? "#f1f5f9" : "#475569",
+                    transition: "background 120ms",
+                  }}
+                >
+                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
+                </button>
+              ))}
+            </div>
+          )}
+          <span>
+            Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
+          </span>
+        </div>
       </div>
       <div className="top8-list">
         {visibleAssets.length === 0 ? (
@@ -101,7 +126,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-market-cell">
+              <div className="asset-market-cell" style={{ display: detailed ? "flex" : "none" }}>
                 <span className="asset-market-tag">{asset.market}</span>
                 <strong className="asset-price">{formatDisplayPrice(asset.price)}</strong>
                 <div className="market-state-line">
@@ -114,7 +139,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-scores-cell">
+              <div className="asset-scores-cell" style={{ display: detailed ? "grid" : "none" }}>
                 <div className="bar-metric">
                   <div>
                     <span>Score</span>
@@ -136,7 +161,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-meta-cell">
+              <div className="asset-meta-cell" style={{ display: detailed ? "grid" : "none" }}>
                 <div className="compact-metric risk-line">
                   <span>Risk</span>
                   <strong>{asset.risk}</strong>
@@ -147,7 +172,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="trailing-line">
+              <div className="trailing-line" style={{ display: detailed ? "grid" : "none" }}>
                 <span>Trailing stop</span>
                 <div className="trailing-values">
                   <strong>Tight <b>{asset.trailingAdjusted}</b></strong>
@@ -156,7 +181,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="card-footer">
+              <div className="card-footer" style={{ display: detailed ? "flex" : "none" }}>
                 <span>{asset.dataQuality}</span>
                 <span>{asset.provider === "none" ? "no provider" : asset.provider}</span>
                 <span>{asset.priceTimestamp.local}</span>
