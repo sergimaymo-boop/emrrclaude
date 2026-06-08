@@ -180,7 +180,7 @@ export function getActiveMarketsAt(timestampUtc) {
   return [];
 }
 
-function filterActiveUniverseAssets(assets, scanStartedAtUtc) {
+export function filterActiveUniverseAssets(assets, scanStartedAtUtc) {
   const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
   return assets.filter((asset) => {
     if (!activeMarkets.includes(asset.region)) return false;
@@ -188,7 +188,7 @@ function filterActiveUniverseAssets(assets, scanStartedAtUtc) {
   });
 }
 
-function filterActiveOperableAssets(assets, scanStartedAtUtc) {
+export function filterActiveOperableAssets(assets, scanStartedAtUtc) {
   return filterActiveUniverseAssets(assets, scanStartedAtUtc).filter((asset) => asset?.operabilityStatus === "OPERABLE");
 }
 

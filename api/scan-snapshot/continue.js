@@ -9,6 +9,7 @@ import { fetchEodhdSpread } from "../_lib/spreadDataProvider.js";
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from "../_lib/candidateEvaluationEngine.js";
 import { saveLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from "../_lib/kvStorage.js";
 import { raceBenchmarkHistory } from "../_lib/providerCascade.js";
+import { filterActiveOperableAssets, getActiveMarketsAt } from "../_lib/scanSnapshot.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "SCAN_SNAPSHOT_CONTINUE";
@@ -81,18 +82,41 @@ export default async function handler(request, response) {
     return sendJson(response, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
   }
 
-  // Rebuild operable assets directly from static universe (no external calls, no ENABLE check)
-  const allOperable = [];
+  // AUDIT FIX (mercados mixtos): el scan SOLO debe cubrir los mercados que
+  // estaban abiertos cuando arrancó (scanStartedAtUtc, igual que en start.js —
+  // ancla el filtro al inicio del scan, no al "ahora" de cada batch, para que
+  // el slicing por nextBatchIndex permanezca alineado entre lotes). Si entre
+  // batches cambia el estado de mercados activos, abortamos para evitar mezclar
+  // sesiones (igual que el guard "ACTIVE_MARKET_STATE_CHANGED" del motor Rally).
+  const activeMarketsNow = getActiveMarketsAt(scanStartedAtUtc);
+  const sameActiveMarkets = Array.isArray(activeMarkets)
+    ? activeMarkets.length === activeMarketsNow.length && activeMarkets.every((m) => activeMarketsNow.includes(m))
+    : true;
+  if (!sameActiveMarkets || activeMarketsNow.length === 0) {
+    return sendJson(response, 409, {
+      ok: false,
+      error: "ACTIVE_MARKET_STATE_CHANGED",
+      scanId, scanStartedAtUtc, activeMarkets: activeMarketsNow,
+      message: "El estado de los mercados activos cambió durante el scan — se aborta para no mezclar sesiones.",
+    });
+  }
+
+  // Rebuild operable assets directly from static universe (no external calls, no ENABLE check),
+  // luego filtrar a SOLO los activos cuyo mercado/región estaba abierto al arrancar el scan —
+  // misma regla y misma ancla temporal que start.js, para mantener el slicing por batch alineado.
+  let allOperable = [];
   try {
+    const fullOperable = [];
     for (const exchangeConfig of PROVIDER_EXCHANGES) {
       const rows = STATIC_ASSETS_BY_EXCHANGE[exchangeConfig.providerExchange] ?? [];
       for (const row of rows) {
         if (isEligibleForUniverse(row, exchangeConfig)) {
           const asset = mapUniverseAsset(row, exchangeConfig);
-          if (asset.operabilityStatus === "OPERABLE") allOperable.push(asset);
+          if (asset.operabilityStatus === "OPERABLE") fullOperable.push(asset);
         }
       }
     }
+    allOperable = filterActiveOperableAssets(fullOperable, scanStartedAtUtc);
   } catch(e) {
     return sendJson(response, 500, { ok: false, error: "STATIC_UNIVERSE_FAILED", message: e.message });
   }

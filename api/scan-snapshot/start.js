@@ -6,7 +6,7 @@
  * Uses evaluateCandidate + buildOperationalTop8FromEvaluations directly.
  */
 import { buildUniverseResponse } from "../universe.js";
-import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch } from "../_lib/scanSnapshot.js";
+import { attachSnapshotToken, buildSnapshotPlan, processNextSnapshotBatch, filterActiveOperableAssets, getActiveMarketsAt } from "../_lib/scanSnapshot.js";
 import { saveLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from "../_lib/kvStorage.js";
 import { fetchEodhdHistoricalBars } from "../_lib/historicalDataProvider.js";
 import { raceBenchmarkHistory } from "../_lib/providerCascade.js";
@@ -70,10 +70,6 @@ async function readJsonBody(req) {
   return {};
 }
 
-function getActiveMarkets(assets) {
-  return [...new Set(assets.map(a => a.market ?? a.providerExchange ?? "UNKNOWN"))];
-}
-
 export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store");
 
@@ -108,14 +104,42 @@ export default async function handler(request, response) {
     });
   }
 
-  // 2. Filter operable assets
-  const allOperable = (universe.assets ?? []).filter(a => a.operabilityStatus === "OPERABLE");
+  // 2. Filter operable assets — Y SOLO los de mercados actualmente ABIERTOS.
+  //
+  // REGLA (auditoría usuario): el scan SIEMPRE debe analizar únicamente los
+  // mercados que están abiertos AHORA MISMO (uno solo si solo uno está abierto,
+  // ambos si ambos lo están). Mezclar un activo de NYSE/NASDAQ (cerrado) con uno
+  // de XETRA/Euronext (abierto) en el mismo ranking produce comparaciones
+  // sin sentido — exactamente el bug detectado (HUM/NYSE #1 con EEUU cerrado
+  // y solo Europa abierta). Solo cuando AMBOS mercados están cerrados se usa
+  // el snapshot de la sesión anterior (gestionado en el frontend / kvStorage),
+  // nunca un scan "fresco" mezclando sesiones.
+  const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
+  if (activeMarkets.length === 0) {
+    return sendJson(response, 409, {
+      ok: false,
+      scanStartedAtUtc,
+      scanCompletedAtUtc: new Date().toISOString(),
+      status: "MARKETS_CLOSED",
+      resultScope: "MARKETS_CLOSED",
+      isGlobalTop8Final: false,
+      coveragePercent: 0,
+      activeMarkets,
+      error: "ALL_MARKETS_CLOSED",
+      blockedReasons: ["ALL_MARKETS_CLOSED"],
+      assets: [],
+      message: "Todos los mercados están cerrados — no se ejecuta un scan fresco; usa el último cierre memorizado.",
+    });
+  }
+
+  const allOperable = filterActiveOperableAssets(universe.assets ?? [], scanStartedAtUtc);
   if (allOperable.length === 0) {
     return sendJson(response, 409, {
       ok: false,
       scanStartedAtUtc,
       status: "DATA_UNAVAILABLE",
       error: "NO_OPERABLE_ASSETS",
+      activeMarkets,
       assets: [],
     });
   }
@@ -123,7 +147,6 @@ export default async function handler(request, response) {
   const batchesTotal = Math.ceil(allOperable.length / batchSize);
   const universeHash = Buffer.from(allOperable.map(a => a.providerSymbol).join(","))
     .toString("base64url").slice(0, 16);
-  const activeMarkets = getActiveMarkets(allOperable);
   const scanId = `scan-${Date.now().toString(36)}`;
 
   // 3. Process batch 0
