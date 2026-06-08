@@ -69,9 +69,9 @@ export function IndicatorRow({ ind }: { ind: MasterIndicator }) {
 
       {/* LIVE/CACHE badge */}
       <span style={{
-        fontSize: 7, fontWeight: 700,
-        color: isLive ? "#10b981" : "#475569",
-        minWidth: 28, textAlign: "right", flexShrink: 0,
+        fontSize: 9, fontWeight: 800, letterSpacing: "0.04em",
+        color: isLive ? "#10b981" : "#94a3b8",
+        minWidth: 34, textAlign: "right", flexShrink: 0,
       }}>
         {isLive ? "LIVE" : "CACHE"}
       </span>

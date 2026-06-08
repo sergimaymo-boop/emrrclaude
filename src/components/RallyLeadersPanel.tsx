@@ -30,19 +30,20 @@ function calcTrailingStops(atrPercent: number | null | undefined): { tight: numb
 }
 
 function StopsTriplet({ stops }: { stops: { tight: number; medium: number; wide: number } | null }) {
-  if (!stops) return <span style={{ fontSize: 9, color: "#475569" }}>—</span>;
+  if (!stops) return <span style={{ fontSize: 10, color: "#475569" }}>—</span>;
+  // Cada par etiqueta+valor es una unidad que no se parte; el contenedor permite
+  // wrap limpio en anchos estrechos sin solapar nunca (cada chip salta entero).
+  const Chip = ({ label, value, color }: { label: string; value: number; color: string }) => (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 3, whiteSpace: "nowrap" }}>
+      <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9 }}>{label}</span>
+      <strong style={{ color, fontSize: 11 }}>{value.toFixed(1)}%</strong>
+    </span>
+  );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 1, fontVariantNumeric: "tabular-nums" }}>
-      <span style={{ fontSize: 9 }}>
-        <span style={{ color: "#475569", fontWeight: 700 }}>AJ </span>
-        <strong style={{ color: "#34d399" }}>{stops.tight.toFixed(1)}%</strong>
-        <span style={{ color: "#334155" }}> · </span>
-        <span style={{ color: "#475569", fontWeight: 700 }}>MED </span>
-        <strong style={{ color: "#fbbf24" }}>{stops.medium.toFixed(1)}%</strong>
-        <span style={{ color: "#334155" }}> · </span>
-        <span style={{ color: "#475569", fontWeight: 700 }}>AMP </span>
-        <strong style={{ color: "#f87171" }}>{stops.wide.toFixed(1)}%</strong>
-      </span>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "2px 10px", fontVariantNumeric: "tabular-nums" }}>
+      <Chip label="AJ" value={stops.tight} color="#34d399" />
+      <Chip label="MED" value={stops.medium} color="#fbbf24" />
+      <Chip label="AMP" value={stops.wide} color="#f87171" />
     </div>
   );
 }
@@ -73,69 +74,123 @@ function ScoreBar({ score, label, color }: { score: number; label: string; color
 
 // ─── Single dense Bloomberg-style row ─────────────────────────────────────────
 
-function AssetRow({ asset, detailed }: { asset: RallyAsset; detailed: boolean }) {
+function hoverOn(e: React.MouseEvent<HTMLElement>) { e.currentTarget.style.background = "rgba(99,102,241,0.06)"; }
+function hoverOff(e: React.MouseEvent<HTMLElement>) { e.currentTarget.style.background = "transparent"; }
+
+function fmtExchange(ex: string | undefined): string {
+  return (ex ?? "").replace("XETRA", "DE").replace("EURONEXT", "EU");
+}
+function fmtChange(priceChange: number | null): { text: string; color: string } {
+  if (priceChange === null) return { text: "—", color: "#64748b" };
+  return {
+    text: `${priceChange >= 0 ? "▲" : "▼"} ${Math.abs(priceChange).toFixed(2)}%`,
+    color: priceChange >= 0 ? "#34d399" : "#f87171",
+  };
+}
+
+// ── COMPACTO: una sola línea tabular, columnas alineadas con la cabecera ──────
+// Grid: rank · ticker+nombre(trunca) · %día · score. Columnas fijas estrechas a
+// la derecha → nunca se solapan, igual que el módulo TOP 8.
+function AssetRowCompact({ asset }: { asset: RallyAsset }) {
+  const change = fmtChange(asset.metrics?.mom1m ?? null);
+  return (
+    <article
+      style={{
+        display: "grid",
+        gridTemplateColumns: "22px minmax(0,1fr) 64px 46px",
+        gap: 8,
+        alignItems: "center",
+        padding: "9px 12px",
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        transition: "background 150ms",
+      }}
+      onMouseEnter={hoverOn}
+      onMouseLeave={hoverOff}
+    >
+      <span style={{ fontSize: 12, fontWeight: 800, color: "#475569", textAlign: "center" }}>{asset.rank}</span>
+      <div style={{ minWidth: 0, display: "flex", alignItems: "baseline", gap: 6 }}>
+        <strong style={{ fontSize: 13, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.02em", flexShrink: 0 }}>
+          {asset.ticker}
+        </strong>
+        <span style={{ fontSize: 9, color: "#475569", fontWeight: 700, textTransform: "uppercase", flexShrink: 0 }}>
+          {fmtExchange(asset.exchange)}
+        </span>
+        <span title={asset.name} style={{ fontSize: 11, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+          {asset.name}
+        </span>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 800, color: change.color, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {change.text}
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 900, color: asset.rallyColor, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        {asset.rallyScore}
+      </span>
+    </article>
+  );
+}
+
+// ── DETALLE: tarjeta apilada — la información se ordena en filas verticales que
+// nunca se solapan, sea cual sea el ancho (móvil incluido). ─────────────────────
+function AssetRowDetail({ asset }: { asset: RallyAsset }) {
   const m = asset.metrics;
-  const priceChange = m?.mom1m ?? null;
-  const changeColor = priceChange === null ? "#64748b" : priceChange >= 0 ? "#10b981" : "#ef4444";
+  const change = fmtChange(m?.mom1m ?? null);
   const stops = calcTrailingStops(m?.atrPercent ?? null);
+  const price = m?.lastClose ? m.lastClose.toFixed(2) : "—";
+  const ccy = asset.currency === "EUR" ? "€" : asset.currency === "GBX" ? "GBX" : "$";
 
   return (
-    <article style={{
-      display: "grid",
-      // Modo COMPACTO: 3 columnas (rank · ticker+name · score)
-      // Modo DETALLE: todas las 5 columnas
-      gridTemplateColumns: detailed ? "20px minmax(0,1.5fr) 62px 84px 130px" : "20px minmax(0,1.5fr) 84px",
-      gap: 10,
-      alignItems: "center",
-      padding: "7px 12px",
-      borderBottom: "1px solid rgba(255,255,255,0.04)",
-      transition: "background 150ms",
-    }}
-    onMouseEnter={e => (e.currentTarget.style.background = "rgba(99,102,241,0.06)")}
-    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+    <article
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        padding: "11px 12px",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        transition: "background 150ms",
+      }}
+      onMouseEnter={hoverOn}
+      onMouseLeave={hoverOff}
     >
-      {/* Rank */}
-      <span style={{ fontSize: 11, fontWeight: 800, color: "#475569", textAlign: "center" }}>
-        {asset.rank}
-      </span>
-
-      {/* Ticker + Name */}
-      <div style={{ minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontSize: 12, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.04em" }}>
-            {asset.ticker}
-          </strong>
-          <span style={{ fontSize: 9, color: "#475569", fontWeight: 600, textTransform: "uppercase" }}>
-            {asset.exchange?.replace("XETRA", "DE").replace("EURONEXT", "EU")}
-          </span>
+      {/* Fila 1 — identidad (izq) + score con barra (der) */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ minWidth: 0, display: "flex", gap: 9, alignItems: "baseline" }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#475569", flexShrink: 0, width: 16, textAlign: "right" }}>{asset.rank}</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.02em" }}>{asset.ticker}</strong>
+              <span style={{ fontSize: 9, color: "#475569", fontWeight: 700, textTransform: "uppercase" }}>{fmtExchange(asset.exchange)}</span>
+            </div>
+            <div title={asset.name} style={{ fontSize: 10, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
+              {asset.name}
+            </div>
+          </div>
         </div>
-        <div style={{ fontSize: 9, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {asset.name}
-        </div>
-      </div>
-
-      {/* Price + Change — solo en DETALLE */}
-      <div style={{ textAlign: "right", display: detailed ? "block" : "none" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", fontVariantNumeric: "tabular-nums" }}>
-          {m?.lastClose ? m.lastClose.toFixed(2) : "—"}
-        </div>
-        <div style={{ fontSize: 10, color: changeColor, fontWeight: 700 }}>
-          {priceChange === null ? "—" : `${priceChange >= 0 ? "▲" : "▼"} ${Math.abs(priceChange).toFixed(2)}%`}
+        <div style={{ flexShrink: 0 }}>
+          <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
         </div>
       </div>
 
-      {/* Score — inline bar (siempre visible) */}
-      <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
-
-      {/* Optimal trailing stops — solo en DETALLE */}
-      <div style={{ display: detailed ? "block" : "none" }}>
-        <div style={{ fontSize: 7, color: "#334155", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
-          Trailing stop óptimo
+      {/* Fila 2 — datos: precio/cambio + trailing stops (flex-wrap, sin solape) */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 18px",
+        paddingLeft: 25, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.04)",
+      }}>
+        <div style={{ display: "inline-flex", alignItems: "baseline", gap: 7, whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 8, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>Precio</span>
+          <strong style={{ fontSize: 13, fontWeight: 800, color: "#f1f5f9", fontVariantNumeric: "tabular-nums" }}>{price} {ccy}</strong>
+          <span style={{ fontSize: 11, fontWeight: 800, color: change.color, fontVariantNumeric: "tabular-nums" }}>{change.text}</span>
         </div>
-        <StopsTriplet stops={stops} />
+        <div style={{ display: "inline-flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontSize: 8, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>Trailing stop</span>
+          <StopsTriplet stops={stops} />
+        </div>
       </div>
     </article>
   );
+}
+
+function AssetRow({ asset, detailed }: { asset: RallyAsset; detailed: boolean }) {
+  return detailed ? <AssetRowDetail asset={asset} /> : <AssetRowCompact asset={asset} />;
 }
 
 // ─── Coverage / progress bar — pinned to the TOP of the module ───────────────
@@ -262,23 +317,27 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
           (incluso mientras se ejecuta uno nuevo, ver nota arriba) */}
       {top10.length > 0 && (
         <>
-          <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "0 12px 6px",
-          }}>
+          {/* Cabecera de columnas — SOLO en compacto y alineada exactamente con
+              el grid de AssetRowCompact. En detalle se usan tarjetas auto-etiquetadas. */}
+          {density === "compact" && (
             <div style={{
               display: "grid",
-              gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
-              gap: 10,
-              flex: 1,
+              gridTemplateColumns: "22px minmax(0,1fr) 64px 46px",
+              gap: 8,
+              padding: "0 12px 6px",
             }}>
-              {["#", "ACTIVO", "PRECIO/DÍA", "SCORE", "TRAILING STOP (AJ · MED · AMP)"].map(h => (
-                <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {[
+                { h: "#", align: "center" as const },
+                { h: "ACTIVO", align: "left" as const },
+                { h: "%DÍA", align: "right" as const },
+                { h: "SCORE", align: "right" as const },
+              ].map(({ h, align }) => (
+                <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: align }}>
                   {h}
                 </span>
               ))}
             </div>
-          </div>
+          )}
 
           {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} detailed={density === "detail"} />)}
 

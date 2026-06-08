@@ -67,10 +67,11 @@ function SignalRow({ signal, rank }: { signal: SignalRecord; rank: number }) {
         <div style={{
           fontSize: 12, fontWeight: 900, color: isAlarm ? "#f87171" : "#ffffff",
           letterSpacing: "0.04em",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         }}>
           {signal.ticker}
         </div>
-        <div style={{ fontSize: 9, color: "#475569", marginTop: 1 }}>
+        <div style={{ fontSize: 9, color: "#64748b", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {signal.sector}  ·  {dateStr} {timeStr}
         </div>
       </div>

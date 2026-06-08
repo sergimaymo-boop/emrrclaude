@@ -100,8 +100,11 @@ function SectorTile({ sector }: { sector: SectorFlow }) {
         #{sector.rank}
       </span>
 
-      {/* Sector name + ETF */}
-      <div style={{ fontSize: 10, fontWeight: 800, color: c.textPrimary, lineHeight: 1.2, paddingRight: 18 }}>
+      {/* Sector name + ETF — clamp a 2 líneas para no descuadrar la altura del tile */}
+      <div style={{
+        fontSize: 10, fontWeight: 800, color: c.textPrimary, lineHeight: 1.2, paddingRight: 18,
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>
         {sector.name}
       </div>
       <div style={{ fontSize: 8, fontWeight: 600, color: c.textSecondary, letterSpacing: "0.05em" }}>
@@ -175,8 +178,8 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
 
       {/* Sector name + ETF */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9" }}>{sector.name}</div>
-        <div style={{ fontSize: 8, color: "#475569", marginTop: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sector.name}</div>
+        <div style={{ fontSize: 8, color: "#64748b", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {sector.etf} · 30m {fmt(sector.change30min)} · Vol {sector.relativeVolume.toFixed(1)}x
         </div>
       </div>
@@ -281,8 +284,8 @@ export function IntraDayFlowsPanel({ flowsState }: Props) {
       {isIdle && (
         <div style={{ padding: "24px 0", textAlign: "center" }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
-          <div style={{ fontSize: 13, color: "#334155", marginBottom: 4 }}>Pulsa SCAN FLOWS para detectar rotación de capital</div>
-          <div style={{ fontSize: 10, color: "#1e293b" }}>Analiza 10 sectores US · Detecta en segundos donde va el dinero</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>Pulsa SCAN FLOWS para detectar rotación de capital</div>
+          <div style={{ fontSize: 10, color: "#64748b" }}>Analiza 10 sectores US · Detecta en segundos donde va el dinero</div>
         </div>
       )}
 

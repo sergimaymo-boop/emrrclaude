@@ -854,17 +854,18 @@ input:focus {
 }
 
 .top8-list .card-footer {
+  grid-column: 1 / -1;
   margin-top: 2px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 10px;
   letter-spacing: 0.02em;
   opacity: 0.7;
+  flex-wrap: wrap;
+  gap: 6px 14px;
 }
 
 .top8-list .card-footer span {
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -905,7 +906,7 @@ input:focus {
 .sector-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(210px, 0.58fr) minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(140px, 0.58fr) minmax(90px, 1fr) auto;
   align-items: center;
   gap: 18px;
   min-height: 66px;
@@ -1703,16 +1704,19 @@ input:focus {
     gap: 6px;
   }
 
-  /* Dense, single-line "Bloomberg terminal" row — every asset on one aligned line */
+  /* Dense, single-line "Bloomberg terminal" row — every asset on one aligned line.
+     Track floors lowered so the worst-case min sum (~949px) stays well under the
+     available content width (~1164px) even with a scrollbar / zoom / 980-1180px
+     viewport — the fr units still expand to fill on a clean desktop. */
   .asset-row {
     grid-template-columns:
       32px
-      minmax(190px, 1.35fr)
-      minmax(170px, 1.05fr)
-      minmax(180px, 1.05fr)
-      minmax(130px, 0.75fr)
-      minmax(190px, 1.05fr)
-      minmax(140px, 0.85fr);
+      minmax(150px, 1.35fr)
+      minmax(140px, 1.05fr)
+      minmax(150px, 1.05fr)
+      minmax(105px, 0.75fr)
+      minmax(150px, 1.05fr)
+      minmax(110px, 0.85fr);
     gap: 14px;
     min-height: 0;
     padding: 9px 14px;

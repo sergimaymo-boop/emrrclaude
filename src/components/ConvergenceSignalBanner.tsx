@@ -19,6 +19,7 @@ import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
 import type { MonetaryCycleResult, EpsResult } from "../services/monetaryCycleRefresh";
 import { fetchEpsForTickers } from "../services/monetaryCycleRefresh";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { evaluateOptimalSignal } from "./OptimalSignalPanel";
 
 interface Props {
@@ -51,6 +52,7 @@ export function ConvergenceSignalBanner({
   top8,
   monetaryCycle,
 }: Props) {
+  const isNarrow = useIsNarrow(560);
   const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8, monetaryCycle);
 
   // ── EPS lazy fetch — solo cuando hay un ticker de convergencia ────────────
@@ -107,16 +109,16 @@ export function ConvergenceSignalBanner({
         >
           <span style={{
             fontSize: 10, fontWeight: 800, letterSpacing: "0.11em",
-            textTransform: "uppercase", color: "#475569",
+            textTransform: "uppercase", color: "#94a3b8",
           }}>
             CONVERGENCIA 3 MOTORES
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
             <span style={{
               fontSize: 10, fontWeight: 800, letterSpacing: "0.08em",
-              textTransform: "uppercase", color: "#334155",
-              background: "rgba(71,85,105,0.15)",
-              border: "1px solid rgba(71,85,105,0.25)",
+              textTransform: "uppercase", color: "#94a3b8",
+              background: "rgba(71,85,105,0.20)",
+              border: "1px solid rgba(71,85,105,0.35)",
               borderRadius: 999, padding: "2px 10px", whiteSpace: "nowrap",
             }}>
               ✗ TICKET SIN CONVERGENCIA
@@ -148,12 +150,12 @@ export function ConvergenceSignalBanner({
           padding: "12px 16px", gap: 12,
         }}>
           <div style={{
-            fontSize: 13, fontWeight: 700, color: "#334155",
+            fontSize: 13, fontWeight: 700, color: "#cbd5e1",
             letterSpacing: "0.02em",
           }}>
             TICKET SIN CONVERGENCIA
           </div>
-          <div style={{ fontSize: 10, color: "#334155", textAlign: "right" }}>
+          <div style={{ fontSize: 10, color: "#94a3b8", textAlign: "right" }}>
             {noConvLabel}
           </div>
         </div>
@@ -243,6 +245,7 @@ export function ConvergenceSignalBanner({
           background: headerBg,
           borderBottom: `1px solid ${borderColor}`,
           gap: 8,
+          flexWrap: "wrap",
         }}
       >
         <span
@@ -254,6 +257,7 @@ export function ConvergenceSignalBanner({
             color: accentColor,
             display: "flex",
             alignItems: "center",
+            flexShrink: 0,
           }}
         >
           {isFullGreen && <span style={statusDotStyle} />}
@@ -261,7 +265,7 @@ export function ConvergenceSignalBanner({
         </span>
 
         {/* Status label (entrada / alarma / parcial) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <span
             style={{
               fontSize: 10,
@@ -304,182 +308,165 @@ export function ConvergenceSignalBanner({
         </div>
       </div>
 
-      {/* ── Main data row ───────────────────────────────────────────────── */}
+      {/* ── Main data row ─────────────────────────────────────────────────
+          Responsive: en pantallas anchas es una fila tabular (ticker | nombre |
+          precio | %); en móvil se apila (identidad arriba, precio+% abajo) para
+          que el ticker grande y los valores nunca se solapen. */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "auto 1fr auto auto",
-          alignItems: "center",
-          gap: 0,
+          display: "flex",
+          flexDirection: isNarrow ? "column" : "row",
+          alignItems: isNarrow ? "stretch" : "center",
+          gap: isNarrow ? 10 : 0,
           padding: "12px 16px",
         }}
       >
-        {/* TICKER — Bloomberg large mono */}
+        {/* Identidad: TICKER + market + nombre + motores */}
         <div
           style={{
-            paddingRight: 18,
-            borderRight: `1px solid rgba(255,255,255,0.07)`,
-            marginRight: 18,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 14,
+            minWidth: 0,
+            flex: isNarrow ? "none" : 1,
+            paddingRight: isNarrow ? 0 : 18,
+            borderRight: isNarrow ? "none" : "1px solid rgba(255,255,255,0.07)",
           }}
         >
-          <div
-            style={{
-              fontSize: 30,
-              fontWeight: 900,
-              letterSpacing: "-0.5px",
-              color: "#ffffff",
-              lineHeight: 1,
-              fontVariantNumeric: "tabular-nums",
-            }}
-          >
-            {s.ticker}
+          <div style={{ flexShrink: 0 }}>
+            <div
+              style={{
+                fontSize: isNarrow ? 24 : 30,
+                fontWeight: 900,
+                letterSpacing: "-0.5px",
+                color: "#ffffff",
+                lineHeight: 1,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {s.ticker}
+            </div>
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: "#64748b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                marginTop: 3,
+              }}
+            >
+              {top8Asset?.market ?? "EQUITY"}
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: 8.5,
-              fontWeight: 700,
-              color: "#475569",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              marginTop: 3,
-            }}
-          >
-            {top8Asset?.market ?? "EQUITY"}
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#cbd5e1",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {companyName}
+            </div>
+            <div
+              style={{
+                fontSize: 9,
+                color: "#64748b",
+                marginTop: 3,
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              Motor 1 {s.top8Score?.toFixed(1) ?? "—"}
+              {"  ·  "}
+              Rally {s.rallyScore ?? "—"}
+              {"  ·  "}
+              Riesgo {riskLabel}
+            </div>
           </div>
         </div>
 
-        {/* Company name */}
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: "#cbd5e1",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {companyName}
-          </div>
-          <div
-            style={{
-              fontSize: 9,
-              color: "#475569",
-              marginTop: 3,
-              fontWeight: 600,
-              letterSpacing: "0.05em",
-            }}
-          >
-            Motor 1 score {s.top8Score?.toFixed(1) ?? "—"}
-            {"  ·  "}
-            Motor 2 rally {s.rallyScore ?? "—"}
-            {"  ·  "}
-            Riesgo {riskLabel}
-          </div>
-        </div>
-
-        {/* Price */}
+        {/* Precio + % cambio — fila de valores (a la derecha en desktop, abajo en móvil) */}
         <div
           style={{
-            textAlign: "right",
-            paddingLeft: 20,
-            paddingRight: 16,
-            borderLeft: "1px solid rgba(255,255,255,0.07)",
-            borderRight: "1px solid rgba(255,255,255,0.07)",
+            display: "flex",
+            flexShrink: 0,
+            alignItems: "stretch",
           }}
         >
+          {/* Price */}
           <div
             style={{
-              fontSize: 9,
-              fontWeight: 700,
-              color: "#475569",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              marginBottom: 2,
+              textAlign: isNarrow ? "left" : "right",
+              paddingRight: 18,
+              borderRight: "1px solid rgba(255,255,255,0.07)",
+              flex: isNarrow ? 1 : "none",
+              minWidth: isNarrow ? 0 : 90,
             }}
           >
-            Precio
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              Precio
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#f8fafc", fontVariantNumeric: "tabular-nums", lineHeight: 1, whiteSpace: "nowrap" }}>
+              {currency}{price}
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              color: "#f8fafc",
-              fontVariantNumeric: "tabular-nums",
-              lineHeight: 1,
-            }}
-          >
-            {currency}{price}
-          </div>
-        </div>
 
-        {/* % change */}
-        <div
-          style={{
-            textAlign: "right",
-            paddingLeft: 16,
-          }}
-        >
+          {/* % change */}
           <div
             style={{
-              fontSize: 9,
-              fontWeight: 700,
-              color: "#475569",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              marginBottom: 2,
+              textAlign: isNarrow ? "left" : "right",
+              paddingLeft: 18,
+              flex: isNarrow ? 1 : "none",
+              minWidth: isNarrow ? 0 : 86,
             }}
           >
-            % cierre ant.
-          </div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              color: positive ? "#10b981" : "#ef4444",
-              fontVariantNumeric: "tabular-nums",
-              lineHeight: 1,
-            }}
-          >
-            {changePctFmt}
+            <div style={{ fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>
+              % cierre ant.
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: positive ? "#10b981" : "#ef4444", fontVariantNumeric: "tabular-nums", lineHeight: 1, whiteSpace: "nowrap" }}>
+              {changePctFmt}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Footer stats row ────────────────────────────────────────────── */}
+      {/* ── Footer stats row ──────────────────────────────────────────────
+          Separadores por column-gap (no borderRight por item) para que al
+          envolver en móvil no queden divisores huérfanos. Labels con contraste
+          legible (#94a3b8) en vez del antiguo #334155 casi invisible. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 0,
-          padding: "6px 16px 8px",
+          columnGap: 18,
+          rowGap: 4,
+          padding: "7px 16px 9px",
           borderTop: "1px solid rgba(255,255,255,0.04)",
           flexWrap: "wrap",
-          rowGap: 4,
         }}
       >
         {[
           { label: "Stop ajustado", value: s.trailingTight ?? "—" },
           { label: "Stop medio",    value: s.trailingMedium ?? "—" },
           { label: "Sector",        value: s.sectorName ?? "—" },
-        ].map((item, i) => (
+        ].map((item) => (
           <div
             key={item.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              paddingRight: 16,
-              marginRight: 16,
-              borderRight: i < 2 ? "1px solid rgba(255,255,255,0.06)" : "none",
-            }}
+            style={{ display: "flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}
           >
             <span
               style={{
                 fontSize: 9,
-                fontWeight: 600,
-                color: "#334155",
+                fontWeight: 700,
+                color: "#94a3b8",
                 textTransform: "uppercase",
                 letterSpacing: "0.07em",
               }}
@@ -502,17 +489,10 @@ export function ConvergenceSignalBanner({
         {/* EPS Growth badge — lazy fetched when ticker is known */}
         {epsData && (
           <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              paddingLeft: 16,
-              marginLeft: 4,
-              borderLeft: "1px solid rgba(255,255,255,0.06)",
-            }}
+            style={{ display: "flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}
           >
             <span style={{
-              fontSize: 9, fontWeight: 600, color: "#334155",
+              fontSize: 9, fontWeight: 700, color: "#94a3b8",
               textTransform: "uppercase", letterSpacing: "0.07em",
             }}>
               EPS

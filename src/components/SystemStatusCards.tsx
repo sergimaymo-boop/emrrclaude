@@ -13,9 +13,9 @@ function color(value: string): string {
 
 function Row({ label, value, c }: { label: string; value: string; c?: string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-      <span style={{ fontSize: 10, color: "#475569", fontWeight: 600 }}>{label}</span>
-      <strong style={{ fontSize: 11, fontWeight: 800, color: c ?? color(value) }}>{value}</strong>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, flexShrink: 0 }}>{label}</span>
+      <strong style={{ fontSize: 11, fontWeight: 800, color: c ?? color(value), textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{value}</strong>
     </div>
   );
 }

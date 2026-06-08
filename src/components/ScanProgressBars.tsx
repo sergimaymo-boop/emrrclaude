@@ -33,11 +33,11 @@ function Bar({
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       {/* Labels */}
-      <div style={{ width: 90, flexShrink: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, color: textColor, letterSpacing: "0.06em" }}>
+      <div style={{ width: 98, flexShrink: 0, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: textColor, letterSpacing: "0.06em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {label}
         </div>
-        <div style={{ fontSize: 8, fontWeight: 600, color: "#475569", letterSpacing: "0.04em" }}>
+        <div style={{ fontSize: 8, fontWeight: 600, color: "#64748b", letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {sublabel}
         </div>
       </div>
