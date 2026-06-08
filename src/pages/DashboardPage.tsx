@@ -47,6 +47,7 @@ import {
 } from "../services/rallyRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
+import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
 import { PullbackRiskIndicator } from "../components/PullbackRiskIndicator";
 import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
@@ -1023,7 +1024,17 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         scanPhase={scanPhase}
         onLogout={onLogout}
       />
-      {/* ── SEÑAL ÓPTIMA — arriba del todo, evalúa los 4 filtros automáticamente ── */}
+      {/* ── CONVERGENCIA 3 MOTORES — hero card, ticker perfecto ─────────────── */}
+      <ErrorBoundary inline label="Convergencia">
+        <ConvergenceSignalBanner
+          marketRegime={marketRegime}
+          flowsState={flowsState}
+          rallyState={rallyState}
+          top8={top8}
+        />
+      </ErrorBoundary>
+
+      {/* ── SEÑAL ÓPTIMA — detalle de los 4 filtros ────────────────────────── */}
       <ErrorBoundary inline label="Señal Óptima">
         <OptimalSignalPanel
           marketRegime={marketRegime}
