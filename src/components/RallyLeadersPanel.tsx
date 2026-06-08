@@ -72,77 +72,65 @@ function ScoreBar({ score, label, color }: { score: number; label: string; color
 
 // ─── Single dense Bloomberg-style row ─────────────────────────────────────────
 
-function AssetRow({ asset, detailed }: { asset: RallyAsset; detailed: boolean }) {
+function AssetRow({ asset }: { asset: RallyAsset }) {
   const m = asset.metrics;
   const priceChange = m?.mom1m ?? null;
   const changeColor = priceChange === null ? "#64748b" : priceChange >= 0 ? "#10b981" : "#ef4444";
   const stops = calcTrailingStops(m?.atrPercent ?? null);
 
-  // Layout 100% flexbox (no grid rígido) → la columna ticker/nombre es flexible
-  // y trunca con ellipsis, mientras que precio y score tienen su propio espacio
-  // (flexShrink:0). En modo DETALLE el trailing stop va en una SEGUNDA línea a
-  // ancho completo, así nunca se solapan ticker · nombre · precio.
   return (
     <article style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: detailed ? 6 : 0,
-      padding: "8px 12px",
+      display: "grid",
+      gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
+      gap: 10,
+      alignItems: "center",
+      padding: "7px 12px",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
       transition: "background 150ms",
     }}
     onMouseEnter={e => (e.currentTarget.style.background = "rgba(99,102,241,0.06)")}
     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
     >
-      {/* Línea principal: rank · ticker/nombre · [precio] · score */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        {/* Rank */}
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#475569", width: 16, flexShrink: 0, textAlign: "center" }}>
-          {asset.rank}
-        </span>
+      {/* Rank */}
+      <span style={{ fontSize: 11, fontWeight: 800, color: "#475569", textAlign: "center" }}>
+        {asset.rank}
+      </span>
 
-        {/* Ticker + Nombre — flexible, trunca con ellipsis */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <strong style={{ fontSize: 12, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.04em" }}>
-              {asset.ticker}
-            </strong>
-            <span style={{ fontSize: 9, color: "#475569", fontWeight: 600, textTransform: "uppercase" }}>
-              {asset.exchange?.replace("XETRA", "DE").replace("EURONEXT", "EU")}
-            </span>
-          </div>
-          <div style={{ fontSize: 9, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {asset.name}
-          </div>
+      {/* Ticker + Name */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontSize: 12, fontWeight: 900, color: "#f1f5f9", letterSpacing: "0.04em" }}>
+            {asset.ticker}
+          </strong>
+          <span style={{ fontSize: 9, color: "#475569", fontWeight: 600, textTransform: "uppercase" }}>
+            {asset.exchange?.replace("XETRA", "DE").replace("EURONEXT", "EU")}
+          </span>
         </div>
-
-        {/* Precio + cambio — solo en modo DETALLE */}
-        {detailed && (
-          <div style={{ textAlign: "right", flexShrink: 0, minWidth: 56 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", fontVariantNumeric: "tabular-nums" }}>
-              {m?.lastClose ? m.lastClose.toFixed(2) : "—"}
-            </div>
-            <div style={{ fontSize: 10, color: changeColor, fontWeight: 700 }}>
-              {priceChange === null ? "—" : `${priceChange >= 0 ? "▲" : "▼"} ${Math.abs(priceChange).toFixed(2)}%`}
-            </div>
-          </div>
-        )}
-
-        {/* Score — siempre visible (dato básico), inline bar */}
-        <div style={{ flexShrink: 0 }}>
-          <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
+        <div style={{ fontSize: 9, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {asset.name}
         </div>
       </div>
 
-      {/* Segunda línea (solo DETALLE): trailing stops a ancho completo — sin solapamiento */}
-      {detailed && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26 }}>
-          <span style={{ fontSize: 7, color: "#334155", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>
-            Trailing stop óptimo
-          </span>
-          <StopsTriplet stops={stops} />
+      {/* Price + Change */}
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#f1f5f9", fontVariantNumeric: "tabular-nums" }}>
+          {m?.lastClose ? m.lastClose.toFixed(2) : "—"}
         </div>
-      )}
+        <div style={{ fontSize: 10, color: changeColor, fontWeight: 700 }}>
+          {priceChange === null ? "—" : `${priceChange >= 0 ? "▲" : "▼"} ${Math.abs(priceChange).toFixed(2)}%`}
+        </div>
+      </div>
+
+      {/* Score — inline bar (replaces the old circle) */}
+      <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
+
+      {/* Optimal trailing stops — Ajustado / Medio / Amplio */}
+      <div>
+        <div style={{ fontSize: 7, color: "#334155", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+          Trailing stop óptimo
+        </div>
+        <StopsTriplet stops={stops} />
+      </div>
     </article>
   );
 }
@@ -184,12 +172,6 @@ function TopProgressBar({
 
 export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanelProps) {
   const [showAll, setShowAll] = useState(false);
-  // Densidad de la tabla: "compact" (solo datos básicos: rank · ticker · score)
-  // o "detail" (todo: precio/día + trailing stops). Por defecto compacto para
-  // una vista limpia sin solapamientos; el toggle de arriba (estilo Flujos de
-  // Capital) permite desplegar todos los datos.
-  const [density, setDensity] = useState<"compact" | "detail">("compact");
-  const detailed = density === "detail";
   const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal, lastRun } = rallyState;
   const isIdle = status === "RALLY_IDLE";
   const isFinal = status === "RALLY_FINAL";
@@ -239,32 +221,8 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
             Top 10 Institutional Rally Leaders · Independent engine
           </p>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          {/* Toggle de densidad — dos botones pequeños, mismo patrón visual que
-              el toggle ⊞/☰ de Flujos de Capital */}
-          {top10.length > 0 && (
-            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {(["compact", "detail"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDensity(v)}
-                  style={{
-                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
-                    border: "none", letterSpacing: "0.05em",
-                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
-                    color: density === v ? "#f1f5f9" : "#475569",
-                    transition: "background 120ms",
-                  }}
-                >
-                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
-                </button>
-              ))}
-            </div>
-          )}
-          <span style={{ fontSize: 10, color: "#475569" }}>
-            {isFinal || isPartial ? `${top10.length} leaders found` : ""}
-          </span>
+        <div style={{ fontSize: 10, color: "#475569", textAlign: "right" }}>
+          {isFinal || isPartial ? `${top10.length} leaders found` : ""}
         </div>
       </div>
 
@@ -297,23 +255,25 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
           (incluso mientras se ejecuta uno nuevo, ver nota arriba) */}
       {top10.length > 0 && (
         <>
-          {/* Cabecera ligera — solo etiqueta el modo activo (el layout flexible
-              de cada fila es auto-descriptivo, así no hay columnas que desalinear) */}
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
             padding: "0 12px 6px",
           }}>
-            <span style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              # · Activo{detailed ? " · Precio/día" : ""} · Score
-            </span>
-            {detailed && (
-              <span style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                Trailing stop (AJ · MED · AMP)
-              </span>
-            )}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
+              gap: 10,
+              flex: 1,
+            }}>
+              {["#", "ACTIVO", "PRECIO/DÍA", "SCORE", "TRAILING STOP (AJ · MED · AMP)"].map(h => (
+                <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {h}
+                </span>
+              ))}
+            </div>
           </div>
 
-          {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} detailed={detailed} />)}
+          {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} />)}
 
           {/* Expandir/colapsar — mismo patrón visual que el toggle de Flujos de Capital */}
           {canExpand && (

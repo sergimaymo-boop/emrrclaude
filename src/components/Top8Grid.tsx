@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ColorToken, Top8Asset } from "../types";
 import { Badge } from "./Badge";
 
@@ -58,41 +57,13 @@ export function Top8Grid({ assets }: Top8GridProps) {
   const top8Source = visibleAssets[0]?.top8Source ?? "UNAVAILABLE";
   const resultScope = visibleAssets[0]?.resultScope ?? "UNAVAILABLE";
 
-  // Densidad: "compact" (datos básicos: ticker · nombre · acción · score) o
-  // "detail" (todo: precio, conviction, risk, momentum, trailing stop, footer).
-  // Mismo toggle de dos botones pequeños que Rally Leaders / Flujos de Capital.
-  const [density, setDensity] = useState<"compact" | "detail">("compact");
-  const detailed = density === "detail";
-
   return (
     <section className="section-block top8-section">
       <div className="section-title-row">
         <h2>TOP 8</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {visibleAssets.length > 0 && (
-            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {(["compact", "detail"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDensity(v)}
-                  style={{
-                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
-                    border: "none", letterSpacing: "0.05em",
-                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
-                    color: density === v ? "#f1f5f9" : "#475569",
-                    transition: "background 120ms",
-                  }}
-                >
-                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
-                </button>
-              ))}
-            </div>
-          )}
-          <span>
-            Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
-          </span>
-        </div>
+        <span>
+          Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
+        </span>
       </div>
       <div className="top8-list">
         {visibleAssets.length === 0 ? (
@@ -121,14 +92,6 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 <div className="asset-symbol-row">
                   <strong>{asset.ticker}</strong>
                   <span className="asset-name" title={asset.name}>{asset.name}</span>
-                  {/* En modo COMPACTO el score se muestra inline aquí (dato básico),
-                      ya que la celda de scores completa queda oculta */}
-                  {!detailed && (
-                    <span style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "baseline", gap: 4, fontVariantNumeric: "tabular-nums" }}>
-                      <strong style={{ fontSize: 16, fontWeight: 900, color: "#f1f5f9", lineHeight: 1 }}>{asset.score}</strong>
-                      <span style={{ fontSize: 8, fontWeight: 800, color: "#475569", letterSpacing: "0.05em" }}>SCORE</span>
-                    </span>
-                  )}
                 </div>
                 <div className="asset-badges-row">
                   <Badge token={actionToken(asset.action)}>{displayAction(asset.action)}</Badge>
@@ -138,7 +101,6 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              {detailed && (<>
               <div className="asset-market-cell">
                 <span className="asset-market-tag">{asset.market}</span>
                 <strong className="asset-price">{formatDisplayPrice(asset.price)}</strong>
@@ -199,7 +161,6 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 <span>{asset.provider === "none" ? "no provider" : asset.provider}</span>
                 <span>{asset.priceTimestamp.local}</span>
               </div>
-              </>)}
             </article>
         ))}
       </div>
