@@ -42,13 +42,11 @@ function extractEpsMetrics(data) {
   const primaryGrowth = epsGrowth3Y ?? epsGrowth5Y;
   if (primaryGrowth === null) return { ok: false, reason: 'no_eps_growth_data' };
 
-  // Finnhub epsGrowth3Y/5Y documentation shows the field as a ratio (0.25 = 25%).
-  // Observed production values for high-growth stocks like NVDA are ~0.5, not ~50.
-  // If the absolute value is < 5 (i.e. it looks like a ratio, not a percentage),
-  // multiply by 100 to normalise to percentage units for classifyEpsQuality().
-  const normalizedGrowth = Math.abs(primaryGrowth) < 5 ? primaryGrowth * 100 : primaryGrowth;
-
-  return { ok: true, epsGrowthYoY: normalizedGrowth, epsGrowth3Y, epsGrowth5Y, epsTTM };
+  // Finnhub returns epsGrowth3Y/5Y ALREADY in percentage units (verified against
+  // production: KO=11.48 → +11%, PG=3.88 → +3.88%, VZ=-7.06 → -7%). Do NOT rescale.
+  // A previous "ratio→percent ×100 when <5" heuristic was a bug: it inflated any
+  // low-single-digit grower (e.g. PG +3.88% → +388% "EXCELENTE") into a false signal.
+  return { ok: true, epsGrowthYoY: primaryGrowth, epsGrowth3Y, epsGrowth5Y, epsTTM };
 }
 
 /**

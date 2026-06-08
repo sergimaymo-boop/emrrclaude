@@ -50,7 +50,7 @@ export default async function handler(request, response) {
   const needFetch  = [];
 
   await Promise.all(tickers.map(async (ticker) => {
-    const key = `eps_v2_${ticker}`;
+    const key = `eps_v3_${ticker}`;
     const val = await kvGet(key);
     if (val && val.fetchedAtUtc) {
       const ageMs = Date.now() - new Date(val.fetchedAtUtc).getTime();
@@ -72,7 +72,7 @@ export default async function handler(request, response) {
     // Store fresh results in cache
     await Promise.all(
       Object.entries(fresh).map(([ticker, data]) =>
-        kvSet(`eps_v2_${ticker}`, data, CACHE_TTL_SEC)
+        kvSet(`eps_v3_${ticker}`, data, CACHE_TTL_SEC)
       )
     );
   }

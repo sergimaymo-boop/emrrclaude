@@ -15,49 +15,20 @@
  */
 
 // ─── imports ─────────────────────────────────────────────────────────────────
+// NOTE: The monetary cycle does NOT adjust the rally score. The rally score is a
+// pure per-ticker technical breakout metric; a global macro offset would not change
+// the relative ranking (all tickers shift equally) and there is no absolute rally
+// threshold gate. The monetary cycle correctly modulates the ENTRY decision via
+// Filter 5 (cycleWarning) in OptimalSignalPanel.tsx, not the technical ranking.
 import { buildUniverseResponse } from './universe.js';
-import { saveLastRallySnapshot, loadLastRallySnapshot, kvGet } from './_lib/kvStorage.js';
+import { saveLastRallySnapshot, loadLastRallySnapshot } from './_lib/kvStorage.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
 import { filterActiveOperableAssets, getActiveMarketsAt } from './_lib/scanSnapshot.js';
-
-// Monetary cycle cache key — same key used by api/monetary-cycle.js
-const MONETARY_CYCLE_CACHE_KEY = 'monetary_cycle_v2';
-
-/**
- * Load the cached monetary cycle rallyScoreAdjustment (-8 TIGHTENING, +3 EASING, 0 NEUTRAL).
- * Returns 0 (no adjustment) if cache is empty or stale.
- */
-async function loadCycleAdjustment() {
-  try {
-    const cached = await kvGet(MONETARY_CYCLE_CACHE_KEY);
-    if (cached && typeof cached.rallyScoreAdjustment === 'number' && cached.hasData) {
-      return cached.rallyScoreAdjustment;
-    }
-  } catch { /* ignore */ }
-  return 0;
-}
-
-function clamp(val, min, max) { return Math.min(Math.max(val, min), max); }
-
-/**
- * Apply monetary cycle adjustment to rally scores before final ranking.
- * This activates the -8 TIGHTENING / +3 EASING signal designed to reduce
- * whipsaw entries during rate-hike periods.
- */
-function applyRallyScoreAdjustment(top10, adjustment) {
-  if (!adjustment || !Array.isArray(top10)) return top10;
-  return top10.map(c => ({
-    ...c,
-    rallyScore: clamp(Math.round(c.rallyScore + adjustment), 0, 100),
-    rallyScoreCycleAdjustment: adjustment,
-  }));
-}
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
 const RALLY_VERSION = 'RALLY_V1';
 const BATCH_SIZE    = 80;
 const MAX_TOP_CANDIDATES = 10;
-const MIN_RALLY_SCORE    = 60;
 
 function getEnv()         { return globalThis.process?.env ?? {}; }
 function isRealApi()      { return getEnv().ENABLE_REAL_API_CALLS === 'true'; }
@@ -113,23 +84,19 @@ async function handleStart(req, res) {
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
 
-  const [{ candidates, providerCalls }, cycleAdj] = await Promise.all([
-    runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars }),
-    loadCycleAdjustment(),
-  ]);
+  const { candidates, providerCalls } = await runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
   const batchesCompleted = 1;
   const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
   const isComplete = batchesCompleted >= batchesTotal;
-  // Apply monetary cycle adjustment (-8 TIGHTENING / +3 EASING) to final scores
-  const top10 = applyRallyScoreAdjustment(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })), cycleAdj);
+  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
   }
 
-  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length, cycleAdj });
+  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, cycleAdj, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
 }
 
 // ─── continue handler ─────────────────────────────────────────────────────────
@@ -160,18 +127,13 @@ async function handleContinue(req, res) {
 
   const eligibleAssets = eligibleTickers.map(ticker => ({ providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0], market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe', exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR' }));
   const spyBars = await fetchSpyBars();
-  const [{ candidates, providerCalls: newCalls }, cycleAdj] = await Promise.all([
-    runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars }),
-    loadCycleAdjustment(),
-  ]);
+  const { candidates, providerCalls: newCalls } = await runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
 
   const newBatchesCompleted = batchesCompleted + 1;
   const newCoveragePercent  = Math.round((newBatchesCompleted / batchesTotal) * 100);
   const isComplete  = newBatchesCompleted >= batchesTotal;
   const totalCalls  = (actualProviderCalls ?? 0) + newCalls;
-  // Apply monetary cycle adjustment to final scores when complete
-  const top10Raw = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
-  const top10 = isComplete ? applyRallyScoreAdjustment(top10Raw, cycleAdj) : top10Raw;
+  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });
