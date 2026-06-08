@@ -1,7 +1,7 @@
 {
   "framework": "vite",
-  "installCommand": "npm ci",
-  "buildCommand": "npx tsc -b && npx vite build",
+  "installCommand": "npm install",
+  "buildCommand": "npx vite build",
   "outputDirectory": "dist",
   "headers": [
     {
