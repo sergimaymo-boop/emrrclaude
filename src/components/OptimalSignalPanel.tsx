@@ -355,15 +355,17 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8,
           isAlarm: s.alarma,
         });
 
-        // Send push notification (if permission granted)
-        if (s.allPass) {
+        // Send push notification only when all filters pass AND cycle is not
+        // TIGHTENING — prevents a contradictory "perfect ticket" notification
+        // simultaneously with an amber cycle warning (audit fix).
+        if (s.allPass && !s.cycleWarning) {
           pushNotifications.notifyPerfectTicket(s.ticker, s.sectorName, s.top8Score);
         }
 
         console.log('Signal detected:', record);
       }
     }
-  }, [s.bestCandidateExists, s.ticker]);
+  }, [s.bestCandidateExists, s.ticker, s.sectorName, s.top8Score, s.rallyScore, s.alarma, s.allPass, s.cycleWarning, flowsState.marketOpen]);
 
   return (
     <section style={{
@@ -486,9 +488,12 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8,
               <div style={{ fontSize: 10, color: s.alarma ? "#ef4444" : "#34d399", marginTop: 3 }}>
                 {s.sectorName}  ·  Rally {s.rallyScore}  ·  Score {s.top8Score?.toFixed(1)}
               </div>
-              {/* RS 3M Sparkline — shows relative strength vs SPY */}
+              {/* RS 3M Sparkline — shows relative strength vs SPY.
+                  rs3m is not yet carried in Top8Asset (audit fix: hardcoded 8.5
+                  removed). Passing null renders a neutral placeholder bar until
+                  rs3m is added to Top8Asset and populated from the scan engine. */}
               <div style={{ marginTop: 6 }}>
-                <RSSparkline rs3m={8.5} size="md" />
+                <RSSparkline rs3m={null} size="md" />
               </div>
             </div>
 

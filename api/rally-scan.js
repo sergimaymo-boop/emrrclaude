@@ -113,19 +113,23 @@ async function handleStart(req, res) {
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
 
-  const { candidates, providerCalls } = await runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
+  const [{ candidates, providerCalls }, cycleAdj] = await Promise.all([
+    runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars }),
+    loadCycleAdjustment(),
+  ]);
   const batchesCompleted = 1;
   const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
   const isComplete = batchesCompleted >= batchesTotal;
-  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
+  // Apply monetary cycle adjustment (-8 TIGHTENING / +3 EASING) to final scores
+  const top10 = applyRallyScoreAdjustment(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })), cycleAdj);
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
   }
 
-  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
+  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length, cycleAdj });
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, cycleAdj, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
 }
 
 // ─── continue handler ─────────────────────────────────────────────────────────
@@ -156,13 +160,18 @@ async function handleContinue(req, res) {
 
   const eligibleAssets = eligibleTickers.map(ticker => ({ providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0], market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe', exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR' }));
   const spyBars = await fetchSpyBars();
-  const { candidates, providerCalls: newCalls } = await runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+  const [{ candidates, providerCalls: newCalls }, cycleAdj] = await Promise.all([
+    runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars }),
+    loadCycleAdjustment(),
+  ]);
 
   const newBatchesCompleted = batchesCompleted + 1;
   const newCoveragePercent  = Math.round((newBatchesCompleted / batchesTotal) * 100);
   const isComplete  = newBatchesCompleted >= batchesTotal;
   const totalCalls  = (actualProviderCalls ?? 0) + newCalls;
-  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
+  // Apply monetary cycle adjustment to final scores when complete
+  const top10Raw = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
+  const top10 = isComplete ? applyRallyScoreAdjustment(top10Raw, cycleAdj) : top10Raw;
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });

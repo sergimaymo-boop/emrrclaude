@@ -5,8 +5,8 @@
  */
 
 interface Props {
-  rs3m: number;        // 3-month RS value (-20 to +20 typical)
-  size?: 'sm' | 'md';  // small (24px) or medium (32px)
+  rs3m: number | null;  // 3-month RS value (-20 to +20 typical); null = no data yet
+  size?: 'sm' | 'md';   // small (24px) or medium (32px)
 }
 
 /**
@@ -32,6 +32,19 @@ function generateSparklinePath(rs3m: number, width: number, height: number): str
 }
 
 export function RSSparkline({ rs3m, size = 'sm' }: Props) {
+  // Render a neutral placeholder when data is not yet available
+  if (rs3m === null || rs3m === undefined) {
+    const placeholderSize = size === 'md' ? { width: 64, height: 32, textSize: 11 } : { width: 48, height: 24, textSize: 9 };
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <svg width={placeholderSize.width} height={placeholderSize.height} viewBox={`0 0 ${placeholderSize.width} ${placeholderSize.height}`} style={{ background: 'rgba(71,85,105,0.08)', borderRadius: 4 }}>
+          <line x1="0" y1={placeholderSize.height / 2} x2={placeholderSize.width} y2={placeholderSize.height / 2} stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" strokeDasharray="2,2" />
+        </svg>
+        <span style={{ fontSize: placeholderSize.textSize, fontWeight: 700, color: '#475569', minWidth: 32 }}>RS —</span>
+      </div>
+    );
+  }
+
   const sizes = {
     sm: { width: 48, height: 24, stroke: 1.5, textSize: 9 },
     md: { width: 64, height: 32, stroke: 2, textSize: 11 },

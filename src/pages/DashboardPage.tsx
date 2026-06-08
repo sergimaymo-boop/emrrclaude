@@ -203,6 +203,17 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const top8Ref = useRef<Top8Asset[]>(top8);
   useEffect(() => { top8Ref.current = top8; }, [top8]);
 
+  // Refs for masterIndicators and systemStatus — prevent stale closures in
+  // applySnapshotResult during multi-batch auto-chained scans (audit fix).
+  const masterIndicatorsRef = useRef<MasterIndicator[]>(masterIndicators);
+  useEffect(() => { masterIndicatorsRef.current = masterIndicators; }, [masterIndicators]);
+  const systemStatusRef = useRef<SystemStatus>(systemStatus);
+  useEffect(() => { systemStatusRef.current = systemStatus; }, [systemStatus]);
+
+  // Cleanup: abort any in-progress rally scan on unmount to prevent
+  // state updates on an unmounted component (audit fix).
+  useEffect(() => () => { rallyAbortRef.current = true; }, []);
+
   // AUDIT FIX (DATA_UNAVAILABLE en el Top 8): el scan rankea por score con
   // datos históricos pero NO guarda el precio en vivo — el precio y el % desde
   // cierre anterior vienen SOLO de /api/visible-top8-quotes, que antes solo se
@@ -528,8 +539,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     ] as const);
 
     let nextTop8: Top8Asset[] = [];
-    let nextIndicators = masterIndicators;
-    let statusBase = refreshSystemMarketStatus(systemStatus);
+    // Use refs to avoid stale closure during multi-batch auto-chained scans
+    let nextIndicators = masterIndicatorsRef.current;
+    let statusBase = refreshSystemMarketStatus(systemStatusRef.current);
     let quoteRealUpdate: TimestampPair | null = null;
     let indicatorRealUpdate: TimestampPair | null = null;
     let nextScanExecutionMode: ScanState["scanExecutionMode"] = "NO_REAL_DATA";
@@ -935,24 +947,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     // Wait for all three to complete
     await Promise.allSettled([flowsPromise, rallyPromise, fullPromise]);
 
-    setScanPhase("done");
-    showToast("✓ Análisis completo — Señal Óptima actualizada", "success");
-    setTimeout(() => setScanPhase("idle"), 4000);
-  }
-
-  // keep individual handlers for backward compat (not exposed in UI anymore)
-  async function handleScanAllLegacy() {
-    // legacy — not called from UI
-  }
-
-  // placeholder to avoid unused-var lint on handleScan (used by runFull above)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function _handleScanLegacy() {
-    setScanState(current => ({
-        ...current, label: "Scan failed", isScanning: false, scanExecutionMode: "ERROR",
-      }));
-
-    // Done
     setScanPhase("done");
     showToast("✓ Análisis completo — Señal Óptima actualizada", "success");
     setTimeout(() => setScanPhase("idle"), 4000);

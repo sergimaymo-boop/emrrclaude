@@ -24,6 +24,28 @@ export interface MonetaryCycleResult {
   hasData: boolean;
   fromCache?: boolean;
   reason?: string;
+  /** Raw market inputs used to classify the cycle (returned by monetary-cycle.js) */
+  rawSignals?: {
+    tnxChangePercent: number | null;
+    hygChangePercent: number | null;
+    vixLevel: number | null;
+    moveLevel: number | null;
+  };
+  /** ISO timestamp when the result was written to cache */
+  cachedAtUtc?: string;
+}
+
+export interface EpsResult {
+  ok: boolean;
+  epsGrowthYoY?: number | null;
+  epsGrowth3Y?:  number | null;
+  epsGrowth5Y?:  number | null;  // also returned by epsEngine.js / eps-batch.js
+  epsTTM?:       number | null;
+  adjustment:    number;
+  label:         string;
+  risk:          'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
+  color:         string;
+  reason?:       string;
 }
 
 export function initialMonetaryCycle(): MonetaryCycleResult {
@@ -73,14 +95,3 @@ export async function fetchEpsForTickers(tickers: string[]): Promise<Record<stri
   }
 }
 
-export interface EpsResult {
-  ok: boolean;
-  epsGrowthYoY?: number | null;
-  epsGrowth3Y?:  number | null;
-  epsTTM?:       number | null;
-  adjustment:    number;
-  label:         string;
-  risk:          'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN';
-  color:         string;
-  reason?:       string;
-}

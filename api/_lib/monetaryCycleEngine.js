@@ -83,6 +83,9 @@ export function classifyMonetaryCycle({ tnxChangePercent, hygChangePercent, vixL
   }
 
   // ── MOVE (volatilidad bonos) — peso 10% ──────────────────────────────────
+  // Mid-tier added: MOVE 110–130 now contributes 5 tighteningPts instead of 0,
+  // activating the weight in the most common elevated-vol zone (100–130) that
+  // was previously a blind spot (audit finding: weight was cosmetic).
   if (typeof moveLevel === 'number' && isFinite(moveLevel)) {
     if (moveLevel < 90) {
       easingPts += 10;
@@ -90,6 +93,9 @@ export function classifyMonetaryCycle({ tnxChangePercent, hygChangePercent, vixL
     } else if (moveLevel > 130) {
       tighteningPts += 10;
       signalDetails.push({ key: 'MOVE', label: `MOVE elevado (${moveLevel.toFixed(0)})`, dir: 'tightening' });
+    } else if (moveLevel > 110) {
+      tighteningPts += 5;
+      signalDetails.push({ key: 'MOVE', label: `MOVE en alza (${moveLevel.toFixed(0)})`, dir: 'mild_tightening' });
     } else {
       signalDetails.push({ key: 'MOVE', label: `MOVE normal (${moveLevel.toFixed(0)})`, dir: 'neutral' });
     }

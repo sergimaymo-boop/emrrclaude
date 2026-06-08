@@ -13,7 +13,7 @@
  *   └─────────────────────────────────────────────────────┘
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Top8Asset } from "../types";
 import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
@@ -54,13 +54,16 @@ export function ConvergenceSignalBanner({
   const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8, monetaryCycle);
 
   // ── EPS lazy fetch — solo cuando hay un ticker de convergencia ────────────
+  // Using a ref to track which ticker was last fetched avoids the fragile
+  // guard pattern with epsTicker state (which caused a near-infinite render
+  // loop risk and carried redundant state). The ref does not trigger re-renders.
   const [epsData, setEpsData] = useState<EpsResult | null>(null);
-  const [epsTicker, setEpsTicker] = useState<string | null>(null);
+  const lastFetchedTickerRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!s.ticker || s.ticker === epsTicker) return;
+    if (!s.ticker || lastFetchedTickerRef.current === s.ticker) return;
+    lastFetchedTickerRef.current = s.ticker;
     setEpsData(null);
-    setEpsTicker(s.ticker);
     fetchEpsForTickers([s.ticker]).then(res => {
       const result = res[s.ticker!];
       if (result) setEpsData(result);
@@ -73,8 +76,10 @@ export function ConvergenceSignalBanner({
     const fullDone  = top8.length > 0;
     const scansRun  = rallyDone && fullDone;
 
+    // scansRun === true means both scans ran but found no convergence this session.
+    // scansRun === false means at least one scan still needs to run.
     const noConvLabel = scansRun
-      ? "Ejecuta SCAN FULL + SCAN RALLY para activar"
+      ? "Sin confluencia en esta sesión"
       : s.needsScans.length > 0
         ? `Pendiente: ${s.needsScans.join(" · ")}`
         : "Ejecuta SCAN FULL + SCAN RALLY para activar";
@@ -106,15 +111,37 @@ export function ConvergenceSignalBanner({
           }}>
             CONVERGENCIA 3 MOTORES
           </span>
-          <span style={{
-            fontSize: 10, fontWeight: 800, letterSpacing: "0.08em",
-            textTransform: "uppercase", color: "#334155",
-            background: "rgba(71,85,105,0.15)",
-            border: "1px solid rgba(71,85,105,0.25)",
-            borderRadius: 999, padding: "2px 10px", whiteSpace: "nowrap",
-          }}>
-            ✗ TICKET SIN CONVERGENCIA
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+            <span style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: "0.08em",
+              textTransform: "uppercase", color: "#334155",
+              background: "rgba(71,85,105,0.15)",
+              border: "1px solid rgba(71,85,105,0.25)",
+              borderRadius: 999, padding: "2px 10px", whiteSpace: "nowrap",
+            }}>
+              ✗ TICKET SIN CONVERGENCIA
+            </span>
+            {/* Monetary cycle badge — visible even without convergence so user
+                knows the macro context while waiting for scan results */}
+            {monetaryCycle && monetaryCycle.hasData && (
+              <span style={{
+                fontSize: 9, fontWeight: 800, letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: monetaryCycle.phase === "TIGHTENING" ? "#f59e0b"
+                  : monetaryCycle.phase === "EASING" ? "#10b981"
+                  : "#94a3b8",
+                background: monetaryCycle.phase === "TIGHTENING" ? "rgba(245,158,11,0.12)"
+                  : monetaryCycle.phase === "EASING" ? "rgba(16,185,129,0.12)"
+                  : "rgba(148,163,184,0.12)",
+                border: `1px solid ${monetaryCycle.phase === "TIGHTENING" ? "rgba(245,158,11,0.4)" : monetaryCycle.phase === "EASING" ? "rgba(16,185,129,0.4)" : "rgba(148,163,184,0.3)"}`,
+                borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap",
+              }}>
+                {monetaryCycle.phase === "EASING" ? "↗ EXPANSIVO" :
+                 monetaryCycle.phase === "TIGHTENING" ? "⚠ RESTRICTIVO" :
+                 "● NEUTRAL"}
+              </span>
+            )}
+          </div>
         </div>
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -252,25 +279,26 @@ export function ConvergenceSignalBanner({
             {statusLabel}
           </span>
 
-          {/* Ciclo monetario badge — se muestra cuando hay datos */}
-          {monetaryCycle && monetaryCycle.hasData && (
+          {/* Ciclo monetario badge — se muestra cuando hay datos.
+              Colors are phase-mapped to guaranteed WCAG AA contrast ratios
+              instead of relying on monetaryCycle.color which can be low-contrast
+              (#475569 NEUTRAL over dark background = ~2.5:1, below 4.5:1 min). */}
+          {monetaryCycle && monetaryCycle.hasData && monetaryCycle.phase !== "NEUTRAL" && (
             <span
               style={{
                 fontSize: 9,
                 fontWeight: 800,
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
-                color: monetaryCycle.color,
-                background: `${monetaryCycle.color}18`,
-                border: `1px solid ${monetaryCycle.color}55`,
+                color: monetaryCycle.phase === "EASING" ? "#10b981" : "#f59e0b",
+                background: monetaryCycle.phase === "EASING" ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)",
+                border: `1px solid ${monetaryCycle.phase === "EASING" ? "rgba(16,185,129,0.4)" : "rgba(245,158,11,0.4)"}`,
                 borderRadius: 999,
                 padding: "2px 8px",
                 whiteSpace: "nowrap",
               }}
             >
-              {monetaryCycle.phase === "EASING"     ? "↗ EXPANSIVO"  :
-               monetaryCycle.phase === "TIGHTENING" ? "⚠ RESTRICTIVO" :
-               "● NEUTRAL"}
+              {monetaryCycle.phase === "EASING" ? "↗ EXPANSIVO" : "⚠ RESTRICTIVO"}
             </span>
           )}
         </div>
