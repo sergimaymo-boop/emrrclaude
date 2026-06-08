@@ -32,6 +32,7 @@ import {
 import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair, Top8Asset } from "../types";
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
+import { getRegionalMarketStates } from "../utils/marketHours";
 import { shareTop8 } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 import {
@@ -267,7 +268,25 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       });
 
     const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
-    if (!hasTop8InSession) {
+
+    // AUDIT FIX (mercados mixtos): `/api/scan-snapshot/last` devuelve el ÚLTIMO scan
+    // 100% completado almacenado en el servidor — sin importar qué mercados estaban
+    // abiertos cuando se ejecutó. Si ese scan corrió, p.ej., un viernes por la tarde
+    // con EEUU abierto (incluye NYSE/NASDAQ como HUM, CSCO, etc.), y ahora es lunes
+    // por la mañana con SOLO Europa abierta y EEUU cerrado, mostrar ese snapshot como
+    // "TOP 8 actual" mezcla sesiones de mercados distintos — exactamente lo que el
+    // usuario detectó (HUM/NYSE apareciendo como #1 con Europa abierta y EEUU cerrado).
+    //
+    // Regla correcta (igual que para el propio scan — ver getActiveMarketsAt):
+    //   - Si hay AL MENOS UN mercado abierto → solo vale un scan FRESCO de ese/esos
+    //     mercado(s) abierto(s); nunca se debe mostrar un snapshot de sesión anterior
+    //     como si fuera el resultado actual (induciría a comparar cerrado vs abierto).
+    //   - Solo cuando AMBOS mercados (Europa y EEUU) están cerrados es válido
+    //     "memorizar"/mostrar el último cierre de la sesión anterior de ambos.
+    const regionalMarkets = getRegionalMarketStates();
+    const bothMarketsClosed = regionalMarkets.europe !== "OPEN" && regionalMarkets.unitedStates !== "OPEN";
+
+    if (!hasTop8InSession && bothMarketsClosed) {
       fetchLastScanSnapshot()
         .then((snapshot) => {
           if (!snapshot) return;
@@ -658,7 +677,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       label: "Rally scan running…",
       coveragePercent: 0,
       batchesCompleted: 0,
-      top10: [],
+      // No vaciamos top10 aquí: el panel debe seguir mostrando el último scan
+      // completado mientras corre uno nuevo (petición del usuario: "antes de
+      // actualizar que visualice el ultimo scan realizado siempre"). Se sustituye
+      // solo cuando lleguen datos nuevos más abajo (response.top10 / r.top10).
     }));
 
     try {
@@ -769,7 +791,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         ...prev, status: "RALLY_SCANNING", isScanning: true,
         scanId: r.scanId ?? null, rallyToken: r.rallyToken ?? null,
         coveragePercent: r.coveragePercent ?? 0, batchesCompleted: r.batchesCompleted ?? 0,
-        batchesTotal: r.batchesTotal ?? 0, top10: r.top10 ?? [],
+        // Igual que en handleScanRally: no sustituir top10 por [] al arrancar —
+        // mantener el último scan visible hasta que lleguen datos nuevos.
+        batchesTotal: r.batchesTotal ?? 0, top10: r.top10 ?? prev.top10,
       }));
       while (!r.isRallyFinal && r.rallyToken && !rallyAbortRef.current) {
         r = await continueRallyScan(r.rallyToken);

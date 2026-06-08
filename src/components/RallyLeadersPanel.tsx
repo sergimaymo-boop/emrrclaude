@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { RallyAsset, RallyState } from "../services/rallyRefresh";
 
 interface RallyLeadersPanelProps {
@@ -5,53 +6,85 @@ interface RallyLeadersPanelProps {
   onScanRally: () => void;
 }
 
-function RallyScoreBadge({ score, label, color }: { score: number; label: string; color: string }) {
+// ─── Trailing stops — Ajustado / Medio / Amplio ───────────────────────────────
+//
+// The engine (rallyScoreEngine.js → calculateTrailingStop) already picks ONE
+// "optimal" multiplier per asset based on its current ATR% volatility regime
+// (2.0× when ATR%<1.5, 2.5× when 1.5-3%, 3.0× when >3%, clamped to [5,18]%).
+// Per user request we now show all THREE risk-profile variants side by side
+// (Ajustado = tight/protect-gains, Medio = standard, Amplio = noise-tolerant)
+// so the trader can pick the stop that matches their own risk tolerance —
+// derived client-side from the same ATR% input using the same institutional
+// (Wilder/Chandelier) multiplier logic, just at fixed tight/medium/wide presets
+// instead of letting the volatility regime choose a single one automatically.
+function calcTrailingStops(atrPercent: number | null | undefined): { tight: number; medium: number; wide: number } | null {
+  if (atrPercent === null || atrPercent === undefined || !Number.isFinite(atrPercent) || atrPercent <= 0) return null;
+  const atp = Math.abs(atrPercent);
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  return {
+    tight:  Math.round(clamp(atp * 2.0, 4, 10) * 10) / 10,
+    medium: Math.round(clamp(atp * 2.5, 6, 14) * 10) / 10,
+    wide:   Math.round(clamp(atp * 3.0, 8, 18) * 10) / 10,
+  };
+}
+
+function StopsTriplet({ stops }: { stops: { tight: number; medium: number; wide: number } | null }) {
+  if (!stops) return <span style={{ fontSize: 9, color: "#475569" }}>—</span>;
   return (
-    <div style={{
-      display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center",
-      width: 72, minHeight: 72,
-      borderRadius: "50%",
-      background: `${color}15`,
-      border: `2px solid ${color}50`,
-      padding: 4,
-      textAlign: "center",
-    }}>
-      <span style={{ fontSize: 16, fontWeight: 900, color, lineHeight: 1 }}>{score}</span>
-      <span style={{ fontSize: 7, fontWeight: 800, color: `${color}cc`, letterSpacing: "0.04em", marginTop: 2, lineHeight: 1.2 }}>
-        {label.replace(" RALLY", "").replace("ELITE", "ÉLITE")}
+    <div style={{ display: "flex", flexDirection: "column", gap: 1, fontVariantNumeric: "tabular-nums" }}>
+      <span style={{ fontSize: 9 }}>
+        <span style={{ color: "#475569", fontWeight: 700 }}>AJ </span>
+        <strong style={{ color: "#34d399" }}>{stops.tight.toFixed(1)}%</strong>
+        <span style={{ color: "#334155" }}> · </span>
+        <span style={{ color: "#475569", fontWeight: 700 }}>MED </span>
+        <strong style={{ color: "#fbbf24" }}>{stops.medium.toFixed(1)}%</strong>
+        <span style={{ color: "#334155" }}> · </span>
+        <span style={{ color: "#475569", fontWeight: 700 }}>AMP </span>
+        <strong style={{ color: "#f87171" }}>{stops.wide.toFixed(1)}%</strong>
       </span>
     </div>
   );
 }
 
-function MiniBar({ value, max, color }: { value: number | null; max: number; color: string }) {
-  const pct = value === null ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
+// ─── Compact inline score bar (replaces the old space-hungry circle) ─────────
+
+function ScoreBar({ score, label, color }: { score: number; label: string; color: string }) {
+  const pct = Math.max(0, Math.min(100, score));
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-      <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+        <span style={{ fontSize: 13, fontWeight: 900, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+          {score}
+        </span>
+        <span style={{
+          fontSize: 7, fontWeight: 800, color: `${color}cc`, letterSpacing: "0.04em",
+          textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+        }}>
+          {label.replace(" RALLY", "").replace("ELITE", "ÉLITE")}
+        </span>
+      </div>
+      <div style={{ width: 64, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2, transition: "width 400ms" }} />
       </div>
-      <span style={{ fontSize: 10, color: "#94a3b8", fontVariantNumeric: "tabular-nums", minWidth: 32, textAlign: "right" }}>
-        {value === null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`}
-      </span>
     </div>
   );
 }
+
+// ─── Single dense Bloomberg-style row ─────────────────────────────────────────
 
 function AssetRow({ asset }: { asset: RallyAsset }) {
   const m = asset.metrics;
   const priceChange = m?.mom1m ?? null;
   const changeColor = priceChange === null ? "#64748b" : priceChange >= 0 ? "#10b981" : "#ef4444";
-  const trailing = asset.trailingStop ?? m?.trailingStop ?? null;
+  const stops = calcTrailingStops(m?.atrPercent ?? null);
 
   return (
     <article style={{
       display: "grid",
-      gridTemplateColumns: "24px minmax(0,1.6fr) 60px 52px 76px",
-      gap: 8,
+      gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
+      gap: 10,
       alignItems: "center",
-      padding: "8px 12px",
+      padding: "7px 12px",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
       transition: "background 150ms",
     }}
@@ -88,43 +121,57 @@ function AssetRow({ asset }: { asset: RallyAsset }) {
         </div>
       </div>
 
-      {/* RS 3M + Trailing stop stacked */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-        <div>
-          <div style={{ fontSize: 7, color: "#475569", fontWeight: 700, textTransform: "uppercase" }}>RS 3M</div>
-          <div style={{ fontSize: 10, color: "#818cf8", fontWeight: 700 }}>
-            {m?.rs3m !== null && m?.rs3m !== undefined ? `${m.rs3m > 0 ? "+" : ""}${m.rs3m.toFixed(1)}%` : "—"}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 7, color: "#475569", fontWeight: 700, textTransform: "uppercase" }}>STOP</div>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#fbbf24" }}>
-            {trailing !== null ? `${trailing.toFixed(1)}%` : "—"}
-          </div>
-        </div>
-      </div>
+      {/* Score — inline bar (replaces the old circle) */}
+      <ScoreBar score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
 
-      {/* Rally Score circle — centered */}
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <RallyScoreBadge score={asset.rallyScore} label={asset.rallyLabel} color={asset.rallyColor} />
+      {/* Optimal trailing stops — Ajustado / Medio / Amplio */}
+      <div>
+        <div style={{ fontSize: 7, color: "#334155", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+          Trailing stop óptimo
+        </div>
+        <StopsTriplet stops={stops} />
       </div>
     </article>
   );
 }
 
-function CoverageBar({ percent }: { percent: number }) {
-  const color = percent === 100 ? "#10b981" : "#6366f1";
+// ─── Coverage / progress bar — pinned to the TOP of the module ───────────────
+
+function TopProgressBar({
+  percent, isScanning, batchesCompleted, batchesTotal, lastRun, isFinal,
+}: {
+  percent: number; isScanning: boolean; batchesCompleted: number; batchesTotal: number; lastRun: string; isFinal: boolean;
+}) {
+  const color = percent >= 100 ? "#10b981" : "#6366f1";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ width: `${percent}%`, height: "100%", background: color, borderRadius: 2, transition: "width 500ms ease" }} />
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <span style={{ fontSize: 9, color: "#64748b" }}>
+          {isScanning
+            ? `Escaneando · lote ${batchesCompleted}/${batchesTotal}`
+            : isFinal
+              ? `Cobertura completa · último scan ${lastRun}`
+              : "Cobertura del último scan"}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 800, color, fontVariantNumeric: "tabular-nums" }}>{percent}%</span>
       </div>
-      <span style={{ fontSize: 11, fontWeight: 700, color, minWidth: 36, textAlign: "right" }}>{percent}%</span>
+      <div style={{ height: 5, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{
+          width: `${Math.max(0, Math.min(100, percent))}%`, height: "100%",
+          background: isScanning ? "linear-gradient(90deg, #6366f1, #818cf8, #6366f1)" : color,
+          backgroundSize: isScanning ? "200% 100%" : undefined,
+          animation: isScanning ? "flows-scan-progress 3s ease-in-out infinite" : undefined,
+          borderRadius: 3, transition: "width 500ms ease",
+        }} />
+      </div>
     </div>
   );
 }
 
+// ─── Main panel ───────────────────────────────────────────────────────────────
+
 export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanelProps) {
+  const [showAll, setShowAll] = useState(false);
   const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal, lastRun } = rallyState;
   const isIdle = status === "RALLY_IDLE";
   const isFinal = status === "RALLY_FINAL";
@@ -132,6 +179,13 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
   const isUnavailable = status === "RALLY_DATA_UNAVAILABLE";
   // Detect if data is from previous session (loaded from Redis on mount, not from a fresh scan)
   const isFromCache = isFinal && top10.length > 0 && !isScanning;
+
+  // Mantiene siempre visible el último scan completado: top10 solo se sustituye
+  // cuando llegan datos nuevos (ver handleScanRally en DashboardPage — ya no
+  // se vacía la lista al lanzar un scan nuevo), así el módulo nunca queda en
+  // blanco mientras se recalculan los datos.
+  const visibleAssets = showAll ? top10 : top10.slice(0, 5);
+  const canExpand = top10.length > 5;
 
   return (
     <section className="section-block" style={{ marginTop: 16, border: "1px solid rgba(99,102,241,0.2)" }}>
@@ -172,17 +226,17 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
         </div>
       </div>
 
-      {/* Scanning progress */}
-      {isScanning && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span style={{ fontSize: 10, color: "#64748b" }}>
-              Batch {batchesCompleted}/{batchesTotal}
-            </span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#6366f1" }}>{coveragePercent}%</span>
-          </div>
-          <CoverageBar percent={coveragePercent} />
-        </div>
+      {/* Coverage bar — siempre arriba del módulo (0-100), refleja el último scan
+          mientras no haya uno nuevo en curso, y el progreso en vivo durante el scan */}
+      {!isIdle && !isUnavailable && (
+        <TopProgressBar
+          percent={coveragePercent}
+          isScanning={isScanning}
+          batchesCompleted={batchesCompleted}
+          batchesTotal={batchesTotal}
+          lastRun={lastRun}
+          isFinal={isFinal && !isScanning}
+        />
       )}
 
       {/* Idle / unavailable state */}
@@ -197,29 +251,54 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
         </div>
       )}
 
-      {/* Table header */}
+      {/* Table header + rows — siempre muestra el último scan completado
+          (incluso mientras se ejecuta uno nuevo, ver nota arriba) */}
       {top10.length > 0 && (
         <>
           <div style={{
-            display: "grid",
-            gridTemplateColumns: "24px minmax(0,1.6fr) 60px 52px 76px",
-            gap: 8,
-            padding: "6px 12px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-            marginBottom: 2,
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "0 12px 6px",
           }}>
-            {["#", "ACTIVO", "PRECIO/DÍA", "RS·STOP", "SCORE"].map(h => (
-              <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em", textAlign: h === "SCORE" ? "center" : "left" }}>
-                {h}
-              </span>
-            ))}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "20px minmax(0,1.5fr) 62px 84px 130px",
+              gap: 10,
+              flex: 1,
+            }}>
+              {["#", "ACTIVO", "PRECIO/DÍA", "SCORE", "TRAILING STOP (AJ · MED · AMP)"].map(h => (
+                <span key={h} style={{ fontSize: 8, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {h}
+                </span>
+              ))}
+            </div>
           </div>
-          {top10.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} />)}
+
+          {visibleAssets.map(asset => <AssetRow key={asset.providerSymbol} asset={asset} />)}
+
+          {/* Expandir/colapsar — mismo patrón visual que el toggle de Flujos de Capital */}
+          {canExpand && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowAll(v => !v)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "4px 14px", fontSize: 8, fontWeight: 800, letterSpacing: "0.08em",
+                  textTransform: "uppercase", cursor: "pointer",
+                  borderRadius: 999, border: "1px solid rgba(99,102,241,0.25)",
+                  background: "rgba(99,102,241,0.08)", color: "#a5b4fc",
+                  transition: "background 120ms",
+                }}
+              >
+                {showAll ? "▲ Ver Top 5" : `▼ Ver los ${top10.length}`}
+              </button>
+            </div>
+          )}
         </>
       )}
 
-      {/* Coverage bar when complete */}
-      {isFinal && (
+      {/* Footer status — cobertura completa */}
+      {isFinal && !isScanning && (
         <div style={{ marginTop: 12, padding: "8px 14px", background: "rgba(16,185,129,0.05)", borderRadius: 8, border: "1px solid rgba(16,185,129,0.1)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 10, color: "#10b981", fontWeight: 700 }}>✓ Cobertura completa — Rally Leaders Final</span>
