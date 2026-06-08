@@ -45,6 +45,11 @@ import {
   initialRallyState,
   startRallyScan,
 } from "../services/rallyRefresh";
+import {
+  type MonetaryCycleResult,
+  fetchMonetaryCycle,
+  initialMonetaryCycle,
+} from "../services/monetaryCycleRefresh";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -187,6 +192,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const rallyAbortRef = useRef(false);
   const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
   const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
+  const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -978,6 +984,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
+  // ── Ciclo monetario — fetch al montar y refrescar cada hora ────────────────
+  useEffect(() => {
+    fetchMonetaryCycle().then(setMonetaryCycle).catch(() => {});
+    const interval = setInterval(() => {
+      fetchMonetaryCycle().then(setMonetaryCycle).catch(() => {});
+    }, 60 * 60 * 1000); // 1 hora
+    return () => clearInterval(interval);
+  }, []);
+
   // Load last rally scan + market regime on mount
   useEffect(() => {
     // AUDIT FIX (mercados mixtos — igual que con el TOP 8): `/api/rally-scan/last`
@@ -1031,16 +1046,18 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           flowsState={flowsState}
           rallyState={rallyState}
           top8={top8}
+          monetaryCycle={monetaryCycle}
         />
       </ErrorBoundary>
 
-      {/* ── SEÑAL ÓPTIMA — detalle de los 4 filtros ────────────────────────── */}
+      {/* ── SEÑAL ÓPTIMA — detalle de los 5 filtros ────────────────────────── */}
       <ErrorBoundary inline label="Señal Óptima">
         <OptimalSignalPanel
           marketRegime={marketRegime}
           flowsState={flowsState}
           rallyState={rallyState}
           top8={top8}
+          monetaryCycle={monetaryCycle}
         />
       </ErrorBoundary>
 

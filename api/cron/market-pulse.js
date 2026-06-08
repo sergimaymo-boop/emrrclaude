@@ -26,6 +26,7 @@ import {
   computeBroadMarketPullbackRisk, pullbackLabel,
   computeEntrySemaphore,
 } from "../_lib/marketPulse.js";
+import { classifyMonetaryCycle } from "../_lib/monetaryCycleEngine.js";
 import { fetchUsMarketNewsDigest } from "../_lib/newsDigest.js";
 import { sendTelegramMessage } from "../_lib/telegram.js";
 
@@ -96,7 +97,7 @@ function formatCanaryTime(isoUtc) {
   }
 }
 
-function buildMessage({ semaphore, regime, indicators, pullback, news, generatedAtUtc }) {
+function buildMessage({ semaphore, regime, indicators, pullback, news, monetaryCycle, generatedAtUtc }) {
   const isGreen = semaphore.signal === "GREEN";
   const headline = isGreen
     ? "🟢 VERDE — ENTRAR / MANTENER POSICIONES"
@@ -113,6 +114,10 @@ function buildMessage({ semaphore, regime, indicators, pullback, news, generated
   lines.push(`📊 Régimen de mercado: <b>${regimeText}</b>`);
   lines.push(`📈 Indicadores ponderados (VIX 30·MOVE 20·HYG 20·VVIX 15·TNX 10·LQD 5): <b>${indicators.composite}/100</b> — ${indicatorsLabel(indicators.composite)}`);
   lines.push(`⚠️ Riesgo de pullback S&amp;P 500: <b>${pullbackLabel(pullback.level)}</b>${pullback.score != null ? ` (${pullback.score}/100)` : ""}`);
+  if (monetaryCycle && monetaryCycle.hasData) {
+    const cycleEmoji = monetaryCycle.phase === 'EASING' ? '📉' : monetaryCycle.phase === 'TIGHTENING' ? '📈' : '➡️';
+    lines.push(`${cycleEmoji} Ciclo monetario: <b>${monetaryCycle.label}</b> (Score ${monetaryCycle.score}/100)${monetaryCycle.phase === 'TIGHTENING' ? ' — <b>precaución: riesgo whipsaw</b>' : monetaryCycle.phase === 'EASING' ? ' — entorno favorable para momentum' : ''}`);
+  }
   if (pullback.reasons?.length) {
     lines.push(`   ↳ ${pullback.reasons.map(escapeHtml).join(" · ")}`);
   }
@@ -200,8 +205,16 @@ export default async function handler(request, response) {
     pullbackRisk: pullback,
   });
 
+  // ── Ciclo monetario (sin llamada extra — usa datos ya fetched) ────────────
+  const monetaryCycle = classifyMonetaryCycle({
+    tnxChangePercent: tnxQ.ok ? pct(tnxQ.changePercent) : null,
+    hygChangePercent: hygQ.ok ? pct(hygQ.changePercent) : null,
+    vixLevel:         vixQ.ok ? pct(vixQ.price) : null,
+    moveLevel:        moveQ.ok ? pct(moveQ.price) : null,
+  });
+
   const generatedAtUtc = new Date().toISOString();
-  const message = buildMessage({ semaphore, regime: regimeResult.regime, indicators, pullback, news, generatedAtUtc });
+  const message = buildMessage({ semaphore, regime: regimeResult.regime, indicators, pullback, news, monetaryCycle, generatedAtUtc });
 
   const sendResult = await sendTelegramMessage(message, env);
 
@@ -212,6 +225,7 @@ export default async function handler(request, response) {
     regime: regimeResult.regime,
     indicators,
     pullback,
+    monetaryCycle,
     indicatorInputs,
     newsStatus: news.ok ? "OK" : `UNAVAILABLE (${news.reason})`,
     headlinesCount: news.ok ? news.headlines.length : 0,

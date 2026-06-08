@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Top8Asset } from "../types";
 import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
+import type { MonetaryCycleResult } from "../services/monetaryCycleRefresh";
 import { pushNotifications } from "../services/pushNotifications";
 import { signalHistory } from "../services/signalHistory";
 import { RSSparkline } from "./RSSparkline";
@@ -107,7 +108,9 @@ interface OptimalSignal {
   filter2: FilterResult;   // Flows sector
   filter3: FilterResult;   // Rally in sector
   filter4: FilterResult;   // TOP 8 validated
+  filter5: FilterResult;   // Monetary cycle (NEW)
   allPass: boolean;        // all filters + no alarm (ideal green state)
+  cycleWarning: boolean;   // TIGHTENING cycle detected (amber advisory)
   bestCandidateExists: boolean; // ticket exists (shows in green OR red if alarma)
   ticker: string | null;
   sectorName: string | null;
@@ -125,6 +128,7 @@ export function evaluateOptimalSignal(
   flowsState: IntraDayFlowsState,
   rallyState: RallyState,
   top8: Top8Asset[],
+  monetaryCycle?: MonetaryCycleResult,
 ): OptimalSignal {
   const needsScans: string[] = [];
 
@@ -233,11 +237,34 @@ export function evaluateOptimalSignal(
             : `${bestCandidate.ticker} — sector confirmado por los 2 motores (flujo pendiente)`,
   };
 
+  // ── Filter 5: Monetary cycle ───────────────────────────────────────────────
+  // EASING = verde (entorno favorable, más rendimiento de momentum)
+  // NEUTRAL = neutral (sin impacto)
+  // TIGHTENING = advertencia ámbar (riesgo de whipsaw, no bloquea pero avisa)
+  const cycleAvailable = !!monetaryCycle && monetaryCycle.hasData;
+  const cycleTightening = cycleAvailable && monetaryCycle!.phase === 'TIGHTENING';
+  const cycleEasing     = cycleAvailable && monetaryCycle!.phase === 'EASING';
+
+  const f5: FilterResult = {
+    pass:    !cycleAvailable ? null : !cycleTightening,
+    pending: !cycleAvailable,
+    label:   "Ciclo monetario",
+    detail:  !cycleAvailable
+      ? "Verificando…"
+      : cycleEasing
+        ? `✓ ${monetaryCycle!.label} — entorno favorable para momentum (Score ${monetaryCycle!.score}/100)`
+        : cycleTightening
+          ? `⚠ ${monetaryCycle!.label} — riesgo whipsaw elevado (Score ${monetaryCycle!.score}/100)`
+          : `${monetaryCycle!.label} — sin impacto (Score ${monetaryCycle!.score}/100)`,
+  };
+
   // ── Final result ───────────────────────────────────────────────────────────
-  // allPass = todos los filtros + mercado alcista (condición ideal)
+  // allPass = filtros 1-4 + mercado alcista (lógica existente preservada)
+  // cycleWarning = ciclo restrictivo detectado (aviso ámbar, no bloquea)
   // bestCandidateExists = hay confluencia RALLY ∩ TOP8 (se muestra SIEMPRE)
   const allPass = !alarma &&
     f1.pass === true && f2.pass === true && f3.pass === true && f4.pass === true;
+  const cycleWarning = cycleAvailable && cycleTightening;
   const bestCandidateExists = !!bestCandidate && f2.pass === true && f3.pass === true && f4.pass === true;
 
   return {
@@ -246,8 +273,10 @@ export function evaluateOptimalSignal(
     filter2: f2,
     filter3: f3,
     filter4: f4,
+    filter5: f5,
     allPass,
-    bestCandidateExists, // NUEVO: ticket se muestra aunque alarma sea true
+    cycleWarning,
+    bestCandidateExists, // ticket se muestra aunque alarma sea true
     ticker:         bestCandidateExists && bestCandidate ? bestCandidate.ticker : null,
     sectorName:     matchedSector?.name ?? null,
     rallyScore:     bestCandidate?.rallyScore ?? null,
@@ -300,10 +329,11 @@ interface Props {
   flowsState: IntraDayFlowsState;
   rallyState: RallyState;
   top8: Top8Asset[];
+  monetaryCycle?: MonetaryCycleResult;
 }
 
-export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 }: Props) {
-  const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8);
+export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8, monetaryCycle }: Props) {
+  const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8, monetaryCycle);
 
   // ── Push notifications + History when ticket appears ──
   useEffect(() => {
@@ -397,8 +427,8 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
           </span>
         )}
 
-        {/* ALL PASS */}
-        {s.allPass && (
+        {/* ALL PASS — verde puro o ámbar si hay ciclo restrictivo */}
+        {s.allPass && !s.cycleWarning && (
           <span style={{
             fontSize: 10, fontWeight: 800, color: "#10b981",
             background: "rgba(16,185,129,0.12)",
@@ -406,6 +436,16 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
             borderRadius: 999, padding: "3px 10px",
           }}>
             ✓ TODOS LOS FILTROS
+          </span>
+        )}
+        {s.allPass && s.cycleWarning && (
+          <span style={{
+            fontSize: 10, fontWeight: 800, color: "#f59e0b",
+            background: "rgba(245,158,11,0.12)",
+            border: "1px solid rgba(245,158,11,0.4)",
+            borderRadius: 999, padding: "3px 10px",
+          }}>
+            ⚠ ENTRAR CON CAUTELA — CICLO RESTRICTIVO
           </span>
         )}
       </div>
@@ -416,6 +456,7 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8 
         <FilterRow index={2} filter={s.filter2} alarma={s.alarma} />
         <FilterRow index={3} filter={s.filter3} alarma={s.alarma} />
         <FilterRow index={4} filter={s.filter4} alarma={s.alarma} />
+        <FilterRow index={5} filter={s.filter5} alarma={s.alarma} />
       </div>
 
       {/* ── TICKET OPTIMAL — SIEMPRE VISIBLE (verde si ok, rojo si bearish) ── */}

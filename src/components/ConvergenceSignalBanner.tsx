@@ -13,9 +13,12 @@
  *   └─────────────────────────────────────────────────────┘
  */
 
+import { useEffect, useState } from "react";
 import type { Top8Asset } from "../types";
 import type { MarketRegime, RallyState } from "../services/rallyRefresh";
 import type { IntraDayFlowsState } from "./IntraDayFlowsPanel";
+import type { MonetaryCycleResult, EpsResult } from "../services/monetaryCycleRefresh";
+import { fetchEpsForTickers } from "../services/monetaryCycleRefresh";
 import { evaluateOptimalSignal } from "./OptimalSignalPanel";
 
 interface Props {
@@ -23,6 +26,7 @@ interface Props {
   flowsState: IntraDayFlowsState;
   rallyState: RallyState;
   top8: Top8Asset[];
+  monetaryCycle?: MonetaryCycleResult;
 }
 
 function formatPrice(price: string): string {
@@ -45,8 +49,23 @@ export function ConvergenceSignalBanner({
   flowsState,
   rallyState,
   top8,
+  monetaryCycle,
 }: Props) {
-  const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8);
+  const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8, monetaryCycle);
+
+  // ── EPS lazy fetch — solo cuando hay un ticker de convergencia ────────────
+  const [epsData, setEpsData] = useState<EpsResult | null>(null);
+  const [epsTicker, setEpsTicker] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!s.ticker || s.ticker === epsTicker) return;
+    setEpsData(null);
+    setEpsTicker(s.ticker);
+    fetchEpsForTickers([s.ticker]).then(res => {
+      const result = res[s.ticker!];
+      if (result) setEpsData(result);
+    }).catch(() => {});
+  }, [s.ticker]);
 
   // ── No convergence state ─────────────────────────────────────────────────
   if (!s.bestCandidateExists || !s.ticker) {
@@ -214,22 +233,47 @@ export function ConvergenceSignalBanner({
           CONVERGENCIA 3 MOTORES
         </span>
 
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: accentColor,
-            background: `${accentColor}18`,
-            border: `1px solid ${accentColor}55`,
-            borderRadius: 999,
-            padding: "2px 10px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {statusLabel}
-        </span>
+        {/* Status label (entrada / alarma / parcial) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: accentColor,
+              background: `${accentColor}18`,
+              border: `1px solid ${accentColor}55`,
+              borderRadius: 999,
+              padding: "2px 10px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {statusLabel}
+          </span>
+
+          {/* Ciclo monetario badge — se muestra cuando hay datos */}
+          {monetaryCycle && monetaryCycle.hasData && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: monetaryCycle.color,
+                background: `${monetaryCycle.color}18`,
+                border: `1px solid ${monetaryCycle.color}55`,
+                borderRadius: 999,
+                padding: "2px 8px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {monetaryCycle.phase === "EASING"     ? "↗ EXPANSIVO"  :
+               monetaryCycle.phase === "TIGHTENING" ? "⚠ RESTRICTIVO" :
+               "● NEUTRAL"}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── Main data row ───────────────────────────────────────────────── */}
@@ -427,8 +471,36 @@ export function ConvergenceSignalBanner({
           </div>
         ))}
 
+        {/* EPS Growth badge — lazy fetched when ticker is known */}
+        {epsData && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              paddingLeft: 16,
+              marginLeft: 4,
+              borderLeft: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <span style={{
+              fontSize: 9, fontWeight: 600, color: "#334155",
+              textTransform: "uppercase", letterSpacing: "0.07em",
+            }}>
+              EPS
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 800,
+              color: epsData.color,
+              fontVariantNumeric: "tabular-nums",
+            }}>
+              {epsData.label}
+            </span>
+          </div>
+        )}
+
         {/* Partial scan advisory */}
-        {isPartial && (
+        {isPartial && !epsData && (
           <span
             style={{
               fontSize: 9,

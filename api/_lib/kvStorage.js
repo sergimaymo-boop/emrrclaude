@@ -88,3 +88,26 @@ export async function loadBenchmarkBars() {
     return null;
   }
 }
+
+// ─── Generic KV helpers (monetary cycle, EPS cache, etc.) ───────────────────
+
+export async function kvGet(key) {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    return await redis.get(key);
+  } catch {
+    return null;
+  }
+}
+
+export async function kvSet(key, value, exSeconds) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(key, value, { ex: exSeconds });
+    return true;
+  } catch {
+    return false;
+  }
+}
