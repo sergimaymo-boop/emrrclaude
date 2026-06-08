@@ -35,6 +35,11 @@
       ]
     }
   ],
+  "functions": {
+    "api/cron/market-pulse.js": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/market-pulse",

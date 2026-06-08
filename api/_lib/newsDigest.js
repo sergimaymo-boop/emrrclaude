@@ -5,7 +5,7 @@
  */
 
 const FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news";
-const NEWS_TIMEOUT_MS = 8000;
+const NEWS_TIMEOUT_MS = 4000; // Reducido: el cron corre en paralelo; 4s es suficiente y evita agotar el timeout de 10s del plan Hobby
 const MAX_HEADLINES = 5;
 const MAX_AGE_HOURS = 20;
 
