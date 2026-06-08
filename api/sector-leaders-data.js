@@ -243,14 +243,38 @@ async function handleIntraday(res) {
   }));
 
   // 4. Determine if market is actually open (US Eastern time)
+  //
+  // AUDIT FIX: faltaba el ajuste de horario de verano (DST) de EEUU. El NYSE/
+  // NASDAQ abre 9:30-16:00 hora del Este, que en UTC es:
+  //   - Horario de verano (EDT, UTC-4, ~2º domingo marzo a 1er domingo nov.) → 13:30-20:00 UTC
+  //   - Horario de invierno (EST, UTC-5)                                      → 14:30-21:00 UTC
+  // El código anterior usaba SIEMPRE las horas de invierno (14:30-21:00 UTC),
+  // lo que en verano (como ahora, junio) marcaba "mercado cerrado" durante la
+  // primera hora real de sesión (13:30-14:30 UTC) y "abierto" una hora después
+  // del cierre real (20:00-21:00 UTC) — datos de Flujos de Capital aparecían
+  // congelados/desfasados exactamente en esa ventana.
   const now = new Date();
-  const utcH = now.getUTCHours();
-  const utcM = now.getUTCMinutes();
   const utcDay = now.getUTCDay();
-  const minutesSinceMidnight = utcH * 60 + utcM;
+  const minutesSinceMidnight = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+  function nthWeekdayOfMonthUtc(year, monthIndex, weekday, nth) {
+    const first = new Date(Date.UTC(year, monthIndex, 1));
+    const offset = (weekday - first.getUTCDay() + 7) % 7;
+    return new Date(Date.UTC(year, monthIndex, 1 + offset + (nth - 1) * 7));
+  }
+  function isUsDaylightSavingTimeUtc(date) {
+    const year = date.getUTCFullYear();
+    const dstStart = nthWeekdayOfMonthUtc(year, 2, 0, 2);  // 2nd Sunday of March
+    const dstEnd = nthWeekdayOfMonthUtc(year, 10, 0, 1);   // 1st Sunday of November
+    return date >= dstStart && date < dstEnd;
+  }
+
+  const usDst = isUsDaylightSavingTimeUtc(now);
+  const usOpenMinuteUtc = usDst ? 13 * 60 + 30 : 14 * 60 + 30;
+  const usCloseMinuteUtc = usDst ? 20 * 60 : 21 * 60;
   const marketOpen = utcDay >= 1 && utcDay <= 5
-    && minutesSinceMidnight >= 870   // 14:30 UTC = 09:30 EST
-    && minutesSinceMidnight < 1260;  // 21:00 UTC = 16:00 EST
+    && minutesSinceMidnight >= usOpenMinuteUtc
+    && minutesSinceMidnight < usCloseMinuteUtc;
 
   res.status(200).json({
     ok: true,

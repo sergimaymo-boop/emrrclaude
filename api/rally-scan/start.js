@@ -5,6 +5,7 @@
 import { buildUniverseResponse } from "../universe.js";
 import { saveLastRallySnapshot } from "../_lib/kvStorage.js";
 import { runRallyBatch, fetchSpyBars } from "../_lib/rallyBatchProcessor.js";
+import { filterActiveOperableAssets, getActiveMarketsAt } from "../_lib/scanSnapshot.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "RALLY_SCAN_START";
@@ -77,13 +78,33 @@ export default async function handler(req, res) {
     });
   }
 
-  // Filter operable only
-  const eligibleAssets = universe.assets.filter(a => a.operabilityStatus === "OPERABLE");
+  // AUDIT FIX (mercados mixtos): igual que en SCAN FULL/TOP8 — el Rally Leaders
+  // Engine SOLO debe analizar tickers de mercados que están ABIERTOS ahora mismo
+  // (uno si solo uno está abierto, ambos si los dos lo están). Antes evaluaba
+  // TODO el universo global (incluyendo NYSE/NASDAQ aunque EEUU estuviera
+  // cerrado), lo que producía "tickets de EEUU antiguos" en el ranking — el
+  // motor comparaba el último cierre de un mercado cerrado contra cotizaciones
+  // en vivo de un mercado abierto. Solo cuando AMBOS mercados están cerrados se
+  // usa el último snapshot memorizado (gestión ya correcta en el frontend).
+  const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
+  if (activeMarkets.length === 0) {
+    return sendJson(res, 409, {
+      ok: false,
+      status: "RALLY_DATA_UNAVAILABLE",
+      error: "ALL_MARKETS_CLOSED",
+      activeMarkets,
+      message: "Todos los mercados están cerrados — no se ejecuta un Rally scan fresco; usa el último cierre memorizado.",
+    });
+  }
+
+  // Filter operable AND currently-active-market only
+  const eligibleAssets = filterActiveOperableAssets(universe.assets ?? [], scanStartedAtUtc);
   if (eligibleAssets.length === 0) {
     return sendJson(res, 409, {
       ok: false,
       status: "RALLY_DATA_UNAVAILABLE",
       error: "NO_OPERABLE_ASSETS",
+      activeMarkets,
       message: "No operable assets in universe.",
     });
   }
@@ -93,7 +114,6 @@ export default async function handler(req, res) {
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(","))
     .toString("base64url").slice(0, 16);
-  const activeMarkets = [...new Set(eligibleAssets.map(a => a.market ?? a.providerExchange))];
 
   // Process batch 0
   const { candidates, providerCalls } = await runRallyBatch({

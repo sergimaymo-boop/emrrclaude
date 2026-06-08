@@ -22,12 +22,27 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
   const [fgData, setFgData] = useState<FearGreedData | null>(null);
 
   useEffect(() => {
-    fetch("/api/fear-greed")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.ok) setFgData(d);
-      })
-      .catch(() => {});
+    // AUDIT FIX (F&G "frozen" / "esta mal"): este fetch antes solo se ejecutaba
+    // UNA VEZ al montar el componente — el score y "Cierre de referencia"
+    // quedaban congelados con el valor de cuando se abrió el dashboard, por
+    // eso el usuario seguía viendo el mismo score ("el F&G esta ahora en 42
+    // todavia") sin que se actualizara con el feed en vivo de CNN. El backend
+    // /api/fear-greed SÍ devuelve datos en vivo sin caché (Cache-Control:
+    // no-store / x-vercel-cache: MISS verificado) — el problema era puramente
+    // de refresco en el frontend. Es un indicador de mercado global (no un
+    // ticket de inversión), por lo que debe refrescarse SIEMPRE, sin importar
+    // si los mercados de scan están abiertos o cerrados.
+    function load() {
+      fetch("/api/fear-greed")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.ok) setFgData(d);
+        })
+        .catch(() => {});
+    }
+    load();
+    const timer = window.setInterval(load, 4 * 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Gauge color strictly by score range (matches the CNN Fear & Greed scale,

@@ -190,6 +190,43 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setToast({ id: Date.now(), message, tone });
   }
 
+  // AUDIT FIX (F&G / Master Indicators "frozen"): este fetch antes solo se
+  // ejecutaba UNA VEZ al montar el dashboard (y, de paso, cada vez que el
+  // usuario lanzaba un SCAN FULL manual). Eso significa que el score de
+  // Fear & Greed y los 7 indicadores de mercado (VIX/SPY/HYG/MOVE/VVIX/LQD/TNX)
+  // quedaban congelados en el valor que tenían en el momento de cargar la
+  // página — exactamente lo reportado ("los master indicadores...estan mal",
+  // "el F&G esta ahora en 42 todavia"). Estos son indicadores de mercado EN
+  // VIVO (no sujetos a la regla de "solo mercados abiertos" del scan de
+  // tickers) y deben refrescarse periódicamente mientras el dashboard esté
+  // abierto. Extraído a función reutilizable + interval de refresco abajo.
+  function loadMasterIndicators() {
+    fetchMasterIndicators()
+      .then((response) => {
+        const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, response);
+        setMasterIndicators(mergedIndicators.indicators);
+        saveSessionCache({
+          masterIndicators: {
+            data: mergedIndicators.indicators,
+            timestamp: createTimestampPair(),
+            dataMode: deriveIndicatorsDataMode(mergedIndicators.indicators),
+          },
+        });
+        setSystemStatus((current) =>
+          updateSystemStatusForDataMode(
+            refreshSystemMarketStatus(current),
+            deriveDashboardDataMode([], mergedIndicators.indicators, {
+              coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
+            }),
+            mergedIndicators.lastRealDataUpdate ?? current.lastRealDataUpdate,
+          ),
+        );
+      })
+      .catch(() => {
+        setMasterIndicators((current) => (current.length ? current : unavailableMasterIndicators));
+      });
+  }
+
   // Initialize push notifications on mount
   useEffect(() => {
     pushNotifications.initialize().catch(err => console.error("Push notifications init failed:", err));
@@ -242,30 +279,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }));
     }
 
-    fetchMasterIndicators()
-      .then((response) => {
-        const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, response);
-        setMasterIndicators(mergedIndicators.indicators);
-        saveSessionCache({
-          masterIndicators: {
-            data: mergedIndicators.indicators,
-            timestamp: createTimestampPair(),
-            dataMode: deriveIndicatorsDataMode(mergedIndicators.indicators),
-          },
-        });
-        setSystemStatus((current) =>
-          updateSystemStatusForDataMode(
-            refreshSystemMarketStatus(current),
-            deriveDashboardDataMode([], mergedIndicators.indicators, {
-              coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
-            }),
-            mergedIndicators.lastRealDataUpdate ?? current.lastRealDataUpdate,
-          ),
-        );
-      })
-      .catch(() => {
-        setMasterIndicators(unavailableMasterIndicators);
-      });
+    loadMasterIndicators();
 
     const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
 
@@ -320,6 +334,21 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
     refreshClockAndMarkets();
     const timer = window.setInterval(refreshClockAndMarkets, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // AUDIT FIX (F&G / Master Indicators "frozen"): refresco periódico de los
+  // indicadores de mercado en vivo (VIX/SPY/HYG/MOVE/VVIX/LQD/TNX), que
+  // alimentan tanto "Master Indicators" como el panel "Fear & Greed". Antes
+  // SOLO se cargaban una vez al montar — quedaban congelados con el valor de
+  // cuando se abrió el dashboard. Estos son indicadores de mercado globales
+  // (no tickets de inversión) y deben estar siempre actualizados, sin importar
+  // si el mercado de scan está abierto o cerrado — por eso el refresco es
+  // incondicional (no depende de bothMarketsClosed / regionalMarkets).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadMasterIndicators();
+    }, 4 * 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -897,20 +926,37 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   // Load last rally scan + market regime on mount
   useEffect(() => {
-    fetchLastRallyScan().then(snapshot => {
-      if (!snapshot || !snapshot.top10?.length) return;
-      setRallyState(prev => ({
-        ...prev,
-        status: "RALLY_FINAL",
-        scanId: snapshot.scanId ?? null,
-        top10: snapshot.top10 ?? [],
-        coveragePercent: 100,
-        label: `Rally Leaders — sesión anterior`,
-        lastRun: snapshot.scanCompletedAtUtc
-          ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
-          : new Date().toLocaleString(),
-      }));
-    }).catch(() => {});
+    // AUDIT FIX (mercados mixtos — igual que con el TOP 8): `/api/rally-scan/last`
+    // devuelve el último Rally scan 100% completado guardado en servidor, sin
+    // importar qué mercados estaban abiertos cuando se ejecutó. Si ese scan corrió
+    // con EEUU abierto (incluye tickers NYSE/NASDAQ) y ahora solo Europa está
+    // abierta (o viceversa), mostrarlo como "Rally Leaders actual" mezcla sesiones
+    // de mercados distintos — exactamente "el rallye me da tickets EEUU antiguos
+    // cuando el mercado está cerrado en EEUU" que el usuario detectó.
+    //
+    // Misma regla que para el TOP 8 / scan-snapshot: solo se carga/memoriza el
+    // último Rally completado de sesión anterior cuando AMBOS mercados (Europa
+    // y EEUU) están cerrados ahora; si hay al menos uno abierto, solo vale un
+    // Rally fresco de ese/esos mercado(s) — el usuario debe pulsar SCAN RALLY.
+    const rallyRegionalMarkets = getRegionalMarketStates();
+    const rallyBothMarketsClosed = rallyRegionalMarkets.europe !== "OPEN" && rallyRegionalMarkets.unitedStates !== "OPEN";
+
+    if (rallyBothMarketsClosed) {
+      fetchLastRallyScan().then(snapshot => {
+        if (!snapshot || !snapshot.top10?.length) return;
+        setRallyState(prev => ({
+          ...prev,
+          status: "RALLY_FINAL",
+          scanId: snapshot.scanId ?? null,
+          top10: snapshot.top10 ?? [],
+          coveragePercent: 100,
+          label: `Rally Leaders — sesión anterior`,
+          lastRun: snapshot.scanCompletedAtUtc
+            ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
+            : new Date().toLocaleString(),
+        }));
+      }).catch(() => {});
+    }
 
     // Market regime — internal SPY vs EMA200 analysis
     fetchMarketRegime().then(setMarketRegime).catch(() => {});

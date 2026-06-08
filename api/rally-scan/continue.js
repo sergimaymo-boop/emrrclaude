@@ -4,6 +4,7 @@
  */
 import { saveLastRallySnapshot } from "../_lib/kvStorage.js";
 import { runRallyBatch, fetchSpyBars } from "../_lib/rallyBatchProcessor.js";
+import { getActiveMarketsAt } from "../_lib/scanSnapshot.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "RALLY_SCAN_CONTINUE";
@@ -63,6 +64,23 @@ export default async function handler(req, res) {
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
     return sendJson(res, 400, { ok: false, error: "SCAN_ALREADY_COMPLETE" });
+  }
+
+  // AUDIT FIX (mercados mixtos): abortar si el conjunto de mercados activos
+  // cambió desde que arrancó el scan (p.ej. EEUU abre a mitad de un scan que
+  // empezó solo con Europa abierta) — evita mezclar sesiones a mitad de
+  // ranking. Igual guard que en SCAN FULL/TOP8 (scan-snapshot/continue.js).
+  const activeMarketsNow = getActiveMarketsAt(scanStartedAtUtc);
+  const sameActiveMarkets = Array.isArray(activeMarkets)
+    ? activeMarkets.length === activeMarketsNow.length && activeMarkets.every((m) => activeMarketsNow.includes(m))
+    : true;
+  if (!sameActiveMarkets || activeMarketsNow.length === 0) {
+    return sendJson(res, 409, {
+      ok: false,
+      error: "ACTIVE_MARKET_STATE_CHANGED",
+      scanId, scanStartedAtUtc, activeMarkets: activeMarketsNow,
+      message: "El estado de los mercados activos cambió durante el Rally scan — se aborta para no mezclar sesiones.",
+    });
   }
 
   // Rebuild eligible assets minimal objects from tickers
