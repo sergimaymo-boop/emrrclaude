@@ -21,6 +21,41 @@
     <!-- SEO -->
     <meta name="description" content="Institutional Trend Dashboard — Real-time market scanning and TOP 8 ranking." />
     <meta name="robots" content="noindex,nofollow" />
+
+    <!--
+      Auto-recuperación anti-pantalla-en-blanco.
+      Script CLÁSICO (no-module): se ejecuta SIEMPRE, incluso si el bundle
+      principal hace 404 (causa raíz del incidente: un index.html cacheado
+      apuntaba a un bundle borrado tras un redeploy → React nunca montaba →
+      blanco). Si un <script>/<link> falla al cargar, recarga UNA vez (para
+      pillar el index.html fresco con el hash correcto); si tras recargar
+      sigue fallando, muestra un fallback con botón en vez de dejar la
+      pantalla vacía. main.tsx limpia el flag al montar con éxito.
+    -->
+    <script>
+      (function () {
+        window.addEventListener(
+          "error",
+          function (e) {
+            var t = e && e.target;
+            if (!t || (t.tagName !== "SCRIPT" && t.tagName !== "LINK")) return;
+            try {
+              if (!sessionStorage.getItem("emrr-chunk-reloaded")) {
+                sessionStorage.setItem("emrr-chunk-reloaded", "1");
+                location.reload();
+                return;
+              }
+            } catch (_) {}
+            var r = document.getElementById("root");
+            if (r && !r.getAttribute("data-mounted")) {
+              r.innerHTML =
+                '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0a0a12;color:#f1f5f9;font-family:system-ui,sans-serif;text-align:center;padding:24px"><div style="font-size:22px;font-weight:900;letter-spacing:.04em">EMRR</div><div style="font-size:13px;color:#94a3b8;max-width:360px">No se pudo cargar la última versión. Pulsa recargar.</div><button onclick="location.reload()" style="padding:10px 22px;border-radius:10px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.15);color:#c7d2fe;font-weight:800;cursor:pointer">Recargar</button></div>';
+            }
+          },
+          true
+        );
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

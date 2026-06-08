@@ -248,7 +248,7 @@ export function evaluateOptimalSignal(
     filter4: f4,
     allPass,
     bestCandidateExists, // NUEVO: ticket se muestra aunque alarma sea true
-    ticker:         bestCandidateExists ? bestCandidate.ticker : null,
+    ticker:         bestCandidateExists && bestCandidate ? bestCandidate.ticker : null,
     sectorName:     matchedSector?.name ?? null,
     rallyScore:     bestCandidate?.rallyScore ?? null,
     top8Score:      bestCandidate ? bestCandidate.top8Score : null,

@@ -257,6 +257,11 @@ async function getControlledQuote(symbol) {
 }
 
 export default async function handler(request, response) {
+  // Indicadores de mercado EN VIVO — nunca cachear.
+  if (response && typeof response.setHeader === "function") {
+    response.setHeader("Cache-Control", "no-store");
+  }
+
   if (request.method && request.method !== "GET") {
     return sendJson(response, 405, {
       ok: false,
@@ -265,22 +270,38 @@ export default async function handler(request, response) {
     });
   }
 
-  const indicators = await Promise.all(ALLOWED_SYMBOLS.map((symbol) => getControlledQuote(symbol)));
-  const cacheStatus = aggregateCacheStatus(indicators);
+  try {
+    const indicators = await Promise.all(ALLOWED_SYMBOLS.map((symbol) => getControlledQuote(symbol)));
+    const cacheStatus = aggregateCacheStatus(indicators);
 
-  return sendJson(response, 200, {
-    ok: indicators.some((indicator) => indicator.price !== null),
-    app: "EMRR 2.0 / Tendencias",
-    phase: "5",
-    mode: isRealApiEnabled() ? "CONTROLLED_REAL_DATA" : "REAL_API_DISABLED",
-    realApiCallsEnabled: isRealApiEnabled(),
-    cacheStatus,
-    cachedAtUtc: latestCachedAt(indicators),
-    ttlSeconds: CACHE_TTL_SECONDS,
-    maxSymbols: ALLOWED_SYMBOLS.length,
-    symbols: ALLOWED_SYMBOLS,
-    indicators,
-    message:
-      "Phase 5 endpoint is limited to the approved Master Indicators allowlist. No scanner, ranking, scoring, or trailing logic is executed.",
-  });
+    return sendJson(response, 200, {
+      ok: indicators.some((indicator) => indicator.price !== null),
+      app: "EMRR 2.0 / Tendencias",
+      phase: "5",
+      mode: isRealApiEnabled() ? "CONTROLLED_REAL_DATA" : "REAL_API_DISABLED",
+      realApiCallsEnabled: isRealApiEnabled(),
+      cacheStatus,
+      cachedAtUtc: latestCachedAt(indicators),
+      ttlSeconds: CACHE_TTL_SECONDS,
+      maxSymbols: ALLOWED_SYMBOLS.length,
+      symbols: ALLOWED_SYMBOLS,
+      indicators,
+      message:
+        "Phase 5 endpoint is limited to the approved Master Indicators allowlist. No scanner, ranking, scoring, or trailing logic is executed.",
+    });
+  } catch (err) {
+    // Envuelve cualquier fallo no previsto en el mismo envelope JSON que espera
+    // el frontend, en vez de devolver un 500 sin cuerpo que rompa el merge.
+    return sendJson(response, 200, {
+      ok: false,
+      app: "EMRR 2.0 / Tendencias",
+      phase: "5",
+      error: String(err?.message ?? err),
+      realApiCallsEnabled: isRealApiEnabled(),
+      indicators: [],
+      symbols: ALLOWED_SYMBOLS,
+      maxSymbols: ALLOWED_SYMBOLS.length,
+      message: "Master Indicators temporarily unavailable — fetch error.",
+    });
+  }
 }

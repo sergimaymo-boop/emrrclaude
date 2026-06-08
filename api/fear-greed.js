@@ -141,6 +141,8 @@ function toRating(score) {
 }
 
 export default async function handler(req, res) {
+  // Indicador de mercado EN VIVO — nunca cachear (ni navegador ni edge).
+  res.setHeader("Cache-Control", "no-store");
   try {
     const env = process.env;
 

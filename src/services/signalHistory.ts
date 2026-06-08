@@ -37,8 +37,14 @@ class SignalHistoryService {
     history.unshift(record); // Add to front
     history.splice(MAX_SIGNALS); // Keep only last 5
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
-    console.log('✅ Signal saved to history:', record.ticker);
+    // Protegido: en modo privado o con cuota llena, setItem lanza — no debe
+    // tumbar la app por guardar el histórico.
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+      console.log('✅ Signal saved to history:', record.ticker);
+    } catch (err) {
+      console.warn('No se pudo guardar el histórico de señales (localStorage no disponible):', err);
+    }
     return record;
   }
 

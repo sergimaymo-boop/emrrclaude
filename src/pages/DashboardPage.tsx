@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FearGreedPanel } from "../components/FearGreedPanel";
 import { RallyLeadersPanel } from "../components/RallyLeadersPanel";
 import { ScanStatusPanel } from "../components/ScanStatusPanel";
@@ -190,6 +191,41 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setToast({ id: Date.now(), message, tone });
   }
 
+  // Ref con el Top 8 visible actual — lo usa el refresco periódico de
+  // cotizaciones sin depender de un closure obsoleto.
+  const top8Ref = useRef<Top8Asset[]>(top8);
+  useEffect(() => { top8Ref.current = top8; }, [top8]);
+
+  // AUDIT FIX (DATA_UNAVAILABLE en el Top 8): el scan rankea por score con
+  // datos históricos pero NO guarda el precio en vivo — el precio y el % desde
+  // cierre anterior vienen SOLO de /api/visible-top8-quotes, que antes solo se
+  // pedía al pulsar SCAN. Al restaurar el Top 8 desde caché/última-sesión al
+  // cargar la página NO se pedían cotizaciones, así que el precio quedaba en
+  // "N/A" y la tarjeta mostraba DATA_UNAVAILABLE. Aquí refrescamos las
+  // cotizaciones del Top 8 visible (al montar y periódicamente) para que el
+  // precio real aparezca siempre, sin tener que relanzar un scan.
+  async function refreshVisibleQuotes(assets: Top8Asset[]) {
+    if (!assets || assets.length === 0) return;
+    try {
+      const visibleQuotes = await fetchVisibleTop8Quotes(assets);
+      const merged = mergeVisibleTop8Quotes(assets, visibleQuotes);
+      setTop8(merged.top8);
+      if (merged.lastRealDataUpdate) {
+        setSystemStatus((current) =>
+          updateSystemStatusForDataMode(
+            refreshSystemMarketStatus(current),
+            deriveDashboardDataMode(merged.top8, masterIndicators, {
+              coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
+            }),
+            merged.lastRealDataUpdate,
+          ),
+        );
+      }
+    } catch {
+      /* mantener el Top 8 actual si el refresco de cotizaciones falla */
+    }
+  }
+
   // AUDIT FIX (F&G / Master Indicators "frozen"): este fetch antes solo se
   // ejecutaba UNA VEZ al montar el dashboard (y, de paso, cada vez que el
   // usuario lanzaba un SCAN FULL manual). Eso significa que el score de
@@ -254,18 +290,21 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
     if (sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100) {
       setTop8(sessionCache.top8Result.assets);
+      // Refresca precios reales del Top 8 restaurado (caché) — evita DATA_UNAVAILABLE al cargar.
+      refreshVisibleQuotes(sessionCache.top8Result.assets);
     }
 
-    if (sessionCache?.scanState?.scanId && sessionCache.scanState.snapshotToken) {
+    const cachedScanState = sessionCache?.scanState;
+    if (cachedScanState?.scanId && cachedScanState.snapshotToken) {
       setScanState((current) => ({
         ...current,
-        ...sessionCache.scanState,
+        ...cachedScanState,
         label:
-          sessionCache.scanState.coveragePercent === 100
+          cachedScanState.coveragePercent === 100
             ? "GLOBAL TOP 8 FINAL restored from session"
-            : `Previous scan available - batch ${sessionCache.scanState.nextBatchIndex ?? "?"}/${sessionCache.scanState.batchesTotal ?? "?"}`,
+            : `Previous scan available - batch ${cachedScanState.nextBatchIndex ?? "?"}/${cachedScanState.batchesTotal ?? "?"}`,
         scanExecutionMode:
-          sessionCache.scanState.coveragePercent === 100 ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
+          cachedScanState.coveragePercent === 100 ? "GLOBAL_TOP8_FINAL" : "PARTIAL_BATCH_ONLY",
       }));
     }
 
@@ -307,6 +346,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           const lastTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
           if (lastTop8.length === 0) return;
           setTop8(lastTop8);
+          // Refresca precios reales del Top 8 de la última sesión — evita DATA_UNAVAILABLE.
+          refreshVisibleQuotes(lastTop8);
           setSystemStatus((current) => mergeScanSnapshotUniverseStatus(current, snapshot));
           const lastSessionScope = "GLOBAL_TOP8_FINAL" as const;
           setScanState((current) => ({
@@ -349,6 +390,18 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     const timer = window.setInterval(() => {
       loadMasterIndicators();
     }, 4 * 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Refresco periódico de las cotizaciones del Top 8 visible (precio + % desde
+  // cierre anterior) para que el dashboard muestre datos en vivo sin relanzar
+  // un scan. Solo refresca si hay un Top 8 mostrado y no se está escaneando
+  // (durante un scan, handleScanAll ya gestiona las cotizaciones).
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const current = top8Ref.current;
+      if (current.length > 0) refreshVisibleQuotes(current);
+    }, 90_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -971,15 +1024,19 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         onLogout={onLogout}
       />
       {/* ── SEÑAL ÓPTIMA — arriba del todo, evalúa los 4 filtros automáticamente ── */}
-      <OptimalSignalPanel
-        marketRegime={marketRegime}
-        flowsState={flowsState}
-        rallyState={rallyState}
-        top8={top8}
-      />
+      <ErrorBoundary inline label="Señal Óptima">
+        <OptimalSignalPanel
+          marketRegime={marketRegime}
+          flowsState={flowsState}
+          rallyState={rallyState}
+          top8={top8}
+        />
+      </ErrorBoundary>
 
       {/* Signal History — Last 5 confluences detected */}
-      <SignalHistoryPanel />
+      <ErrorBoundary inline label="Histórico de Señales">
+        <SignalHistoryPanel />
+      </ErrorBoundary>
 
       {/* Progress bars are now inside each module: ScanStatusPanel, RallyLeadersPanel, IntraDayFlowsPanel */}
 
@@ -1021,10 +1078,18 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       <ScanStatusPanel scanState={scanState} />
-      <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
-      <IntraDayFlowsPanel flowsState={flowsState} />
-      <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
-      <Top8Grid assets={top8} />
+      <ErrorBoundary inline label="Fear & Greed">
+        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
+      </ErrorBoundary>
+      <ErrorBoundary inline label="Flujos de Capital">
+        <IntraDayFlowsPanel flowsState={flowsState} />
+      </ErrorBoundary>
+      <ErrorBoundary inline label="Rally Leaders">
+        <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
+      </ErrorBoundary>
+      <ErrorBoundary inline label="Top 8">
+        <Top8Grid assets={top8} />
+      </ErrorBoundary>
       <ActionButtons
         onScan={handleScan}
         onContinueScan={handleContinueScan}

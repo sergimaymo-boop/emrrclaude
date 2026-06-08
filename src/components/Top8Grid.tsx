@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ColorToken, Top8Asset } from "../types";
 import { Badge } from "./Badge";
+import { DensityToggle, type Density } from "./DensityToggle";
 
 interface Top8GridProps {
   assets: Top8Asset[];
@@ -18,13 +19,6 @@ function dataModeToken(mode: Top8Asset["dataMode"]): ColorToken {
   if (mode === "REAL") return "GREEN_HARD";
   if (mode === "LAST_CLOSE") return "YELLOW";
   if (mode === "ERROR") return "RED";
-  return "WHITE_GREY";
-}
-
-function operationalStatusToken(status: Top8Asset["operationalDataStatus"]): ColorToken {
-  if (status === "REAL") return "GREEN_HARD";
-  if (status === "LAST_CLOSE") return "YELLOW";
-  if (status === "ERROR") return "RED";
   return "WHITE_GREY";
 }
 
@@ -52,44 +46,124 @@ function formatDisplayPrice(price: string): string {
   return trimmedPrice;
 }
 
+function hasRealPrice(asset: Top8Asset): boolean {
+  return Boolean(asset.price) && asset.price !== "N/A";
+}
+
+function scoreColor(score: number): string {
+  if (score >= 85) return "#34d399"; // verde fuerte
+  if (score >= 70) return "#a3e635"; // verde-lima
+  if (score >= 55) return "#fbbf24"; // ámbar
+  return "#94a3b8";                  // gris
+}
+
+// ─── Fila COMPACTA — una sola línea: # · ticker+nombre · precio · %día · score ──
+//
+// Columnas alineadas entre filas (mismo grid-template en todas) para que el
+// listado quede ordenado. El nombre trunca con ellipsis; precio, % y score
+// tienen su propio espacio fijo a la derecha, así nunca se solapan.
+function CompactRow({ asset }: { asset: Top8Asset }) {
+  const real = hasRealPrice(asset);
+  const changeColor = !real ? "#475569" : asset.priceChangePercent >= 0 ? "#34d399" : "#f87171";
+
+  return (
+    <article
+      style={{
+        display: "grid",
+        gridTemplateColumns: "22px minmax(0,1fr) 62px 56px 42px",
+        gap: 8,
+        alignItems: "center",
+        padding: "9px 12px",
+        borderRadius: 10,
+        border: "1px solid var(--line)",
+        borderLeft: "3px solid var(--accent)",
+        background: "var(--panel-soft)",
+      }}
+    >
+      {/* Posición */}
+      <span style={{ fontSize: 12, fontWeight: 800, color: "#eab308", textAlign: "center" }}>
+        {asset.rank}
+      </span>
+
+      {/* Ticker + Nombre (el nombre trunca) */}
+      <div style={{ minWidth: 0, display: "flex", alignItems: "baseline", gap: 6 }}>
+        <strong style={{ fontSize: 14, fontWeight: 900, color: "#f1f5f9", flexShrink: 0, letterSpacing: "0.01em" }}>
+          {asset.ticker}
+        </strong>
+        <span
+          title={asset.name}
+          style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
+        >
+          {asset.name}
+        </span>
+      </div>
+
+      {/* Precio (momento del scan) */}
+      <span style={{ fontSize: 12, fontWeight: 800, color: real ? "#f1f5f9" : "#475569", textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {real ? formatDisplayPrice(asset.price) : "—"}
+      </span>
+
+      {/* % desde cierre anterior */}
+      <span style={{ fontSize: 11, fontWeight: 800, color: changeColor, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+        {real ? formatPriceChange(asset.priceChangePercent) : "—"}
+      </span>
+
+      {/* Score */}
+      <span style={{ fontSize: 13, fontWeight: 900, color: scoreColor(asset.score), textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+        {Math.round(asset.score)}
+      </span>
+    </article>
+  );
+}
+
 export function Top8Grid({ assets }: Top8GridProps) {
   const visibleAssets = assets.slice(0, 8);
   const hiddenCount = Math.max(assets.length - visibleAssets.length, 0);
   const top8Source = visibleAssets[0]?.top8Source ?? "UNAVAILABLE";
   const resultScope = visibleAssets[0]?.resultScope ?? "UNAVAILABLE";
-  const [density, setDensity] = useState<"compact" | "detail">("compact");
+  const [density, setDensity] = useState<Density>("compact");
   const detailed = density === "detail";
 
   return (
     <section className="section-block top8-section">
       <div className="section-title-row">
         <h2>TOP 8</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {visibleAssets.length > 0 && (
-            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {(["compact", "detail"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDensity(v)}
-                  style={{
-                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
-                    border: "none", letterSpacing: "0.05em",
-                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
-                    color: density === v ? "#f1f5f9" : "#475569",
-                    transition: "background 120ms",
-                  }}
-                >
-                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
-                </button>
-              ))}
-            </div>
-          )}
-          <span>
-            Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
-          </span>
-        </div>
+        <span>
+          Source {top8Source} · Scope {resultScope}{hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""}
+        </span>
       </div>
+
+      {/* Toggle en su propia fila → nunca se recorta */}
+      {visibleAssets.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <DensityToggle value={density} onChange={setDensity} />
+        </div>
+      )}
+
+      {/* Cabecera de columnas (solo en compacto) */}
+      {visibleAssets.length > 0 && !detailed && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "22px minmax(0,1fr) 62px 56px 42px",
+            gap: 8,
+            padding: "0 12px 6px",
+          }}
+        >
+          {["#", "ACTIVO", "PRECIO", "%DÍA", "SCORE"].map((h, i) => (
+            <span
+              key={h}
+              style={{
+                fontSize: 8, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em",
+                textAlign: i === 0 ? "center" : i === 1 ? "left" : "right",
+              }}
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="top8-list">
         {visibleAssets.length === 0 ? (
           <article className="top8-empty-state">
@@ -107,7 +181,10 @@ export function Top8Grid({ assets }: Top8GridProps) {
               <span>Continue the same scan snapshot to complete coverage</span>
             </div>
           </article>
-        ) : visibleAssets.map((asset) => (
+        ) : !detailed ? (
+          visibleAssets.map((asset) => <CompactRow key={asset.ticker} asset={asset} />)
+        ) : (
+          visibleAssets.map((asset) => (
             <article className="asset-row" key={asset.ticker}>
               <div className="asset-rank-cell">
                 <div className="rank">{asset.rank}</div>
@@ -126,7 +203,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-market-cell" style={{ display: detailed ? "flex" : "none" }}>
+              <div className="asset-market-cell">
                 <span className="asset-market-tag">{asset.market}</span>
                 <strong className="asset-price">{formatDisplayPrice(asset.price)}</strong>
                 <div className="market-state-line">
@@ -139,7 +216,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-scores-cell" style={{ display: detailed ? "grid" : "none" }}>
+              <div className="asset-scores-cell">
                 <div className="bar-metric">
                   <div>
                     <span>Score</span>
@@ -161,7 +238,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="asset-meta-cell" style={{ display: detailed ? "grid" : "none" }}>
+              <div className="asset-meta-cell">
                 <div className="compact-metric risk-line">
                   <span>Risk</span>
                   <strong>{asset.risk}</strong>
@@ -172,7 +249,7 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="trailing-line" style={{ display: detailed ? "grid" : "none" }}>
+              <div className="trailing-line">
                 <span>Trailing stop</span>
                 <div className="trailing-values">
                   <strong>Tight <b>{asset.trailingAdjusted}</b></strong>
@@ -181,13 +258,14 @@ export function Top8Grid({ assets }: Top8GridProps) {
                 </div>
               </div>
 
-              <div className="card-footer" style={{ display: detailed ? "flex" : "none" }}>
+              <div className="card-footer">
                 <span>{asset.dataQuality}</span>
                 <span>{asset.provider === "none" ? "no provider" : asset.provider}</span>
                 <span>{asset.priceTimestamp.local}</span>
               </div>
             </article>
-        ))}
+          ))
+        )}
       </div>
     </section>
   );

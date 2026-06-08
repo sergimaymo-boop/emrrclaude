@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RallyAsset, RallyState } from "../services/rallyRefresh";
+import { DensityToggle, type Density } from "./DensityToggle";
 
 interface RallyLeadersPanelProps {
   rallyState: RallyState;
@@ -174,7 +175,7 @@ function TopProgressBar({
 
 export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanelProps) {
   const [showAll, setShowAll] = useState(false);
-  const [density, setDensity] = useState<"compact" | "detail">("compact");
+  const [density, setDensity] = useState<Density>("compact");
   const { status, isScanning, top10, coveragePercent, batchesCompleted, batchesTotal, lastRun } = rallyState;
   const isIdle = status === "RALLY_IDLE";
   const isFinal = status === "RALLY_FINAL";
@@ -225,26 +226,7 @@ export function RallyLeadersPanel({ rallyState, onScanRally }: RallyLeadersPanel
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          {top10.length > 0 && (
-            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-              {(["compact", "detail"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDensity(v)}
-                  style={{
-                    padding: "3px 10px", fontSize: 8, fontWeight: 700, cursor: "pointer",
-                    border: "none", letterSpacing: "0.05em",
-                    background: density === v ? "rgba(255,255,255,0.12)" : "transparent",
-                    color: density === v ? "#f1f5f9" : "#475569",
-                    transition: "background 120ms",
-                  }}
-                >
-                  {v === "compact" ? "▤ COMPACTO" : "☰ DETALLE"}
-                </button>
-              ))}
-            </div>
-          )}
+          {top10.length > 0 && <DensityToggle value={density} onChange={setDensity} />}
           <span style={{ fontSize: 10, color: "#475569" }}>
             {isFinal || isPartial ? `${top10.length} leaders found` : ""}
           </span>
