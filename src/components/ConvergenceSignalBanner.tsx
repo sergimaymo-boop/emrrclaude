@@ -48,15 +48,71 @@ export function ConvergenceSignalBanner({
 }: Props) {
   const s = evaluateOptimalSignal(marketRegime, flowsState, rallyState, top8);
 
-  // ── Only render when there is an actual ticker convergence ──────────────
+  // ── No convergence state ─────────────────────────────────────────────────
   if (!s.bestCandidateExists || !s.ticker) {
-    // Scans not yet run — minimal hint row (no visual noise)
     const rallyDone = rallyState.status === "RALLY_FINAL" || rallyState.status === "RALLY_PARTIAL_DIAGNOSTIC";
     const fullDone  = top8.length > 0;
-    if (!rallyDone || !fullDone) return null;
+    const scansRun  = rallyDone && fullDone;
 
-    // Scans done but no intersection — silent (panel below shows full detail)
-    return null;
+    const noConvLabel = scansRun
+      ? "Ejecuta SCAN FULL + SCAN RALLY para activar"
+      : s.needsScans.length > 0
+        ? `Pendiente: ${s.needsScans.join(" · ")}`
+        : "Ejecuta SCAN FULL + SCAN RALLY para activar";
+
+    return (
+      <section
+        style={{
+          marginBottom: 14,
+          borderRadius: 12,
+          overflow: "hidden",
+          border: "1px solid rgba(71,85,105,0.35)",
+          background: "rgba(15,23,42,0.50)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "7px 14px",
+            background: "rgba(71,85,105,0.10)",
+            borderBottom: "1px solid rgba(71,85,105,0.20)",
+            gap: 8,
+          }}
+        >
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: "0.11em",
+            textTransform: "uppercase", color: "#475569",
+          }}>
+            CONVERGENCIA 3 MOTORES
+          </span>
+          <span style={{
+            fontSize: 10, fontWeight: 800, letterSpacing: "0.08em",
+            textTransform: "uppercase", color: "#334155",
+            background: "rgba(71,85,105,0.15)",
+            border: "1px solid rgba(71,85,105,0.25)",
+            borderRadius: 999, padding: "2px 10px", whiteSpace: "nowrap",
+          }}>
+            ✗ TICKET SIN CONVERGENCIA
+          </span>
+        </div>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", gap: 12,
+        }}>
+          <div style={{
+            fontSize: 13, fontWeight: 700, color: "#334155",
+            letterSpacing: "0.02em",
+          }}>
+            TICKET SIN CONVERGENCIA
+          </div>
+          <div style={{ fontSize: 10, color: "#334155", textAlign: "right" }}>
+            {noConvLabel}
+          </div>
+        </div>
+      </section>
+    );
   }
 
   const top8Asset = top8.find((a) => a.ticker === s.ticker);
