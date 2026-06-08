@@ -134,6 +134,17 @@ function buildMessage({ semaphore, regime, indicators, pullback, news, generated
   return lines.join("\n");
 }
 
+// Limita una promesa a maxMs milisegundos. Si se agota devuelve el fallback
+// en vez de rechazar, así Promise.all nunca se queda colgado.
+function withTimeout(promise, maxMs, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), maxMs)),
+  ]);
+}
+
+const CALL_TIMEOUT_MS = 5000; // cada llamada individual: 5s máximo → total ≤ 6s → seguro en Hobby (10s) y Pro (60s)
+
 export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store");
   const env = getEnv();
@@ -157,15 +168,19 @@ export default async function handler(request, response) {
     FMP_API_KEY:         isConfiguredSecret(env.FMP_API_KEY)         ? env.FMP_API_KEY         : null,
   };
 
+  const QUOTE_FALLBACK = { ok: false, reason: "cron-timeout" };
+  const NEWS_FALLBACK  = { ok: false, reason: "cron-timeout", headlines: [] };
+  const REGIME_FALLBACK = { regime: "UNKNOWN", technicals: null, bars: [] };
+
   const [regimeResult, vixQ, moveQ, hygQ, vvixQ, tnxQ, lqdQ, news] = await Promise.all([
-    resolveMarketRegime(env),
-    cascadeQuote("VIX.INDX",   cascadeEnv),
-    cascadeQuote("MOVE.INDX",  cascadeEnv),
-    cascadeQuote("HYG.US",     cascadeEnv),
-    cascadeQuote("VVIX.INDX",  cascadeEnv),
-    cascadeQuote("US10Y.GBOND",cascadeEnv),
-    cascadeQuote("LQD.US",     cascadeEnv),
-    fetchUsMarketNewsDigest(env),
+    withTimeout(resolveMarketRegime(env),             CALL_TIMEOUT_MS, REGIME_FALLBACK),
+    withTimeout(cascadeQuote("VIX.INDX",   cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(cascadeQuote("MOVE.INDX",  cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(cascadeQuote("HYG.US",     cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(cascadeQuote("VVIX.INDX",  cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(cascadeQuote("US10Y.GBOND",cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(cascadeQuote("LQD.US",     cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
+    withTimeout(fetchUsMarketNewsDigest(env),           CALL_TIMEOUT_MS, NEWS_FALLBACK),
   ]);
 
   const indicatorInputs = {
