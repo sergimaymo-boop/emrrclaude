@@ -1,38 +1,7 @@
 /**
- * GET /api/rally-scan/last
- * Rally Leaders Engine — load last completed rally scan from Redis
+ * MOVED — Logic consolidated into /api/rally-scan.js
+ * This file intentionally has no export default so Vercel does not deploy it
+ * as a separate Serverless Function (Hobby plan: 12-function limit).
+ * Requests to /api/rally-scan/last are rewritten to /api/rally-scan?action=last
+ * via vercel.json rewrites.
  */
-import { loadLastRallySnapshot } from "../_lib/kvStorage.js";
-
-const APP_NAME = "EMRR 2.0 / Tendencias";
-const ENDPOINT = "RALLY_SCAN_LAST";
-
-export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
-
-  if (req.method !== "GET") {
-    return res.status(405).json({ ok: false, error: "METHOD_NOT_ALLOWED", app: APP_NAME, endpoint: ENDPOINT });
-  }
-
-  const snapshot = await loadLastRallySnapshot();
-
-  if (!snapshot) {
-    return res.status(404).json({
-      ok: false,
-      app: APP_NAME,
-      endpoint: ENDPOINT,
-      error: "NO_STORED_RALLY_SNAPSHOT",
-      status: "RALLY_DATA_UNAVAILABLE",
-      message: "No completed Rally scan found. Run SCAN RALLY during market hours first.",
-      timestampUtc: new Date().toISOString(),
-    });
-  }
-
-  return res.status(200).json({
-    ...snapshot,
-    app: APP_NAME,
-    endpoint: ENDPOINT,
-    source: "LAST_SESSION_CACHE",
-    retrievedAtUtc: new Date().toISOString(),
-  });
-}

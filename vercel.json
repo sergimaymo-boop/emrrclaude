@@ -35,6 +35,14 @@
       ]
     }
   ],
+  "rewrites": [
+    { "source": "/api/rally-scan/start",       "destination": "/api/rally-scan?action=start"       },
+    { "source": "/api/rally-scan/continue",    "destination": "/api/rally-scan?action=continue"    },
+    { "source": "/api/rally-scan/last",        "destination": "/api/rally-scan?action=last"        },
+    { "source": "/api/scan-snapshot/start",    "destination": "/api/scan-snapshot?action=start"    },
+    { "source": "/api/scan-snapshot/continue", "destination": "/api/scan-snapshot?action=continue" },
+    { "source": "/api/scan-snapshot/last",     "destination": "/api/scan-snapshot?action=last"     }
+  ],
   "functions": {
     "api/cron/market-pulse.js": {
       "maxDuration": 60

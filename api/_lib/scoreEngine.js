@@ -123,7 +123,11 @@ export function calculateScore(input) {
       drawdown * SCORE_WEIGHTS.drawdown) /
     100;
 
-  const score = round(clamp(weightedScore, 0, 100), 2);
+  // Apply optional EPS quality adjustment (additive, clamped to [0,100]).
+  // epsAdjustment is populated by classifyEpsQuality() in epsEngine.js:
+  //   EXCELENTE (+4), BUENO (+2), NEUTRO (0), DÉBIL (−3), RIESGO_GAP (−6).
+  const epsAdj = isFiniteNumber(input?.epsAdjustment) ? input.epsAdjustment : 0;
+  const score = round(clamp(weightedScore + epsAdj, 0, 100), 2);
   const conviction = round(clamp(score * 0.75 + Math.min(technicals.rvol, 2) * 12.5, 0, 100), 2);
   const risk = classifyRisk(technicals);
 
