@@ -301,8 +301,17 @@ function scoreInputIntegrityFromApi(asset: Record<string, unknown>) {
   };
 }
 
-function allScoreInputsReal(scoreInputIntegrity: Top8Asset["scoreInputIntegrity"]): boolean {
-  return Object.values(scoreInputIntegrity).every((status) => status === "REAL");
+// El dataMode de la tarjeta refleja si los INPUTS DEL SCORE son reales. El Spread
+// (bid/ask) NO es input del score — es metadata de coste de ejecución — y desde la
+// cancelación de EODHD (jun 2026) ya no hay proveedor de spread, por lo que exigirlo
+// degradaría TODO a DATA_UNAVAILABLE pese a tener un análisis 100% real. Por eso se
+// excluye del cálculo del dataMode. (EXEC sigue bloqueado vía operationalDecisionAllowed,
+// que no depende de esta función.)
+const SCORE_DATA_KEYS: Array<keyof Top8Asset["scoreInputIntegrity"]> = [
+  "EMA20", "EMA50", "RS", "Momentum", "Continuity", "RVOL", "Liquidity", "ATR",
+];
+function scoreDataInputsReal(scoreInputIntegrity: Top8Asset["scoreInputIntegrity"]): boolean {
+  return SCORE_DATA_KEYS.every((key) => scoreInputIntegrity[key] === "REAL");
 }
 
 function formatPercentValue(value: unknown): string {
@@ -324,7 +333,7 @@ export function buildDashboardTop8FromTop8Status(response: Top8StatusApiResponse
     const trailing = asset.trailing as Record<string, unknown> | undefined;
     const rank = numberFromUnknown(asset.rank) ?? index + 1;
     const scoreInputIntegrity = scoreInputIntegrityFromApi(asset);
-    const hasRealScoreInputs = allScoreInputsReal(scoreInputIntegrity);
+    const hasRealScoreInputs = scoreDataInputsReal(scoreInputIntegrity);
     const market = stringFromUnknown(asset.exchange, stringFromUnknown(asset.market, "UNKNOWN"));
     const marketStatus = isMarketOpen(market);
     const score = numberFromUnknown(asset.score) ?? 0;
@@ -578,7 +587,7 @@ export function mergeVisibleTop8Quotes(currentTop8: Top8Asset[], response: Visib
     const cardDataMode: DataMode =
       asset.top8Source === "DYNAMIC" &&
       (asset.resultScope === "GLOBAL" || asset.resultScope === "GLOBAL_TOP8_FINAL") &&
-      allScoreInputsReal(asset.scoreInputIntegrity)
+      scoreDataInputsReal(asset.scoreInputIntegrity)
         ? priceDataMode
         : "DATA_UNAVAILABLE";
     const policy = deriveOperationalDataPolicy({

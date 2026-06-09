@@ -33,6 +33,43 @@ function sendJson(response, statusCode, payload, endpoint) {
   response.status(statusCode).json({ ...payload, app: APP_NAME, endpoint, timestampUtc: new Date().toISOString() });
 }
 
+// Compact serialization for the continuation token + persisted snapshot.
+// CRITICAL: preserves the SCALAR technicals (momentum20, ema, rs, atr, etc.),
+// spreadStatus and dataQuality so the dashboard can render momentum and resolve
+// scoreInputIntegrity = REAL after the scan. We deliberately DROP the heavy
+// arrays (historical bars / breakdown detail) that previously bloated the token
+// to ~36KB and aborted iOS fetch — only ~15 numbers + 1 date per candidate are
+// kept (~2KB total for the TOP 8), far under the limit.
+function compactCandidate(c, scanId, scanStartedAtUtc) {
+  const t = c?.technicalResult?.technicals;
+  return {
+    ticker: c.ticker, providerSymbol: c.providerSymbol, score: c.score, name: c.name,
+    market: c.market, exchange: c.exchange, currency: c.currency, risk: c.risk,
+    action: c.action, conviction: c.conviction, trailing: c.trailing,
+    scoreBreakdown: c.scoreBreakdown, operabilityStatus: c.operabilityStatus,
+    eligibility: c.eligibility, dataQuality: c.dataQuality,
+    spreadStatus: c.spreadStatus
+      ? { ok: c.spreadStatus.ok, spreadPercent: c.spreadStatus.spreadPercent ?? null, blockedReason: c.spreadStatus.blockedReason ?? null }
+      : null,
+    technicalResult: t
+      ? {
+          ok: c.technicalResult.ok,
+          dataQuality: c.technicalResult.dataQuality,
+          validBars: c.technicalResult.validBars,
+          technicals: {
+            ema20: t.ema20 ?? null, ema50: t.ema50 ?? null, ema20SlopePercent: t.ema20SlopePercent ?? null,
+            atr: t.atr ?? null, atrPercent: t.atrPercent ?? null, rvol: t.rvol ?? null,
+            momentum5: t.momentum5 ?? null, momentum20: t.momentum20 ?? null,
+            rs20: t.rs20 ?? null, rs60: t.rs60 ?? null,
+            avgVolume20: t.avgVolume20 ?? null, avgValue20: t.avgValue20 ?? null,
+            maxDrawdown20: t.maxDrawdown20 ?? null, lastClose: t.lastClose ?? null, lastDate: t.lastDate ?? null,
+          },
+        }
+      : (c.technicalResult ?? null),
+    scanId, scanStartedAtUtc,
+  };
+}
+
 async function readJsonBody(req) {
   if (!req.body) return {};
   if (typeof req.body === 'object') return req.body;
@@ -135,7 +172,7 @@ async function handleStart(request, response) {
     await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allOperable.length, actualProviderCalls: providerCalls }).catch(() => {});
   }
 
-  const compactAccumulated = top8.map(c => ({ ticker: c.ticker, providerSymbol: c.providerSymbol, score: c.score, name: c.name, market: c.market, exchange: c.exchange, currency: c.currency, risk: c.risk, action: c.action, conviction: c.conviction, trailing: c.trailing, scoreBreakdown: c.scoreBreakdown, operabilityStatus: c.operabilityStatus, eligibility: c.eligibility, scanId, scanStartedAtUtc }));
+  const compactAccumulated = top8.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
   const snapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex: 1, universeCount: allOperable.length, actualProviderCalls: providerCalls, accumulatedTop8: compactAccumulated })).toString('base64url');
   const statusCode = isGlobalTop8Final ? 200 : batchesCompleted > 0 ? 206 : 409;
 
@@ -225,7 +262,7 @@ async function handleContinue(request, response) {
     await saveLastScanSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc, coveragePercent: 100, isGlobalTop8Final: true, topCandidates, universeHash, activeMarkets, universeCount: allOperable.length, actualProviderCalls: totalCalls }).catch(() => {});
   }
 
-  const compactAccumulated = combined.map(c => ({ ticker: c.ticker, providerSymbol: c.providerSymbol, score: c.score, name: c.name, market: c.market, exchange: c.exchange, currency: c.currency, risk: c.risk, action: c.action, conviction: c.conviction, trailing: c.trailing, scoreBreakdown: c.scoreBreakdown, operabilityStatus: c.operabilityStatus, eligibility: c.eligibility, scanId, scanStartedAtUtc }));
+  const compactAccumulated = combined.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
   const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1, universeCount: allOperable.length, actualProviderCalls: totalCalls, accumulatedTop8: compactAccumulated })).toString('base64url');
 
   return sendJson(response, isGlobalTop8Final ? 200 : 206, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1, coveragePercent: newCoverage, actualProviderCalls: totalCalls, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken: newSnapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] }, message: isGlobalTop8Final ? 'Global TOP 8 final.' : `Batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_CONTINUE');
