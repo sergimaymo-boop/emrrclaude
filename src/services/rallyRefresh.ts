@@ -62,6 +62,7 @@ export interface RallyScanResponse {
   isRallyFinal?: boolean;
   rallyToken?: string | null;
   top10?: RallyAsset[];
+  activeMarkets?: string[];
   error?: string;
   message?: string;
 }

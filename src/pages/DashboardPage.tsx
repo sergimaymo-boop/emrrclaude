@@ -340,24 +340,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
     const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
 
-    // AUDIT FIX (mercados mixtos): `/api/scan-snapshot/last` devuelve el ÚLTIMO scan
-    // 100% completado almacenado en el servidor — sin importar qué mercados estaban
-    // abiertos cuando se ejecutó. Si ese scan corrió, p.ej., un viernes por la tarde
-    // con EEUU abierto (incluye NYSE/NASDAQ como HUM, CSCO, etc.), y ahora es lunes
-    // por la mañana con SOLO Europa abierta y EEUU cerrado, mostrar ese snapshot como
-    // "TOP 8 actual" mezcla sesiones de mercados distintos — exactamente lo que el
-    // usuario detectó (HUM/NYSE apareciendo como #1 con Europa abierta y EEUU cerrado).
-    //
-    // Regla correcta (igual que para el propio scan — ver getActiveMarketsAt):
-    //   - Si hay AL MENOS UN mercado abierto → solo vale un scan FRESCO de ese/esos
-    //     mercado(s) abierto(s); nunca se debe mostrar un snapshot de sesión anterior
-    //     como si fuera el resultado actual (induciría a comparar cerrado vs abierto).
-    //   - Solo cuando AMBOS mercados (Europa y EEUU) están cerrados es válido
-    //     "memorizar"/mostrar el último cierre de la sesión anterior de ambos.
-    const regionalMarkets = getRegionalMarketStates();
-    const bothMarketsClosed = regionalMarkets.europe !== "OPEN" && regionalMarkets.unitedStates !== "OPEN";
-
-    if (!hasTop8InSession && bothMarketsClosed) {
+    // El TOP 8 SIEMPRE muestra el último scan 100% completado guardado en servidor
+    // cuando no hay uno en la sesión actual (petición del usuario: "que cargue bien
+    // todos los tickets" — antes el panel quedaba VACÍO durante el horario de mercado
+    // hasta pulsar SCAN FULL). Los precios se refrescan en vivo (refreshVisibleQuotes)
+    // y el label marca "LAST SESSION TOP 8 - fecha", así no se confunde con datos
+    // en vivo. Pulsar SCAN FULL recalcula el ranking con los mercados abiertos ahora.
+    if (!hasTop8InSession) {
       fetchLastScanSnapshot()
         .then((snapshot) => {
           if (!snapshot) return;
@@ -989,37 +978,41 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   // Load last rally scan + market regime on mount
   useEffect(() => {
-    // AUDIT FIX (mercados mixtos — igual que con el TOP 8): `/api/rally-scan/last`
-    // devuelve el último Rally scan 100% completado guardado en servidor, sin
-    // importar qué mercados estaban abiertos cuando se ejecutó. Si ese scan corrió
-    // con EEUU abierto (incluye tickers NYSE/NASDAQ) y ahora solo Europa está
-    // abierta (o viceversa), mostrarlo como "Rally Leaders actual" mezcla sesiones
-    // de mercados distintos — exactamente "el rallye me da tickets EEUU antiguos
-    // cuando el mercado está cerrado en EEUU" que el usuario detectó.
+    // El panel SIEMPRE muestra el último Rally scan 100% completado guardado en
+    // servidor (petición del usuario: "que visualice siempre el último scan / que
+    // cargue bien todos los tickets"). Antes solo se cargaba si AMBOS mercados
+    // estaban cerrados, dejando el panel VACÍO durante el horario de mercado hasta
+    // que el usuario pulsaba SCAN RALLY — confuso (parecía "no carga").
     //
-    // Misma regla que para el TOP 8 / scan-snapshot: solo se carga/memoriza el
-    // último Rally completado de sesión anterior cuando AMBOS mercados (Europa
-    // y EEUU) están cerrados ahora; si hay al menos uno abierto, solo vale un
-    // Rally fresco de ese/esos mercado(s) — el usuario debe pulsar SCAN RALLY.
+    // Para no confundir datos memorizados con datos en vivo: si el scan guardado
+    // se ejecutó con un conjunto de mercados activos distinto al actual, se marca
+    // como "sesión anterior" (el badge del panel ya lo refleja). Pulsar SCAN RALLY
+    // recalcula con datos frescos de los mercados abiertos ahora.
     const rallyRegionalMarkets = getRegionalMarketStates();
-    const rallyBothMarketsClosed = rallyRegionalMarkets.europe !== "OPEN" && rallyRegionalMarkets.unitedStates !== "OPEN";
+    const activeNow: string[] = [];
+    if (rallyRegionalMarkets.europe === "OPEN") activeNow.push("Europe");
+    if (rallyRegionalMarkets.unitedStates === "OPEN") activeNow.push("USA");
 
-    if (rallyBothMarketsClosed) {
-      fetchLastRallyScan().then(snapshot => {
-        if (!snapshot || !snapshot.top10?.length) return;
-        setRallyState(prev => ({
-          ...prev,
-          status: "RALLY_FINAL",
-          scanId: snapshot.scanId ?? null,
-          top10: snapshot.top10 ?? [],
-          coveragePercent: 100,
-          label: `Rally Leaders — sesión anterior`,
-          lastRun: snapshot.scanCompletedAtUtc
-            ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
-            : new Date().toLocaleString(),
-        }));
-      }).catch(() => {});
-    }
+    fetchLastRallyScan().then(snapshot => {
+      if (!snapshot || !snapshot.top10?.length) return;
+      const snapMarkets = Array.isArray(snapshot.activeMarkets) ? snapshot.activeMarkets : [];
+      // ¿El scan guardado cubre los mismos mercados que están abiertos ahora?
+      const sameSession =
+        activeNow.length > 0 &&
+        activeNow.length === snapMarkets.length &&
+        activeNow.every(m => snapMarkets.includes(m));
+      setRallyState(prev => ({
+        ...prev,
+        status: "RALLY_FINAL",
+        scanId: snapshot.scanId ?? null,
+        top10: snapshot.top10 ?? [],
+        coveragePercent: 100,
+        label: sameSession ? "Rally Leaders — último scan" : "Rally Leaders — sesión anterior",
+        lastRun: snapshot.scanCompletedAtUtc
+          ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
+          : new Date().toLocaleString(),
+      }));
+    }).catch(() => {});
 
     // Market regime — internal SPY vs EMA200 analysis
     fetchMarketRegime().then(setMarketRegime).catch(() => {});
