@@ -29,8 +29,12 @@ import {
 import { classifyMonetaryCycle } from "../_lib/monetaryCycleEngine.js";
 import { fetchUsMarketNewsDigest } from "../_lib/newsDigest.js";
 import { sendTelegramMessage } from "../_lib/telegram.js";
+import { kvGet, kvSet } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
+// Clave diaria de deduplicación: dos triggers (cron Vercel + GitHub Actions) cubren
+// el envío con redundancia, pero solo se manda UN mensaje por día. ?force=true lo ignora.
+const SENT_KEY_PREFIX = "market_pulse_sent_";
 const ENDPOINT = "MARKET_PULSE_TELEGRAM";
 const BENCHMARK = "SPY.US";
 
@@ -166,6 +170,19 @@ export default async function handler(request, response) {
     return sendJson(response, 200, { ok: false, error: "REAL_API_CALLS_DISABLED" });
   }
 
+  // ── Deduplicación diaria ──────────────────────────────────────────────────
+  // Dos disparadores (cron Vercel + GitHub Actions) garantizan la entrega con
+  // redundancia; esta guarda evita un segundo mensaje el mismo día. ?force=true
+  // la salta (para pruebas manuales).
+  const force = request.query?.force === "true";
+  const todayKey = `${SENT_KEY_PREFIX}${new Date().toISOString().slice(0, 10)}`;
+  if (!force) {
+    const alreadySent = await kvGet(todayKey).catch(() => null);
+    if (alreadySent) {
+      return sendJson(response, 200, { ok: true, skipped: "ALREADY_SENT_TODAY", sentAtUtc: alreadySent });
+    }
+  }
+
   const cascadeEnv = {
     FINNHUB_API_KEY:     isConfiguredSecret(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
     FRED_API_KEY:        isConfiguredSecret(env.FRED_API_KEY)        ? env.FRED_API_KEY        : null,
@@ -217,6 +234,12 @@ export default async function handler(request, response) {
   const message = buildMessage({ semaphore, regime: regimeResult.regime, indicators, pullback, news, monetaryCycle, generatedAtUtc });
 
   const sendResult = await sendTelegramMessage(message, env);
+
+  // Marca el día como enviado SOLO si el envío fue exitoso (TTL 26h) — así si falla,
+  // el otro disparador puede reintentar; si tiene éxito, no se duplica.
+  if (sendResult.ok) {
+    await kvSet(todayKey, generatedAtUtc, 26 * 3600).catch(() => {});
+  }
 
   return sendJson(response, sendResult.ok ? 200 : 502, {
     ok: sendResult.ok,

@@ -1,0 +1,43 @@
+name: Market Pulse Telegram
+
+# Disparador FIABLE del aviso diario de Telegram. Reemplaza en la práctica al cron
+# de Vercel (plan Hobby = "best-effort", se retrasa o se salta). El endpoint deduplica
+# por día, así que el cron de Vercel sigue activo como respaldo sin riesgo de duplicar.
+on:
+  schedule:
+    # 14:00 UTC (≈15:00 Canarias verano), ~30 min tras la apertura US, lun-vie.
+    - cron: '0 14 * * 1-5'
+    # Respaldo 30 min después por si el primero se retrasa o falla (dedupe evita duplicado).
+    - cron: '30 14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Forzar envío aunque ya se haya enviado hoy (pruebas)'
+        type: boolean
+        default: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger market-pulse endpoint (with retries)
+        run: |
+          BASE="https://emrrclaude.vercel.app/api/cron/market-pulse"
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            URL="${BASE}?force=true"
+          else
+            URL="${BASE}"
+          fi
+          echo "Calling: ${URL}"
+          for attempt in 1 2 3; do
+            RESP=$(curl -s --max-time 75 "${URL}" || echo '{"ok":false,"error":"curl_failed"}')
+            echo "Attempt ${attempt} response: ${RESP}"
+            if echo "${RESP}" | grep -q '"ok":true'; then
+              echo "✅ Market pulse delivered (or already sent today)."
+              exit 0
+            fi
+            echo "Retry in 15s..."
+            sleep 15
+          done
+          echo "❌ Market pulse failed after 3 attempts."
+          exit 1

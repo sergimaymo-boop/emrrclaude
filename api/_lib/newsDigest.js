@@ -36,6 +36,31 @@ function truncate(text, maxLen) {
   return trimmed.length > maxLen ? `${trimmed.slice(0, maxLen - 1).trimEnd()}…` : trimmed;
 }
 
+// Traduce un titular EN→ES vía MyMemory (gratuito, sin API key). Si falla o tarda,
+// devuelve el original en inglés (fallback seguro — nunca rompe el digest).
+const TRANSLATE_TIMEOUT_MS = 3500;
+async function translateToSpanish(text) {
+  if (typeof text !== "string" || text.trim().length === 0) return text;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TRANSLATE_TIMEOUT_MS);
+  try {
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|es`;
+    const res = await fetch(url, { headers: { accept: "application/json" }, signal: controller.signal });
+    if (!res.ok) return text;
+    const data = await res.json();
+    const translated = data?.responseData?.translatedText;
+    // MyMemory devuelve a veces avisos de cuota en translatedText — filtra esos casos.
+    if (typeof translated === "string" && translated.trim() && !/MYMEMORY WARNING|QUERY LENGTH LIMIT/i.test(translated)) {
+      return translated.trim();
+    }
+    return text;
+  } catch {
+    return text;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function fetchUsMarketNewsDigest(env = {}) {
   const apiKey = env.FINNHUB_API_KEY;
   if (!apiKey) return { ok: false, reason: "FINNHUB_API_KEY not configured", headlines: [] };
@@ -49,7 +74,7 @@ export async function fetchUsMarketNewsDigest(env = {}) {
 
   const cutoffUnix = Math.floor(Date.now() / 1000) - MAX_AGE_HOURS * 3600;
 
-  const headlines = result.data
+  const selected = result.data
     .filter((item) => typeof item?.headline === "string" && typeof item?.datetime === "number")
     .filter((item) => item.datetime >= cutoffUnix)
     .filter((item) => {
@@ -57,13 +82,17 @@ export async function fetchUsMarketNewsDigest(env = {}) {
       return RELEVANCE_KEYWORDS.some((keyword) => haystack.includes(keyword));
     })
     .sort((a, b) => b.datetime - a.datetime)
-    .slice(0, MAX_HEADLINES)
-    .map((item) => ({
-      headline: truncate(item.headline, 110),
+    .slice(0, MAX_HEADLINES);
+
+  // Traduce los titulares EN→ES en paralelo (fallback al inglés si la traducción falla).
+  const headlines = await Promise.all(
+    selected.map(async (item) => ({
+      headline: await translateToSpanish(truncate(item.headline, 110)),
       source: typeof item.source === "string" ? item.source : null,
       url: typeof item.url === "string" ? item.url : null,
       datetimeUtc: new Date(item.datetime * 1000).toISOString(),
-    }));
+    })),
+  );
 
   return { ok: true, headlines };
 }
