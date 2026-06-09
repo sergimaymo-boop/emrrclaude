@@ -37,8 +37,11 @@ export async function sendTelegramMessage(text, env = {}) {
     }
 
     return { ok: true, messageId: payload.result?.message_id ?? null };
-  } catch {
-    return { ok: false, reason: "Telegram request failed or timed out" };
+  } catch (err) {
+    // Log the real error so silent failures (abort/timeout/network) are diagnosable
+    // in Vercel logs instead of vanishing behind a generic message.
+    console.error("[telegram] sendMessage failed:", err?.message ?? err);
+    return { ok: false, reason: `Telegram request failed: ${err?.message ?? "timeout/network"}` };
   } finally {
     clearTimeout(timeout);
   }

@@ -21,6 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger market-pulse endpoint (with retries)
+        # IMPORTANTE (footgun): si algún día configuras CRON_SECRET como env var en Vercel,
+        # el endpoint EXIGIRÁ 'Authorization: Bearer <secret>'. Para que este workflow no se
+        # rompa en silencio (401), añade ENTONCES un secret de repo llamado CRON_SECRET con
+        # el MISMO valor — el curl ya lo envía abajo. Si CRON_SECRET no existe (estado actual),
+        # el header va vacío y el endpoint lo ignora (no exige auth). No lo dejes a medias.
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           BASE="https://emrrclaude.vercel.app/api/cron/market-pulse"
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
@@ -28,9 +35,13 @@ jobs:
           else
             URL="${BASE}"
           fi
+          AUTH=()
+          if [ -n "${CRON_SECRET}" ]; then
+            AUTH=(-H "Authorization: Bearer ${CRON_SECRET}")
+          fi
           echo "Calling: ${URL}"
           for attempt in 1 2 3; do
-            RESP=$(curl -s --max-time 75 "${URL}" || echo '{"ok":false,"error":"curl_failed"}')
+            RESP=$(curl -s --max-time 75 "${AUTH[@]}" "${URL}" || echo '{"ok":false,"error":"curl_failed"}')
             echo "Attempt ${attempt} response: ${RESP}"
             if echo "${RESP}" | grep -q '"ok":true'; then
               echo "✅ Market pulse delivered (or already sent today)."
