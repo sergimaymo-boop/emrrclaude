@@ -20,11 +20,20 @@ jobs:
       - name: Deploy to Vercel (force, no cache)
         id: deploy
         run: |
+          # NO usar 'set -e' implícito aquí: capturamos el código y SIEMPRE imprimimos
+          # el output de Vercel para que un fallo (p.ej. límite de 12 funciones del plan
+          # Hobby) sea visible en los logs en vez de quedar oculto tras un exit 1 mudo.
+          set +e
           OUTPUT=$(vercel deploy --prod --force \
             --token=${{ secrets.VERCEL_TOKEN }} \
             --yes \
             2>&1)
+          CODE=$?
           echo "$OUTPUT"
+          if [ $CODE -ne 0 ]; then
+            echo "::error::Vercel deploy failed (exit ${CODE}). See output above."
+            exit $CODE
+          fi
           DEPLOY_URL=$(echo "$OUTPUT" | grep -o 'https://[a-zA-Z0-9_-]*\.vercel\.app' | grep -v 'emrrclaude\.vercel\.app' | head -1)
           if [ -z "$DEPLOY_URL" ]; then
             DEPLOY_URL=$(echo "$OUTPUT" | grep -o 'https://emrrclaude-[^[:space:]]*' | head -1)
