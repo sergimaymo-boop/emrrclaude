@@ -151,3 +151,34 @@ export function computeEntrySemaphore({ regime, indicatorsComposite, pullbackRis
 
   return { signal, composite, regimeScore, pullbackScoreInverted };
 }
+
+// ── Semáforo SOLO-INDICADORES (para el aviso de Telegram) ───────────────────
+// Decisión binaria invertir/esperar basada EXCLUSIVAMENTE en el composite ponderado
+// de los 6 indicadores de mercado en tiempo real (VIX·MOVE·HYG·VVIX·TNX·LQD), sin
+// régimen SPY ni pullback (no requiere scan). Umbral 55: por encima de neutral (50)
+// para no entrar en la duda — criterio prudente de gestión de riesgo.
+export function computeIndicatorsSemaphore(composite) {
+  return { signal: composite >= 55 ? "GREEN" : "RED", composite };
+}
+
+// Veredicto visual por indicador según su sub-score 0-100.
+export function indicatorVerdict(score) {
+  if (score >= 65) return { emoji: "🟢", tone: "favorable" };
+  if (score >= 40) return { emoji: "🟡", tone: "neutral" };
+  return { emoji: "🔴", tone: "adverso" };
+}
+
+// Análisis tipo "mejor inversor del mundo" — interpreta el conjunto de los 6
+// indicadores y da la conclusión accionable (invertir / esperar).
+export function investorAnalysis(composite, signal) {
+  if (signal === "GREEN") {
+    if (composite >= 72) {
+      return "Entorno de bajo riesgo: volatilidad contenida y crédito sólido. Las condiciones acompañan para mantener o abrir exposición a renta variable.";
+    }
+    return "Predominan las señales de apetito de riesgo, con algún foco de tensión puntual. Contexto favorable para entrar de forma selectiva y con stop de protección.";
+  }
+  if (composite >= 45) {
+    return "Señales encontradas con sesgo de cautela: el binomio riesgo/recompensa no compensa hoy. Prudente esperar confirmación antes de exponerse.";
+  }
+  return "Estrés de mercado: volatilidad elevada y/o deterioro del crédito. Lo prudente es esperar fuera del mercado hasta que las condiciones mejoren.";
+}

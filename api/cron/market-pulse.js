@@ -19,14 +19,11 @@
  *   3) Broad-market (SPY) pullback risk          — 25%
  */
 
-import { cascadeQuote, cascadeHistory } from "../_lib/providerCascade.js";
-import { calculateEma, calculateTechnicals } from "../_lib/technicalEngine.js";
+import { cascadeQuote } from "../_lib/providerCascade.js";
 import {
   computeIndicatorsComposite, indicatorsLabel,
-  computeBroadMarketPullbackRisk, pullbackLabel,
-  computeEntrySemaphore,
+  computeIndicatorsSemaphore, indicatorVerdict, investorAnalysis,
 } from "../_lib/marketPulse.js";
-import { classifyMonetaryCycle } from "../_lib/monetaryCycleEngine.js";
 import { fetchUsMarketNewsDigest } from "../_lib/newsDigest.js";
 import { sendTelegramMessage } from "../_lib/telegram.js";
 import { kvGet, kvSet } from "../_lib/kvStorage.js";
@@ -36,7 +33,6 @@ const APP_NAME = "EMRR 2.0 / Tendencias";
 // el envío con redundancia, pero solo se manda UN mensaje por día. ?force=true lo ignora.
 const SENT_KEY_PREFIX = "market_pulse_sent_";
 const ENDPOINT = "MARKET_PULSE_TELEGRAM";
-const BENCHMARK = "SPY.US";
 
 function getEnv() { return globalThis.process?.env ?? {}; }
 
@@ -59,29 +55,6 @@ function isAuthorizedCronCall(request, env) {
   return auth === `Bearer ${secret}`;
 }
 
-async function resolveMarketRegime(env) {
-  const result = await cascadeHistory(BENCHMARK, 260, {
-    TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
-  });
-
-  if (!result.ok || result.bars.length < 200) {
-    return { regime: "UNKNOWN", technicals: null, bars: [] };
-  }
-
-  const closes = result.bars.map((bar) => bar.close).filter(Number.isFinite);
-  const ema200 = calculateEma(closes, 200);
-  const lastClose = closes.at(-1);
-
-  if (!ema200 || !lastClose) {
-    return { regime: "UNKNOWN", technicals: null, bars: result.bars };
-  }
-
-  const regime = lastClose > ema200 ? "BULLISH" : "BEARISH";
-  const tech = calculateTechnicals(result.bars, result.bars);
-
-  return { regime, technicals: tech.ok ? tech.technicals : null, bars: result.bars };
-}
-
 function pct(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -101,33 +74,30 @@ function formatCanaryTime(isoUtc) {
   }
 }
 
-function buildMessage({ semaphore, regime, indicators, pullback, news, monetaryCycle, generatedAtUtc }) {
+function buildMessage({ semaphore, indicators, indicatorRows, news, generatedAtUtc }) {
   const isGreen = semaphore.signal === "GREEN";
+  // El semáforo va PRIMERO para que se lea en la notificación push sin abrir Telegram.
   const headline = isGreen
-    ? "🟢 VERDE — ENTRAR / MANTENER POSICIONES"
-    : "🔴 ROJO — NO ENTRAR / FUERA DE MERCADO";
-
-  const regimeText = regime === "BULLISH" ? "Alcista (SPY > EMA200)"
-    : regime === "BEARISH" ? "Bajista (SPY < EMA200)"
-    : "Sin datos";
+    ? "🟢 VERDE — INVERTIR"
+    : "🔴 ROJO — ESPERAR";
 
   const lines = [];
   lines.push(`<b>${headline}</b>`);
-  lines.push(`Score combinado: <b>${semaphore.composite}/100</b>`);
+  lines.push(`Análisis de indicadores en tiempo real · <b>${indicators.composite}/100</b> — ${indicatorsLabel(indicators.composite)}`);
   lines.push("");
-  lines.push(`📊 Régimen de mercado: <b>${regimeText}</b>`);
-  lines.push(`📈 Indicadores ponderados (VIX 30·MOVE 20·HYG 20·VVIX 15·TNX 10·LQD 5): <b>${indicators.composite}/100</b> — ${indicatorsLabel(indicators.composite)}`);
-  lines.push(`⚠️ Riesgo de pullback S&amp;P 500: <b>${pullbackLabel(pullback.level)}</b>${pullback.score != null ? ` (${pullback.score}/100)` : ""}`);
-  if (monetaryCycle && monetaryCycle.hasData) {
-    const cycleEmoji = monetaryCycle.phase === 'EASING' ? '📉' : monetaryCycle.phase === 'TIGHTENING' ? '📈' : '➡️';
-    lines.push(`${cycleEmoji} Ciclo monetario: <b>${monetaryCycle.label}</b> (Score ${monetaryCycle.score}/100)${monetaryCycle.phase === 'TIGHTENING' ? ' — <b>precaución: riesgo whipsaw</b>' : monetaryCycle.phase === 'EASING' ? ' — entorno favorable para momentum' : ''}`);
-  }
-  if (pullback.reasons?.length) {
-    lines.push(`   ↳ ${pullback.reasons.map(escapeHtml).join(" · ")}`);
+  // Análisis "mejor inversor del mundo" — conclusión accionable.
+  lines.push(`💡 ${escapeHtml(investorAnalysis(indicators.composite, semaphore.signal))}`);
+  lines.push("");
+
+  // Los 6 indicadores ponderados, en tiempo real, con su veredicto.
+  lines.push("📊 <b>Indicadores de mercado</b> (ponderados):");
+  for (const row of indicatorRows) {
+    const v = indicatorVerdict(row.score);
+    lines.push(`${v.emoji} <b>${escapeHtml(row.label)}</b> ${escapeHtml(row.value)} · ${escapeHtml(row.desc)}`);
   }
 
   lines.push("");
-  lines.push("📰 <b>Noticias clave EE.UU.</b> (últimas ~20h):");
+  lines.push("📰 <b>Noticias clave EE.UU. / Europa</b> (en español):");
   if (news.ok && news.headlines.length > 0) {
     for (const item of news.headlines) {
       const sourceTag = item.source ? ` [${escapeHtml(item.source)}]` : "";
@@ -138,7 +108,7 @@ function buildMessage({ semaphore, regime, indicators, pullback, news, monetaryC
   }
 
   lines.push("");
-  lines.push(`🕐 Generado: ${formatCanaryTime(generatedAtUtc)} (Canarias)`);
+  lines.push(`🕐 ${formatCanaryTime(generatedAtUtc)} (Canarias)`);
 
   return lines.join("\n");
 }
@@ -192,10 +162,11 @@ export default async function handler(request, response) {
 
   const QUOTE_FALLBACK = { ok: false, reason: "cron-timeout" };
   const NEWS_FALLBACK  = { ok: false, reason: "cron-timeout", headlines: [] };
-  const REGIME_FALLBACK = { regime: "UNKNOWN", technicals: null, bars: [] };
 
-  const [regimeResult, vixQ, moveQ, hygQ, vvixQ, tnxQ, lqdQ, news] = await Promise.all([
-    withTimeout(resolveMarketRegime(env),             CALL_TIMEOUT_MS, REGIME_FALLBACK),
+  // SOLO los 6 indicadores de mercado en tiempo real + noticias. Sin régimen SPY ni
+  // pullback (no requieren scan ni historia) — el análisis es exclusivamente sobre
+  // estos 6 índices, ponderados. Esto además acelera el cron (sin fetch de 260 barras).
+  const [vixQ, moveQ, hygQ, vvixQ, tnxQ, lqdQ, news] = await Promise.all([
     withTimeout(cascadeQuote("VIX.INDX",   cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
     withTimeout(cascadeQuote("MOVE.INDX",  cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
     withTimeout(cascadeQuote("HYG.US",     cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
@@ -215,23 +186,29 @@ export default async function handler(request, response) {
   };
 
   const indicators = computeIndicatorsComposite(indicatorInputs);
-  const pullback = computeBroadMarketPullbackRisk(regimeResult.technicals);
-  const semaphore = computeEntrySemaphore({
-    regime: regimeResult.regime,
-    indicatorsComposite: indicators.composite,
-    pullbackRisk: pullback,
-  });
+  // Semáforo binario invertir/esperar SOLO con el composite ponderado de los 6 índices.
+  const semaphore = computeIndicatorsSemaphore(indicators.composite);
 
-  // ── Ciclo monetario (sin llamada extra — usa datos ya fetched) ────────────
-  const monetaryCycle = classifyMonetaryCycle({
-    tnxChangePercent: tnxQ.ok ? pct(tnxQ.changePercent) : null,
-    hygChangePercent: hygQ.ok ? pct(hygQ.changePercent) : null,
-    vixLevel:         vixQ.ok ? pct(vixQ.price) : null,
-    moveLevel:        moveQ.ok ? pct(moveQ.price) : null,
-  });
+  // Valores en tiempo real para mostrar cada indicador con su veredicto.
+  const fmtLvl = (q) => (q.ok && Number.isFinite(q.price)) ? q.price.toFixed(2) : "—";
+  const fmtChg = (q) => (q.ok && Number.isFinite(q.changePercent)) ? `${q.changePercent >= 0 ? "+" : ""}${q.changePercent.toFixed(2)}%` : "—";
+  const fmtTnx = (q) => {
+    if (!q.ok) return "—";
+    const lvl = Number.isFinite(q.price) ? `${q.price.toFixed(2)}%` : "—";
+    const chg = Number.isFinite(q.changePercent) ? ` (${q.changePercent >= 0 ? "+" : ""}${q.changePercent.toFixed(2)}%)` : "";
+    return `${lvl}${chg}`;
+  };
+  const indicatorRows = [
+    { label: "VIX",  value: fmtLvl(vixQ),  score: indicators.scores.VIX,  desc: "volatilidad S&P 500" },
+    { label: "MOVE", value: fmtLvl(moveQ), score: indicators.scores.MOVE, desc: "volatilidad de bonos" },
+    { label: "HYG",  value: fmtChg(hygQ),  score: indicators.scores.HYG,  desc: "crédito high-yield" },
+    { label: "VVIX", value: fmtLvl(vvixQ), score: indicators.scores.VVIX, desc: "volatilidad de la volatilidad" },
+    { label: "TNX",  value: fmtTnx(tnxQ),  score: indicators.scores.TNX,  desc: "bono 10 años EE.UU." },
+    { label: "LQD",  value: fmtChg(lqdQ),  score: indicators.scores.LQD,  desc: "crédito investment-grade" },
+  ];
 
   const generatedAtUtc = new Date().toISOString();
-  const message = buildMessage({ semaphore, regime: regimeResult.regime, indicators, pullback, news, monetaryCycle, generatedAtUtc });
+  const message = buildMessage({ semaphore, indicators, indicatorRows, news, generatedAtUtc });
 
   const sendResult = await sendTelegramMessage(message, env);
 
@@ -245,10 +222,7 @@ export default async function handler(request, response) {
     ok: sendResult.ok,
     telegram: sendResult,
     semaphore,
-    regime: regimeResult.regime,
     indicators,
-    pullback,
-    monetaryCycle,
     indicatorInputs,
     newsStatus: news.ok ? "OK" : `UNAVAILABLE (${news.reason})`,
     headlinesCount: news.ok ? news.headlines.length : 0,
