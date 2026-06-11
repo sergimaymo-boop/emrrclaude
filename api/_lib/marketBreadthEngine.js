@@ -242,8 +242,11 @@ export function computeBreadthVerdict(agg, opts = {}) {
   if (pctAboveMA50 >= 75) alerts.push(`Amplitud sobrecomprada: ${pctAboveMA50.toFixed(0)}% sobre la MA50 — históricamente seguido de retornos más bajos a ~1-2 meses.`);
   if (pctAboveMA50 <= 30) alerts.push(`Amplitud en sobreventa: solo ${pctAboveMA50.toFixed(0)}% sobre la MA50 — sesgo de rebote a ~1-2 meses.`);
   if (distributionPct >= 35) alerts.push(`Presión vendedora elevada: ${distributionPct.toFixed(0)}% de tickers con ventas de alto volumen.`);
-  if (opts.spyBullish === false) alerts.push(`Régimen primario bajista (SPY < EMA200) — la reversión al alza es menos fiable en tendencia bajista.`);
-  if (opts.spyBullish === null) alerts.push(`Régimen del SPY no disponible (fallo de datos del benchmark).`);
+  // Régimen primario: SPY vs EMA200 si está disponible; si no (Yahoo bloquea la IP de Vercel),
+  // fallback robusto al % del PROPIO universo sobre su MA200 (≥50% = alcista) — siempre disponible,
+  // sin depender del SPY y sin la alerta de "SPY no disponible".
+  const regimeBullish = (opts.spyBullish === true || opts.spyBullish === false) ? opts.spyBullish : (pctAboveMA200 >= 50);
+  if (regimeBullish === false) alerts.push(`Régimen primario bajista (mercado bajo su MA200) — la reversión al alza es menos fiable.`);
 
   return {
     score,

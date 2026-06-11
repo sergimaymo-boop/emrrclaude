@@ -34,7 +34,7 @@ import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
 import { getRegionalMarketStates } from "../utils/marketHours";
-import { shareTop8 } from "../utils/export";
+import { shareFullExport } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 import {
   type MarketRegime,
@@ -757,9 +757,14 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   async function handleCopyTop8() {
-    const result = await shareTop8(top8, (text) => setExportText(text));
+    // Exporta los 28 tickers de los 3 motores (TOP 8 + Rally + Watchlist de amplitud) con TODOS
+    // sus datos y temporalidades, vía la hoja de compartir de iOS (email/WhatsApp/AirDrop/Notas/Archivos).
+    const result = await shareFullExport(
+      top8, rallyState.top10 ?? [], marketBreadth.topTickers ?? [],
+      marketBreadth, marketRisk, (text) => setExportText(text),
+    );
     if (result === "shared") showToast("Compartido correctamente", "success");
-    else if (result === "copied") showToast("Copiado al portapapeles", "success");
+    else if (result === "copied") showToast("Copiado al portapapeles (28 tickers)", "success");
     else showToast("Listo para copiar manualmente", "info");
   }
 
