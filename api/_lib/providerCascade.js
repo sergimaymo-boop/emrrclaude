@@ -340,34 +340,70 @@ async function fetchTwelveDataHistory(eodhdSymbol, lookbackDays, apiKey) {
 
 // ─── Historical bar fetchers ──────────────────────────────────────────────────
 
+// FMP daily EOD history — 2ª red REAL de histórico (US + EU). Requiere FMP_API_KEY.
+// Inactivo mientras la clave esté vacía (cascadeHistory solo lo invoca si hay clave).
+async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
+  const symbol = toFMPSymbol(eodhdSymbol);
+  if (!symbol) return { ok: false, provider: "FMP", reason: `No FMP mapping for ${eodhdSymbol}` };
+
+  const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
+  const r = await fetchJson(url);
+  if (!r.ok) return { ok: false, provider: "FMP", reason: r.reason };
+
+  // /stable devuelve un array de barras; toleramos también la forma legacy {historical:[...]}.
+  const rows = Array.isArray(r.data) ? r.data
+    : Array.isArray(r.data?.historical) ? r.data.historical : null;
+  if (!rows) return { ok: false, provider: "FMP", reason: r.data?.["Error Message"] ?? "No historical array" };
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - lookbackDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const bars = rows
+    .map(row => ({
+      date: row.date?.slice(0, 10) ?? "",
+      open:   finiteOrNull(row.open),
+      high:   finiteOrNull(row.high),
+      low:    finiteOrNull(row.low),
+      close:  finiteOrNull(row.adjClose ?? row.close),
+      volume: finiteOrNull(row.volume) ?? 0,
+    }))
+    .filter(b => b.date && b.date >= cutoffStr && b.close && b.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (bars.length === 0) return { ok: false, provider: "FMP", reason: "No valid bars" };
+  return { ok: true, provider: "FMP", bars };
+}
+
 async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
   const symbol = toYahooSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Yahoo", reason: `No Yahoo mapping for ${eodhdSymbol}` };
 
   const range = lookbackDays > 180 ? "1y" : lookbackDays > 90 ? "6mo" : "3mo";
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
-  const r = await fetchJson(url);
-  if (!r.ok) return { ok: false, provider: "Yahoo", reason: r.reason };
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
 
-  const result = r.data?.chart?.result?.[0];
-  if (!result) return { ok: false, provider: "Yahoo", reason: "No chart result" };
-
-  const ts = result.timestamp ?? [];
-  const q = result.indicators?.quote?.[0] ?? {};
-
-  const bars = ts
-    .map((t, i) => ({
-      date: new Date(t * 1000).toISOString().slice(0, 10),
-      open: finiteOrNull(q.open?.[i]),
-      high: finiteOrNull(q.high?.[i]),
-      low: finiteOrNull(q.low?.[i]),
-      close: finiteOrNull(q.close?.[i]),
-      volume: finiteOrNull(q.volume?.[i]) ?? 0,
-    }))
-    .filter(b => b.close && b.close > 0);
-
-  if (bars.length === 0) return { ok: false, provider: "Yahoo", reason: "No valid bars" };
-  return { ok: true, provider: "Yahoo", bars };
+  // Punto único Yahoo: ante fallo/429/timeout, reintentar en el host alterno query2
+  // (red de seguridad gratuita, sin clave) antes de darse por vencido.
+  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
+    const r = await fetchJson(`https://${host}${path}`);
+    if (!r.ok) continue;
+    const result = r.data?.chart?.result?.[0];
+    if (!result) continue;
+    const ts = result.timestamp ?? [];
+    const q = result.indicators?.quote?.[0] ?? {};
+    const bars = ts
+      .map((t, i) => ({
+        date: new Date(t * 1000).toISOString().slice(0, 10),
+        open: finiteOrNull(q.open?.[i]),
+        high: finiteOrNull(q.high?.[i]),
+        low: finiteOrNull(q.low?.[i]),
+        close: finiteOrNull(q.close?.[i]),
+        volume: finiteOrNull(q.volume?.[i]) ?? 0,
+      }))
+      .filter(b => b.close && b.close > 0);
+    if (bars.length > 0) return { ok: true, provider: "Yahoo", bars };
+  }
+  return { ok: false, provider: "Yahoo", reason: "No valid bars (query1+query2)" };
 }
 
 async function fetchStooqHistory(eodhdSymbol, lookbackDays) {
@@ -377,6 +413,12 @@ async function fetchStooqHistory(eodhdSymbol, lookbackDays) {
   const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=d`;
   const r = await fetchText(url);
   if (!r.ok) return { ok: false, provider: "Stooq", reason: r.reason };
+
+  // Stooq sirve un reto anti-bot (HTML/JS) en server-side en vez del CSV → detectarlo honestamente
+  // para que triedProviders refleje el fallo real (no "0 barras" silencioso).
+  if (/^\s*</.test(r.text) || /<!doctype|<script|<html/i.test(r.text)) {
+    return { ok: false, provider: "Stooq", reason: "Stooq anti-bot challenge (HTML, not CSV)" };
+  }
 
   const lines = r.text.trim().split("\n").filter(l => l && !l.startsWith("Date"));
   if (lines.length === 0) return { ok: false, provider: "Stooq", reason: "No data rows" };
@@ -575,6 +617,9 @@ export async function raceBenchmarkHistory(lookbackDays = 260, env = {}) {
   if (env.TWELVE_DATA_API_KEY) {
     promises.push(fetchTwelveDataHistory(symbol, lookbackDays, env.TWELVE_DATA_API_KEY));
   }
+  if (env.FMP_API_KEY) {
+    promises.push(fetchFMPHistory(symbol, lookbackDays, env.FMP_API_KEY));
+  }
   promises.push(fetchYahooHistory(symbol, lookbackDays));
   promises.push(fetchStooqHistory(symbol, lookbackDays));
 
@@ -627,7 +672,14 @@ export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) 
     if (yahoo.ok) return { ...yahoo, triedProviders: tried };
   }
 
-  // 3. Stooq last resort
+  // 3. FMP (clave) — 2ª red REAL de histórico US+EU. Inactivo si FMP_API_KEY está vacía.
+  if (env.FMP_API_KEY) {
+    const fmp = await fetchFMPHistory(eodhdSymbol, lookbackDays, env.FMP_API_KEY);
+    tried.push({ provider: "FMP", ok: fmp.ok, reason: fmp.reason });
+    if (fmp.ok) return { ...fmp, triedProviders: tried };
+  }
+
+  // 4. Stooq last resort
   const stooq = await fetchStooqHistory(eodhdSymbol, lookbackDays);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
   if (stooq.ok) return { ...stooq, triedProviders: tried };

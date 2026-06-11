@@ -171,11 +171,13 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
     };
   }
 
-  // Cascade: EODHD (primary) → TwelveData+Yahoo (parallel) → Stooq
+  // Cascade: EODHD → TwelveData+Yahoo (parallel) → FMP → Stooq.
+  // FMP es la 2ª red real de histórico; se activa en cuanto FMP_API_KEY tenga valor (hoy vacía).
   const env = getEnv();
   const result = await cascadeHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS, {
     EODHD_API_KEY:       isConfiguredSecret(env.EODHD_API_KEY)       ? env.EODHD_API_KEY       : null,
     TWELVE_DATA_API_KEY: isConfiguredSecret(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,
+    FMP_API_KEY:         isConfiguredSecret(env.FMP_API_KEY)         ? env.FMP_API_KEY         : null,
   });
 
   if (result.ok && result.bars.length > 0) {

@@ -34,6 +34,7 @@ export async function fetchSpyBars() {
     const result = await raceBenchmarkHistory(270, {
       EODHD_API_KEY:       env.EODHD_API_KEY,
       TWELVE_DATA_API_KEY: env.TWELVE_DATA_API_KEY,
+      FMP_API_KEY:         env.FMP_API_KEY,
     });
     if (result.ok && result.bars.length >= 61) {
       saveBenchmarkBars(result.bars); // fire-and-forget
