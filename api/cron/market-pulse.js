@@ -214,7 +214,9 @@ export default async function handler(request, response) {
 
   // Marca el día como enviado SOLO si el envío fue exitoso (TTL 26h) — así si falla,
   // el otro disparador puede reintentar; si tiene éxito, no se duplica.
-  if (sendResult.ok) {
+  // IMPORTANTE: las llamadas con ?force=true (pruebas/auditoría) NO marcan el día, para
+  // que una prueba manual nunca bloquee el disparo automático real de ese día.
+  if (sendResult.ok && !force) {
     await kvSet(todayKey, generatedAtUtc, 26 * 3600).catch(() => {});
   }
 
