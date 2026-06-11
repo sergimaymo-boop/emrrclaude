@@ -229,3 +229,58 @@ export function computeBreadthVerdict(agg, opts = {}) {
 }
 
 function round1(v) { return isNum(v) ? Math.round(v * 10) / 10 : 0; }
+
+/**
+ * FEEDBACK-LOOP (auto-optimización AUDITADA, no auto-aplicada).
+ * Contrasta cada veredicto pasado contra el retorno REAL del SPY `forwardSessions`
+ * ciclos después (ground-truth) → hit-rate por tipo de veredicto. Devuelve un informe
+ * + una RECOMENDACIÓN de recalibración; NUNCA cambia los pesos por su cuenta (el usuario
+ * valida y aplica). Así el motor "aprende" de forma transparente y auditable.
+ * @param {Array<{verdict:string, spyClose:number}>} history  histórico append-only
+ */
+export function computeBreadthFeedback(history, opts = {}) {
+  const fwd = opts.forwardSessions ?? 5;
+  const h = (history ?? []).filter((r) => isNum(r?.spyClose) && r?.verdict);
+  if (h.length < fwd + 3) {
+    return { available: false, reason: "INSUFFICIENT_HISTORY", samples: h.length, needed: fwd + 3, forwardSessions: fwd };
+  }
+
+  const buckets = {
+    BULLISH: { hit: 0, total: 0 },
+    DETERIORATING: { hit: 0, total: 0 },
+    PULLBACK_IMMINENT: { hit: 0, total: 0 },
+  };
+  let overallHit = 0, overallTotal = 0;
+
+  for (let i = 0; i + fwd < h.length; i++) {
+    const cur = h[i], future = h[i + fwd];
+    if (!isNum(cur.spyClose) || !isNum(future.spyClose) || cur.spyClose === 0) continue;
+    const ret = ((future.spyClose - cur.spyClose) / cur.spyClose) * 100; // % forward SPY
+    const b = buckets[cur.verdict];
+    if (!b) continue;
+    // Acierto: ALCISTA acierta si el SPY sube; PULLBACK si baja; DETERIORO si no hay subida fuerte.
+    const hit = cur.verdict === "BULLISH" ? ret > 0
+      : cur.verdict === "PULLBACK_IMMINENT" ? ret < 0
+      : ret < 0.5;
+    b.total += 1; overallTotal += 1;
+    if (hit) { b.hit += 1; overallHit += 1; }
+  }
+
+  const rate = (b) => (b.total > 0 ? Math.round((b.hit / b.total) * 100) : null);
+  const overall = overallTotal > 0 ? Math.round((overallHit / overallTotal) * 100) : null;
+
+  let recommendation = "Hit-rate dentro de lo esperado — mantener los pesos actuales.";
+  if (overall != null && overall < 50) recommendation = "Hit-rate bajo (<50%): revisar pesos/umbrales antes de fiarse del veredicto. Recalibración recomendada (manual, auditada).";
+  else if (overall != null && overall >= 65) recommendation = "Hit-rate sólido (≥65%): el motor anticipa bien; mantener configuración.";
+
+  return {
+    available: true,
+    forwardSessions: fwd,
+    samplesEvaluated: overallTotal,
+    overallHitRate: overall,
+    hitRate: { BULLISH: rate(buckets.BULLISH), DETERIORATING: rate(buckets.DETERIORATING), PULLBACK_IMMINENT: rate(buckets.PULLBACK_IMMINENT) },
+    counts: buckets,
+    recommendation,
+    note: "Recalibración AUDITADA: este informe NO modifica los pesos. El ajuste lo aprueba el usuario.",
+  };
+}

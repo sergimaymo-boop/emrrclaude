@@ -23,7 +23,7 @@ import { fetchSpyBars } from "./_lib/rallyBatchProcessor.js";
 import { calculateTechnicals, calculateEma } from "./_lib/technicalEngine.js";
 import {
   computeTickerBreadthSignals, emptyBreadthAggregator, foldTickerSignals,
-  mergeAggregators, computeBreadthVerdict, BREADTH_WEIGHTS,
+  mergeAggregators, computeBreadthVerdict, computeBreadthFeedback, BREADTH_WEIGHTS,
 } from "./_lib/marketBreadthEngine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
@@ -215,9 +215,18 @@ async function handleGet(req, res) {
   return sendJson(res, 200, { ...cached, fromCache: true });
 }
 
+// ─── feedback (hit-rate auditado, no auto-aplica pesos) ──────────────────────
+async function handleFeedback(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  const history = await kvGet(HISTORY_KEY).catch(() => null);
+  const feedback = computeBreadthFeedback(Array.isArray(history) ? history : []);
+  return sendJson(res, 200, { ok: true, feedback, historySize: Array.isArray(history) ? history.length : 0 });
+}
+
 export default async function handler(req, res) {
   const action = req.query?.action ?? req.url?.split("action=")[1]?.split("&")[0] ?? "";
   if (action === "start") return handleStart(req, res);
   if (action === "continue") return handleContinue(req, res);
+  if (action === "feedback") return handleFeedback(req, res);
   return handleGet(req, res);
 }
