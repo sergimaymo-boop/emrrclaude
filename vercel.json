@@ -50,6 +50,9 @@
   "functions": {
     "api/cron/market-pulse.js": {
       "maxDuration": 60
+    },
+    "api/market-breadth.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
