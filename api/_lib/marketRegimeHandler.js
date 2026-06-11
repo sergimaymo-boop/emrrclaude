@@ -9,8 +9,8 @@
  * The internal numbers (SPY price, EMA200 value) are NOT exposed to the
  * dashboard — only the regime label, per spec.
  */
-import { cascadeHistory } from "./_lib/providerCascade.js";
-import { calculateEma } from "./_lib/technicalEngine.js";
+import { cascadeHistory } from "./providerCascade.js";
+import { calculateEma } from "./technicalEngine.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const ENDPOINT = "MARKET_REGIME";
@@ -27,7 +27,7 @@ function sendJson(res, status, payload) {
   res.status(status).json({ ...payload, app: APP_NAME, endpoint: ENDPOINT, timestampUtc: new Date().toISOString() });
 }
 
-export default async function handler(req, res) {
+export async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   if (req.method !== "GET") {

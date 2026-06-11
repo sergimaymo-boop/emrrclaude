@@ -8,9 +8,9 @@
  * Caché Redis: 1 hora (el ciclo monetario no cambia en minutos).
  */
 
-import { cascadeQuote } from './_lib/providerCascade.js';
-import { classifyMonetaryCycle } from './_lib/monetaryCycleEngine.js';
-import { kvGet, kvSet } from './_lib/kvStorage.js';
+import { cascadeQuote } from './providerCascade.js';
+import { classifyMonetaryCycle } from './monetaryCycleEngine.js';
+import { kvGet, kvSet } from './kvStorage.js';
 
 const CACHE_KEY       = 'monetary_cycle_v2';
 const CACHE_TTL_SEC   = 3600; // 1 hora
@@ -31,7 +31,7 @@ function isConfiguredSecret(v) {
   return !['your_', '_here', 'placeholder'].some(p => n.includes(p));
 }
 
-export default async function handler(request, response) {
+export async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
   const env = getEnv();
 

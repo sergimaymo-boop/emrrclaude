@@ -1,4 +1,4 @@
-import { cascadeQuote } from "./_lib/providerCascade.js";
+import { cascadeQuote } from "./providerCascade.js";
 
 const ALLOWED_SYMBOLS = ["SPY", "LQD", "HYG", "VIX", "VVIX", "TNX", "MOVE"];
 
@@ -256,7 +256,7 @@ async function getControlledQuote(symbol) {
   });
 }
 
-export default async function handler(request, response) {
+export async function handler(request, response) {
   // Indicadores de mercado EN VIVO — nunca cachear.
   if (response && typeof response.setHeader === "function") {
     response.setHeader("Cache-Control", "no-store");

@@ -41,7 +41,11 @@
     { "source": "/api/rally-scan/last",        "destination": "/api/rally-scan?action=last"        },
     { "source": "/api/scan-snapshot/start",    "destination": "/api/scan-snapshot?action=start"    },
     { "source": "/api/scan-snapshot/continue", "destination": "/api/scan-snapshot?action=continue" },
-    { "source": "/api/scan-snapshot/last",     "destination": "/api/scan-snapshot?action=last"     }
+    { "source": "/api/scan-snapshot/last",     "destination": "/api/scan-snapshot?action=last"     },
+    { "source": "/api/fear-greed",             "destination": "/api/market-data?source=fear-greed"        },
+    { "source": "/api/market-regime",          "destination": "/api/market-data?source=market-regime"    },
+    { "source": "/api/monetary-cycle",         "destination": "/api/market-data?source=monetary-cycle"   },
+    { "source": "/api/master-indicators",      "destination": "/api/market-data?source=master-indicators" }
   ],
   "functions": {
     "api/cron/market-pulse.js": {

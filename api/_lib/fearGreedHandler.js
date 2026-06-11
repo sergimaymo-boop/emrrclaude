@@ -7,7 +7,7 @@
  * VIX (25%), SPY (15%), HYG (15%), MOVE (15%), VVIX (10%), LQD (10%), TNX (10%)
  */
 
-import { cascadeQuote } from "./_lib/providerCascade.js";
+import { cascadeQuote } from "./providerCascade.js";
 
 const RATING_LABELS = {
   EXTREME_FEAR: "Miedo Extremo",
@@ -140,7 +140,7 @@ function toRating(score) {
   return "EXTREME_GREED";
 }
 
-export default async function handler(req, res) {
+export async function handler(req, res) {
   // Indicador de mercado EN VIVO — nunca cachear (ni navegador ni edge).
   res.setHeader("Cache-Control", "no-store");
   try {
