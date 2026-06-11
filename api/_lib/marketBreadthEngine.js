@@ -413,7 +413,7 @@ export function computeTickerRankFeatures(bars) {
     emaSlope: isNum(ema20) && isNum(ema20p) && ema20p !== 0 ? ema20 / ema20p - 1 : 0,
     pbUptrend: up * Math.max(0, 50 - r), aboveMA200: up,
     goldenCross: (isNum(ema50) && isNum(ema200) && ema50 > ema200) ? 1 : 0,
-    qualMom: up * ret60, close: last,
+    qualMom: up * ret60, close: last, prevClose: closes.at(-2) ?? null,
   };
 }
 

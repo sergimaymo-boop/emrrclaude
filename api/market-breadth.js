@@ -136,21 +136,35 @@ async function enrichTopRank(topRank) {
     const uni = await buildUniverseResponse({ includeFullAssets: true });
     nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.companyName ?? a.Name ?? a.providerSymbol]));
   } catch { /* fallback al símbolo */ }
+  const r2 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
   const r3 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
   const pc = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 1000) / 10 : null); // fracción → %
-  return top.map((c) => ({
-    symbol: c.sym,
-    name: nameMap.get(c.sym) ?? c.sym,
-    probUp: Math.round((c.prob ?? 0) * 100),
-    score: c.score,
-    features: {
-      ret20: pc(c.ft.ret20), ret60: pc(c.ft.ret60), rsi14: r3(c.ft.rsi14),
-      distMA50: pc(c.ft.distMA50), distMA200: pc(c.ft.distMA200),
-      dist52H: pc(c.ft.dist52H), dist52L: pc(c.ft.dist52L),
-      atrPct: pc(c.ft.atrPct), rvol: r3(c.ft.rvol),
-      aboveMA200: c.ft.aboveMA200 === 1, lastClose: r3(c.ft.close),
-    },
-  }));
+  return top.map((c) => {
+    const price = c.ft.close;
+    const prev = c.ft.prevClose;
+    const pctChange = (Number.isFinite(price) && Number.isFinite(prev) && prev > 0) ? r2((price / prev - 1) * 100) : null;
+    const atrPctVal = Number.isFinite(c.ft.atrPct) ? c.ft.atrPct * 100 : null; // ATR diario en %
+    // Trailing stops desde ATR: mínimo 0.65× · medio 1× · ampliado 1.45× (% de distancia + nivel de precio).
+    const trail = (mult) => (atrPctVal && Number.isFinite(price))
+      ? { pct: r2(atrPctVal * mult), price: r2(price * (1 - (atrPctVal * mult) / 100)) }
+      : null;
+    return {
+      symbol: c.sym,
+      name: nameMap.get(c.sym) ?? c.sym,
+      probUp: Math.round((c.prob ?? 0) * 100),
+      score: c.score,
+      price: r2(price),
+      pctChange,
+      trailing: { min: trail(0.65), med: trail(1.0), wide: trail(1.45) },
+      features: {
+        ret20: pc(c.ft.ret20), ret60: pc(c.ft.ret60), rsi14: r3(c.ft.rsi14),
+        distMA50: pc(c.ft.distMA50), distMA200: pc(c.ft.distMA200),
+        dist52H: pc(c.ft.dist52H), dist52L: pc(c.ft.dist52L),
+        atrPct: pc(c.ft.atrPct), rvol: r3(c.ft.rvol),
+        aboveMA200: c.ft.aboveMA200 === 1, lastClose: r2(price),
+      },
+    };
+  });
 }
 
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).

@@ -27,11 +27,15 @@ export interface RankTickerFeatures {
   atrPct: number | null; rvol: number | null;
   aboveMA200: boolean; lastClose: number | null;
 }
+export interface TrailingLevel { pct: number | null; price: number | null; }
 export interface RankTicker {
   symbol: string;
   name: string;
   probUp: number;
   score: number;
+  price?: number | null;
+  pctChange?: number | null;
+  trailing?: { min: TrailingLevel | null; med: TrailingLevel | null; wide: TrailingLevel | null };
   features: RankTickerFeatures;
 }
 

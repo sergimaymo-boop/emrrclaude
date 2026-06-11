@@ -15,10 +15,18 @@ interface Props {
 }
 
 const fmtPc = (v: number | null | undefined) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "—");
+const fmtNum = (v: number | null | undefined, d = 2) => (typeof v === "number" ? v.toFixed(d) : "—");
+const TICKER_RE = /\.[A-Z]+$/;
+const MARKETS: Record<string, string> = {
+  US: "NASDAQ/NYSE", XETRA: "Xetra", PA: "Euronext París", AS: "Euronext Ámst.",
+  MI: "Borsa Italiana", SW: "SIX Suiza", LSE: "Londres", BR: "Euronext Brus.", LS: "Euronext Lisboa",
+};
+const tickerOf = (s: string) => s.replace(TICKER_RE, "");
+const marketOf = (s: string) => { const suf = s.split(".")[1] ?? ""; return MARKETS[suf] ?? suf ?? "—"; };
+const pctColor = (v: number | null | undefined) => (typeof v !== "number" ? "#94a3b8" : v > 0 ? "#34d399" : v < 0 ? "#f87171" : "#94a3b8");
 
 // Watchlist de candidatos de rebote (sobreventa) — top 10 del factor model per-ticker.
-// Edge MODESTO (~60%, IC ~0.01): screener, NO recomendación. Toggle lista simple / detalle
-// desplegable por ticker.
+// Edge MODESTO (~60%, IC ~0.01): screener, NO recomendación. Toggle lista simple / detalle.
 function RankWatchlist({ tickers, horizon, baseUp, isNarrow }: {
   tickers: RankTicker[]; horizon?: number; baseUp?: number; isNarrow: boolean;
 }) {
@@ -46,51 +54,86 @@ function RankWatchlist({ tickers, horizon, baseUp, isNarrow }: {
         Edge modesto (screener, no recomendación de compra).
       </div>
 
+      {/* Cabecera de columnas (estilo Bloomberg) */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "20px 1fr 58px 58px 34px",
+        gap: 6, padding: "0 0 3px", borderBottom: "1px solid rgba(255,255,255,0.10)",
+        fontSize: 7.5, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em",
+      }}>
+        <span>#</span><span>Ticker · Mercado</span>
+        <span style={{ textAlign: "right" }}>% día</span>
+        <span style={{ textAlign: "right" }}>Precio</span>
+        <span style={{ textAlign: "right" }}>Score</span>
+      </div>
+
       {tickers.map((t, i) => {
-        const isOpen = open === t.symbol;
+        const isOpen = !simplified && open === t.symbol;
         return (
-          <div key={t.symbol} style={{ marginBottom: simplified ? 0 : 2 }}>
+          <div key={t.symbol} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
             <div
               onClick={() => !simplified && setOpen((o) => (o === t.symbol ? null : t.symbol))}
               style={{
-                display: "grid",
-                gridTemplateColumns: simplified ? "20px 1fr 48px" : "20px 64px 1fr 52px 16px",
-                alignItems: "center", gap: 7, padding: simplified ? "2px 0" : "5px 0",
+                display: "grid", gridTemplateColumns: "20px 1fr 58px 58px 34px",
+                alignItems: "center", gap: 6, padding: "5px 0",
                 cursor: simplified ? "default" : "pointer",
-                borderBottom: simplified ? "none" : "1px solid rgba(255,255,255,0.04)",
-                fontSize: 11,
               }}
             >
-              <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9 }}>#{i + 1}</span>
-              <span style={{ fontWeight: 800, color: "#e2e8f0", fontVariantNumeric: "tabular-nums" }}>{t.symbol.replace(/\.[A-Z]+$/, "")}</span>
-              {!simplified && (
-                <span style={{ color: "#94a3b8", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {isNarrow ? "" : t.name}
+              <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9 }}>{i + 1}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ fontWeight: 800, color: "#e2e8f0", fontSize: 12 }}>{tickerOf(t.symbol)}</span>
+                <span style={{ display: "block", color: "#94a3b8", fontSize: 8.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {t.name} · {marketOf(t.symbol)}
                 </span>
-              )}
-              <span style={{ fontWeight: 800, color: "#34d399", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>↑{t.probUp}%</span>
-              {!simplified && <span style={{ color: "#64748b", fontSize: 9, textAlign: "center" }}>{isOpen ? "▲" : "▼"}</span>}
+              </span>
+              <span style={{ textAlign: "right", fontWeight: 800, fontSize: 11, color: pctColor(t.pctChange), fontVariantNumeric: "tabular-nums" }}>
+                {fmtPc(t.pctChange)}
+              </span>
+              <span style={{ textAlign: "right", fontWeight: 700, fontSize: 11, color: "#cbd5e1", fontVariantNumeric: "tabular-nums" }}>
+                {fmtNum(t.price)}
+              </span>
+              <span style={{ textAlign: "right", fontWeight: 800, fontSize: 11, color: "#34d399", fontVariantNumeric: "tabular-nums" }}>
+                {fmtNum(t.score)}{!simplified && <span style={{ color: "#475569", fontSize: 8, marginLeft: 2 }}>{isOpen ? "▲" : "▼"}</span>}
+              </span>
             </div>
 
-            {!simplified && isOpen && (
-              <div style={{
-                display: "grid", gridTemplateColumns: isNarrow ? "repeat(2,1fr)" : "repeat(4,1fr)",
-                gap: 1, background: "rgba(255,255,255,0.04)", margin: "2px 0 6px",
-                borderRadius: 6, overflow: "hidden",
-              }}>
-                {([
-                  ["Empresa", t.name], ["Último", t.features.lastClose ?? "—"],
-                  ["Ret. 20d", fmtPc(t.features.ret20)], ["Ret. 60d", fmtPc(t.features.ret60)],
-                  ["RSI 14", t.features.rsi14?.toFixed(0) ?? "—"], ["vs MA50", fmtPc(t.features.distMA50)],
-                  ["vs MA200", fmtPc(t.features.distMA200)], ["Desde máx 52s", fmtPc(t.features.dist52H)],
-                  ["Desde mín 52s", fmtPc(t.features.dist52L)], ["ATR diario", fmtPc(t.features.atrPct)],
-                  ["Vol. relativo", t.features.rvol?.toFixed(2) ?? "—"], ["Tendencia fondo", t.features.aboveMA200 ? "Alcista ✓" : "Bajista"],
-                ] as [string, string | number][]).map(([k, val]) => (
-                  <div key={k} style={{ background: "rgba(15,23,42,0.55)", padding: "5px 8px" }}>
-                    <div style={{ fontSize: 7.5, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>{k}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#cbd5e1", fontVariantNumeric: "tabular-nums" }}>{val}</div>
-                  </div>
-                ))}
+            {isOpen && (
+              <div style={{ padding: "2px 0 8px" }}>
+                {/* Trailing stops */}
+                <div style={{ fontSize: 7.5, fontWeight: 800, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.05em", margin: "2px 0 4px" }}>
+                  Trailing stops (ATR)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 1, background: "rgba(255,255,255,0.04)", borderRadius: 6, overflow: "hidden", marginBottom: 6 }}>
+                  {([["Mínimo", t.trailing?.min], ["Medio", t.trailing?.med], ["Ampliado", t.trailing?.wide]] as const).map(([k, lvl]) => (
+                    <div key={k} style={{ background: "rgba(15,23,42,0.6)", padding: "5px 8px" }}>
+                      <div style={{ fontSize: 7.5, color: "#64748b", textTransform: "uppercase" }}>{k}</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#fbbf24", fontVariantNumeric: "tabular-nums" }}>−{fmtNum(lvl?.pct)}%</div>
+                      <div style={{ fontSize: 8.5, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>stop {fmtNum(lvl?.price)}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* 10 datos del análisis */}
+                <div style={{ fontSize: 7.5, fontWeight: 800, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>
+                  10 datos del análisis
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "repeat(2,1fr)" : "repeat(5,1fr)", gap: 1, background: "rgba(255,255,255,0.04)", borderRadius: 6, overflow: "hidden" }}>
+                  {([
+                    ["RSI 14", t.features.rsi14?.toFixed(0) ?? "—"],
+                    ["vs MA50", fmtPc(t.features.distMA50)],
+                    ["vs MA200", fmtPc(t.features.distMA200)],
+                    ["Ret. 20d", fmtPc(t.features.ret20)],
+                    ["Ret. 60d", fmtPc(t.features.ret60)],
+                    ["Desde máx 52s", fmtPc(t.features.dist52H)],
+                    ["Desde mín 52s", fmtPc(t.features.dist52L)],
+                    ["ATR diario", fmtPc(t.features.atrPct)],
+                    ["Vol. relativo", t.features.rvol?.toFixed(2) ?? "—"],
+                    ["Tendencia fondo", t.features.aboveMA200 ? "Alcista ✓" : "Bajista ✗"],
+                  ] as [string, string][]).map(([k, val]) => (
+                    <div key={k} style={{ background: "rgba(15,23,42,0.55)", padding: "5px 8px" }}>
+                      <div style={{ fontSize: 7, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>{k}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#cbd5e1", fontVariantNumeric: "tabular-nums" }}>{val}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
