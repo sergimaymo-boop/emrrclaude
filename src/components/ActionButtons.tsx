@@ -78,7 +78,7 @@ export function ActionButtons({
         </svg>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 1 }}>
           <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: "#ffffff", textTransform: "uppercase" }}>
-            Compartir selección (28)
+            Exportación de Datos
           </span>
           <span style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
             TOP 8 + Rally + Watchlist · Email · WhatsApp · Notas
