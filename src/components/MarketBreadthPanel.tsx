@@ -6,11 +6,98 @@
  * Engine sobre TODO el universo escaneado. Aislado: su propio estado/fetch; no toca
  * ningún otro panel. Estilo Bloomberg, responsive.
  */
-import type { MarketBreadthResult } from "../services/marketBreadthRefresh";
+import { useState } from "react";
+import type { MarketBreadthResult, RankTicker } from "../services/marketBreadthRefresh";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 
 interface Props {
   breadth: MarketBreadthResult;
+}
+
+const fmtPc = (v: number | null | undefined) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "—");
+
+// Watchlist de candidatos de rebote (sobreventa) — top 10 del factor model per-ticker.
+// Edge MODESTO (~60%, IC ~0.01): screener, NO recomendación. Toggle lista simple / detalle
+// desplegable por ticker.
+function RankWatchlist({ tickers, horizon, baseUp, isNarrow }: {
+  tickers: RankTicker[]; horizon?: number; baseUp?: number; isNarrow: boolean;
+}) {
+  const [simplified, setSimplified] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  if (!tickers || tickers.length === 0) return null;
+
+  const btn = {
+    fontSize: 8.5, fontWeight: 700, color: "#94a3b8", background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "2px 8px", cursor: "pointer",
+  } as const;
+
+  return (
+    <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "9px 14px 4px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 5 }}>
+        <span style={{ fontSize: 9, fontWeight: 800, color: "#34d399", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          ★ Candidatos de rebote · top {tickers.length}
+        </span>
+        <button onClick={() => setSimplified((s) => !s)} style={btn}>
+          {simplified ? "▤ Ver detalle" : "≡ Lista simple"}
+        </button>
+      </div>
+      <div style={{ fontSize: 8, color: "#64748b", marginBottom: 7, lineHeight: 1.45 }}>
+        Sesgo de sobreventa (mean-reversion) a ~{horizon ?? 60}d · prob. histórica ~{tickers[0]?.probUp ?? 60}% vs base {baseUp ?? 58}%.
+        Edge modesto (screener, no recomendación de compra).
+      </div>
+
+      {tickers.map((t, i) => {
+        const isOpen = open === t.symbol;
+        return (
+          <div key={t.symbol} style={{ marginBottom: simplified ? 0 : 2 }}>
+            <div
+              onClick={() => !simplified && setOpen((o) => (o === t.symbol ? null : t.symbol))}
+              style={{
+                display: "grid",
+                gridTemplateColumns: simplified ? "20px 1fr 48px" : "20px 64px 1fr 52px 16px",
+                alignItems: "center", gap: 7, padding: simplified ? "2px 0" : "5px 0",
+                cursor: simplified ? "default" : "pointer",
+                borderBottom: simplified ? "none" : "1px solid rgba(255,255,255,0.04)",
+                fontSize: 11,
+              }}
+            >
+              <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9 }}>#{i + 1}</span>
+              <span style={{ fontWeight: 800, color: "#e2e8f0", fontVariantNumeric: "tabular-nums" }}>{t.symbol.replace(/\.[A-Z]+$/, "")}</span>
+              {!simplified && (
+                <span style={{ color: "#94a3b8", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {isNarrow ? "" : t.name}
+                </span>
+              )}
+              <span style={{ fontWeight: 800, color: "#34d399", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>↑{t.probUp}%</span>
+              {!simplified && <span style={{ color: "#64748b", fontSize: 9, textAlign: "center" }}>{isOpen ? "▲" : "▼"}</span>}
+            </div>
+
+            {!simplified && isOpen && (
+              <div style={{
+                display: "grid", gridTemplateColumns: isNarrow ? "repeat(2,1fr)" : "repeat(4,1fr)",
+                gap: 1, background: "rgba(255,255,255,0.04)", margin: "2px 0 6px",
+                borderRadius: 6, overflow: "hidden",
+              }}>
+                {([
+                  ["Empresa", t.name], ["Último", t.features.lastClose ?? "—"],
+                  ["Ret. 20d", fmtPc(t.features.ret20)], ["Ret. 60d", fmtPc(t.features.ret60)],
+                  ["RSI 14", t.features.rsi14?.toFixed(0) ?? "—"], ["vs MA50", fmtPc(t.features.distMA50)],
+                  ["vs MA200", fmtPc(t.features.distMA200)], ["Desde máx 52s", fmtPc(t.features.dist52H)],
+                  ["Desde mín 52s", fmtPc(t.features.dist52L)], ["ATR diario", fmtPc(t.features.atrPct)],
+                  ["Vol. relativo", t.features.rvol?.toFixed(2) ?? "—"], ["Tendencia fondo", t.features.aboveMA200 ? "Alcista ✓" : "Bajista"],
+                ] as [string, string | number][]).map(([k, val]) => (
+                  <div key={k} style={{ background: "rgba(15,23,42,0.55)", padding: "5px 8px" }}>
+                    <div style={{ fontSize: 7.5, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>{k}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#cbd5e1", fontVariantNumeric: "tabular-nums" }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const VERDICT_EMOJI: Record<string, string> = {
@@ -140,6 +227,16 @@ export function MarketBreadthPanel({ breadth }: Props) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Watchlist — top-10 candidatos de rebote (factor model per-ticker) */}
+      {breadth.topTickers && breadth.topTickers.length > 0 && (
+        <RankWatchlist
+          tickers={breadth.topTickers}
+          horizon={breadth.rankHorizonDays}
+          baseUp={breadth.rankBaseUp}
+          isNarrow={isNarrow}
+        />
       )}
 
       {/* Alertas tempranas */}

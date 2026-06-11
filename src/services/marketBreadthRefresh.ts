@@ -20,6 +20,21 @@ export interface MarketBreadthIndicators {
   mcclellan: number;
 }
 
+export interface RankTickerFeatures {
+  ret20: number | null; ret60: number | null; rsi14: number | null;
+  distMA50: number | null; distMA200: number | null;
+  dist52H: number | null; dist52L: number | null;
+  atrPct: number | null; rvol: number | null;
+  aboveMA200: boolean; lastClose: number | null;
+}
+export interface RankTicker {
+  symbol: string;
+  name: string;
+  probUp: number;
+  score: number;
+  features: RankTickerFeatures;
+}
+
 export interface MarketBreadthResult {
   ok: boolean;
   verdict: MarketBreadthVerdict;
@@ -29,6 +44,9 @@ export interface MarketBreadthResult {
   indicators?: MarketBreadthIndicators;
   alerts?: string[];
   horizonDays?: number;
+  topTickers?: RankTicker[];
+  rankHorizonDays?: number;
+  rankBaseUp?: number;
   sample?: { analyzed: number; skipped: number; adNet: number };
   spyBullish?: boolean | null;
   activeMarkets?: string[];

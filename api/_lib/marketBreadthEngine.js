@@ -21,7 +21,7 @@
  *   8. Divergencia de amplitud vs SPY     — subida "hueca" = techo inminente (flag)
  */
 
-import { calculateEma } from "./technicalEngine.js";
+import { calculateEma, calculateAtr } from "./technicalEngine.js";
 
 // ── Pesos iniciales del score (Object.freeze como INDICATOR_WEIGHTS de marketPulse).
 // Recalibrables de forma AUDITADA por el feedback-loop (nunca auto-tuning opaco). Suman 1.
@@ -327,4 +327,101 @@ export function computeBreadthFeedback(history, opts = {}) {
     recommendation,
     note: "Recalibración AUDITADA: este informe NO modifica los pesos. El ajuste lo aprueba el usuario.",
   };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RANKING DE TICKERS — factor model cross-sectional (sub-modelo, edge MODESTO).
+// ════════════════════════════════════════════════════════════════════════════
+// Validado out-of-sample (5 años, walk-forward): IC ≈ 0.01, prob↑ top ≈ 60% vs 58% base.
+// Es un SCREENER de candidatos de rebote por sobreventa (mean-reversion), NO un predictor
+// fiable. Pesos firmados (negativo = contrario: sobreventa puntúa alto). z-stats GLOBALES fijas
+// → cada ticker se puntúa solo. Recalibrable con scripts/rank-tickers.mjs.
+export const RANK_CALIBRATION = Object.freeze({
+  horizonDays: 60,
+  baseUp: 0.5822,
+  weights: Object.freeze({
+    ret20: -0.083, ret60: -0.109, distMA50: -0.115, distMA200: -0.003, rsi14: -0.065,
+    dist52H: -0.044, dist52L: 0.126, rvol: 0.003, atrPct: 0.187, emaSlope: -0.092,
+    pbUptrend: -0.035, aboveMA200: -0.046, goldenCross: 0.008, qualMom: -0.084,
+  }),
+  gstats: Object.freeze({
+    ret20: { m: 0.00846, s: 0.08280 }, ret60: { m: 0.02481, s: 0.13921 },
+    distMA50: { m: 0.00589, s: 0.06162 }, distMA200: { m: 0.01949, s: 0.12376 },
+    rsi14: { m: 51.779, s: 17.391 }, dist52H: { m: -0.15760, s: 0.13188 },
+    dist52L: { m: 0.33280, s: 0.34823 }, rvol: { m: 0.99615, s: 0.17160 },
+    atrPct: { m: 0.02426, s: 0.01052 }, emaSlope: { m: 0.00144, s: 0.01913 },
+    pbUptrend: { m: 2.0342, s: 5.4771 }, aboveMA200: { m: 0.57590, s: 0.49421 },
+    goldenCross: { m: 0.57832, s: 0.49383 }, qualMom: { m: 0.05579, s: 0.10048 },
+  }),
+  // score → P(subida) por percentiles (20 bins) en TRAIN con z fija.
+  probTable: Object.freeze([
+    { sMin: -2.8799, p: 0.553 }, { sMin: -0.7836, p: 0.537 }, { sMin: -0.6342, p: 0.548 },
+    { sMin: -0.5311, p: 0.546 }, { sMin: -0.4455, p: 0.568 }, { sMin: -0.3719, p: 0.547 },
+    { sMin: -0.3046, p: 0.553 }, { sMin: -0.2401, p: 0.562 }, { sMin: -0.1782, p: 0.556 },
+    { sMin: -0.1166, p: 0.572 }, { sMin: -0.0539, p: 0.569 }, { sMin: 0.0104, p: 0.578 },
+    { sMin: 0.0774, p: 0.575 }, { sMin: 0.1518, p: 0.601 }, { sMin: 0.2270, p: 0.612 },
+    { sMin: 0.3117, p: 0.602 }, { sMin: 0.4097, p: 0.615 }, { sMin: 0.5293, p: 0.631 },
+    { sMin: 0.6909, p: 0.657 }, { sMin: 0.9503, p: 0.664 },
+  ]),
+});
+
+function rsi14(closes, p = 14) {
+  if (!Array.isArray(closes) || closes.length < p + 1) return 50;
+  let g = 0, l = 0;
+  for (let i = closes.length - p; i < closes.length; i++) {
+    const ch = closes[i] - closes[i - 1];
+    if (ch >= 0) g += ch; else l -= ch;
+  }
+  const rs = l === 0 ? 100 : g / l;
+  return 100 - 100 / (1 + rs);
+}
+
+const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+
+/** Features de ranking de UN ticker desde sus barras (point-in-time, última barra). */
+export function computeTickerRankFeatures(bars) {
+  if (!Array.isArray(bars) || bars.length < 210) return null;
+  const closes = bars.map((b) => b.close).filter(isNum);
+  if (closes.length < 210) return null;
+  const last = closes.at(-1);
+  const win = bars.slice(-260);
+  const highs = win.map((b) => b.high).filter(isNum);
+  const lows = win.map((b) => b.low).filter(isNum);
+  const hi252 = highs.length ? Math.max(...highs) : last;
+  const lo252 = lows.length ? Math.min(...lows) : last;
+  const ema50 = calculateEma(closes, 50);
+  const ema200 = closes.length >= 200 ? calculateEma(closes, 200) : null;
+  const ema20 = calculateEma(closes, 20);
+  const ema20p = calculateEma(closes.slice(0, -5), 20);
+  const vols = bars.map((b) => b.volume).filter(isNum);
+  const v20 = avg(vols.slice(-20)), v60 = avg(vols.slice(-60));
+  const atr = calculateAtr(bars.slice(-30), 14);
+  const r = rsi14(closes);
+  const up = (isNum(ema200) && last > ema200) ? 1 : 0;
+  const ret60 = last / closes.at(-61) - 1;
+  if (!isNum(ema50) || !isNum(ema200) || !isNum(atr)) return null;
+  return {
+    ret20: last / closes.at(-21) - 1, ret60,
+    distMA50: last / ema50 - 1, distMA200: last / ema200 - 1,
+    rsi14: r, dist52H: last / hi252 - 1, dist52L: last / lo252 - 1,
+    rvol: v60 > 0 ? v20 / v60 : 1, atrPct: atr / last,
+    emaSlope: isNum(ema20) && isNum(ema20p) && ema20p !== 0 ? ema20 / ema20p - 1 : 0,
+    pbUptrend: up * Math.max(0, 50 - r), aboveMA200: up,
+    goldenCross: (isNum(ema50) && isNum(ema200) && ema50 > ema200) ? 1 : 0,
+    qualMom: up * ret60, close: last,
+  };
+}
+
+/** Puntúa un ticker (score + probabilidad calibrada) con la calibración fija. */
+export function scoreTickerRank(ft, cal = RANK_CALIBRATION) {
+  if (!ft) return null;
+  let score = 0;
+  for (const k of Object.keys(cal.weights)) {
+    const g = cal.gstats[k];
+    if (!g) continue;
+    score += cal.weights[k] * ((ft[k] - g.m) / (g.s || 1));
+  }
+  let prob = cal.baseUp;
+  for (const b of cal.probTable) if (score >= b.sMin) prob = b.p;
+  return { score: Math.round(score * 1000) / 1000, prob: Math.round(prob * 1000) / 1000 };
 }

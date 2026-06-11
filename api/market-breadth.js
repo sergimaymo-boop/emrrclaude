@@ -24,6 +24,7 @@ import { calculateTechnicals, calculateEma } from "./_lib/technicalEngine.js";
 import {
   computeTickerBreadthSignals, emptyBreadthAggregator, foldTickerSignals,
   mergeAggregators, computeBreadthVerdict, computeBreadthFeedback, BREADTH_WEIGHTS,
+  computeTickerRankFeatures, scoreTickerRank, RANK_CALIBRATION,
 } from "./_lib/marketBreadthEngine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
@@ -85,22 +86,37 @@ async function resolveSpyContext(openMarkets = [], todayUtc = "") {
   } catch { return { spyBars: [], spyBullish: null }; }
 }
 
-// Procesa un batch de tickers → acumulador de amplitud (fetch en paralelo, fold secuencial).
+// Mantiene los 15 mejores candidatos del ranking al fusionar batches.
+function mergeTopRank(a, b) {
+  return [...(a ?? []), ...(b ?? [])].sort((x, y) => y.score - x.score).slice(0, 15);
+}
+
+// Procesa un batch → {agg amplitud, candidates ranking}. Fetch en paralelo, fold secuencial.
+// Reutiliza las MISMAS barras para amplitud y para el factor model per-ticker (cero fetch extra).
 async function processBatch(assets, spyBars, opts = {}) {
   const { openMarkets = [], todayUtc = "" } = opts;
-  const signalsList = await Promise.all(assets.map(async (asset) => {
+  const results = await Promise.all(assets.map(async (asset) => {
     try {
       const hist = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
       if (!hist.ok || !Array.isArray(hist.bars) || hist.bars.length < 60) return null;
       const bars = trimFormingBar(hist.bars, asset.providerSymbol, openMarkets, todayUtc);
       if (bars.length < 60) return null;
       const tech = calculateTechnicals(bars, spyBars);
-      return computeTickerBreadthSignals(tech.ok ? tech : { technicals: null }, bars);
+      const signals = computeTickerBreadthSignals(tech.ok ? tech : { technicals: null }, bars);
+      const ft = computeTickerRankFeatures(bars);
+      const rank = ft ? scoreTickerRank(ft) : null;
+      const cand = (ft && rank) ? { sym: asset.providerSymbol, score: rank.score, prob: rank.prob, ft } : null;
+      return { signals, cand };
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
-  for (const s of signalsList) foldTickerSignals(agg, s);
-  return agg;
+  const candidates = [];
+  for (const r of results) {
+    foldTickerSignals(agg, r?.signals ?? null);
+    if (r?.cand) candidates.push(r.cand);
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return { agg, candidates: candidates.slice(0, 15) };
 }
 
 async function loadWeights() {
@@ -111,8 +127,34 @@ async function loadWeights() {
   return BREADTH_WEIGHTS;
 }
 
+// Enriquece el top-10 del ranking con nombres (universo cacheado) y formatea para la watchlist.
+async function enrichTopRank(topRank) {
+  const top = (topRank ?? []).slice(0, 10);
+  if (top.length === 0) return [];
+  let nameMap = new Map();
+  try {
+    const uni = await buildUniverseResponse({ includeFullAssets: true });
+    nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.companyName ?? a.Name ?? a.providerSymbol]));
+  } catch { /* fallback al símbolo */ }
+  const r3 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
+  const pc = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 1000) / 10 : null); // fracción → %
+  return top.map((c) => ({
+    symbol: c.sym,
+    name: nameMap.get(c.sym) ?? c.sym,
+    probUp: Math.round((c.prob ?? 0) * 100),
+    score: c.score,
+    features: {
+      ret20: pc(c.ft.ret20), ret60: pc(c.ft.ret60), rsi14: r3(c.ft.rsi14),
+      distMA50: pc(c.ft.distMA50), distMA200: pc(c.ft.distMA200),
+      dist52H: pc(c.ft.dist52H), dist52L: pc(c.ft.dist52L),
+      atrPct: pc(c.ft.atrPct), rvol: r3(c.ft.rvol),
+      aboveMA200: c.ft.aboveMA200 === 1, lastClose: r3(c.ft.close),
+    },
+  }));
+}
+
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
-async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount) {
+async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = []) {
   const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
   // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
   // con todo cerrado → intraday=false. Los runs intradía SIRVEN el cache pero NO contaminan
@@ -126,6 +168,7 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   const verdict = computeBreadthVerdict(agg, { spyBullish, adNetSeries, weights });
   const spyClose = spyBars.length ? spyBars.at(-1)?.close ?? null : null;
   const cachedAtUtc = new Date().toISOString();
+  const topTickers = await enrichTopRank(topRank);
 
   const payload = {
     ok: true,
@@ -138,6 +181,9 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
     alerts: verdict.alerts,
     sample: verdict.sample,
     horizonDays: verdict.horizonDays,
+    topTickers,
+    rankHorizonDays: RANK_CALIBRATION.horizonDays,
+    rankBaseUp: Math.round(RANK_CALIBRATION.baseUp * 100),
     spyBullish,
     activeMarkets,
     universeCount,
@@ -184,15 +230,15 @@ async function handleStart(req, res) {
   const todayUtc = scanStartedAtUtc.slice(0, 10);
   const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const agg = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
+  const { agg, candidates } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length);
+    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg });
+  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal, batchesCompleted: 1, coveragePercent: Math.round(100 / batchesTotal),
@@ -219,17 +265,18 @@ async function handleContinue(req, res) {
   const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
   const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const batchAgg = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
+  const { agg: batchAgg, candidates: batchCands } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
+  const mergedRank = mergeTopRank(st.topRank ?? [], batchCands);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length);
+    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged });
+  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal: st.batchesTotal, batchesCompleted: newCompleted,
