@@ -43,8 +43,8 @@ export const BREADTH_THRESHOLDS = Object.freeze({
 });
 
 // Parámetros de las señales por ticker.
-const DISTRIBUTION_RVOL = 1.5;   // RVOL ≥ 1.5 en vela bajista = distribución institucional
-const NEW_HL_LOOKBACK = 252;     // ~52 semanas de sesiones para máx/mín
+const DISTRIBUTION_VOL_MULT = 1.25; // volumen > 1.25× su media 20d en vela bajista = distribución
+const NEW_HL_LOOKBACK = 252;        // ~52 semanas de sesiones para máx/mín
 
 const clamp = (v, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, v));
 const isNum = (v) => typeof v === "number" && Number.isFinite(v);
@@ -73,6 +73,18 @@ export function computeTickerBreadthSignals(evaluation, bars) {
   const last = t.lastClose;
   const mom5 = isNum(t.momentum5) ? t.momentum5 : null;
 
+  // Distribución (día de distribución institucional): vela de cierre BAJISTA con volumen por
+  // encima de su media de 20 sesiones — derivada de barras crudas, robusta también en EU (donde
+  // el rvol del technicalEngine puede quedar fijado a 1.0 y nunca disparar el umbral antiguo).
+  const n = bars.length;
+  const lastBar = bars[n - 1];
+  const prevBar = bars[n - 2];
+  const vols = bars.slice(-21, -1).map((b) => b.volume).filter(isNum);
+  const avgVol = vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : null;
+  const distribution = (isNum(lastBar?.close) && isNum(prevBar?.close) && isNum(lastBar?.volume) && isNum(avgVol) && avgVol > 0)
+    ? (lastBar.close < prevBar.close && lastBar.volume > avgVol * DISTRIBUTION_VOL_MULT)
+    : null;
+
   return {
     hasMA50: isNum(t.ema50),
     aboveMA50: isNum(t.ema50) ? last > t.ema50 : null,
@@ -83,8 +95,7 @@ export function computeTickerBreadthSignals(evaluation, bars) {
     // Nuevo máximo/mínimo: a <2% del extremo de 52 semanas.
     newHigh: hi52 ? last >= hi52 * 0.98 : null,
     newLow: lo52 ? last <= lo52 * 1.02 : null,
-    // Distribución: vela bajista reciente con volumen relativo alto.
-    distribution: mom5 !== null && isNum(t.rvol) ? (mom5 < 0 && t.rvol >= DISTRIBUTION_RVOL) : null,
+    distribution,
     slopeUp: isNum(t.ema20SlopePercent) ? t.ema20SlopePercent > 0 : null,
     rs20: isNum(t.rs20) ? t.rs20 : null,
   };
@@ -136,14 +147,17 @@ export function mergeAggregators(a, b) {
  */
 export function computeMcClellan(adNetSeries) {
   const series = (adNetSeries ?? []).filter(isNum);
-  if (series.length < 2) return { value: 0, score: 50, available: false };
-  const fast = calculateEma(series, Math.min(19, series.length));
-  const slow = calculateEma(series, Math.min(39, series.length));
+  // Periodos FIJOS 19/39: con < 39 ciclos el oscilador no es comparable día a día
+  // (EMA con periodo recortado → fast≈slow → value≈0). Hasta entonces, neutro y NO disponible
+  // (computeBreadthVerdict no lo mete en el score mientras available=false).
+  if (series.length < 39) return { value: 0, score: 50, available: false };
+  const fast = calculateEma(series, 19);
+  const slow = calculateEma(series, 39);
   if (!isNum(fast) || !isNum(slow)) return { value: 0, score: 50, available: false };
   const value = fast - slow;
   // Normaliza: McClellan típico ∈ [-100,+100]; mapear a 0-100 con 50 = neutro.
   const score = clamp(50 + value * 0.5);
-  return { value: Math.round(value * 100) / 100, score: Math.round(score), available: series.length >= 5 };
+  return { value: Math.round(value * 100) / 100, score: Math.round(score), available: true };
 }
 
 /**
@@ -179,14 +193,23 @@ export function computeBreadthVerdict(agg, opts = {}) {
     mcclellan: mcc.score,
   };
 
+  // Si el McClellan no está disponible (serie < 39 ciclos) se EXCLUYE del score y su peso se
+  // reparte proporcionalmente entre el resto — no anclar el score hacia 50 artificialmente.
+  const activeWeights = { ...weights };
+  if (!mcc.available) delete activeWeights.mcclellan;
+  const wSum = Object.values(activeWeights).reduce((a, b) => a + b, 0) || 1;
   let score = 0;
-  for (const [k, w] of Object.entries(weights)) score += (sub[k] ?? 50) * w;
+  for (const [k, w] of Object.entries(activeWeights)) score += (sub[k] ?? 50) * (w / wSum);
   score = Math.round(clamp(score));
 
   // Hard-override de régimen: si el SPY está bajo su EMA200, techo del veredicto
   // (las mejores rachas fallan en régimen bajista — misma doctrina que marketPulse).
   if (opts.spyBullish === false && score > thr.deteriorating) {
     score = thr.deteriorating - 1;
+  } else if (opts.spyBullish === null && score >= thr.bullish) {
+    // Régimen SPY desconocido (fallo de proveedor): no confirmar un BULLISH pleno sin saber la
+    // tendencia primaria — degradar al tope del tramo de deterioro (cierra el fail-open).
+    score = thr.bullish - 1;
   }
 
   const verdict = score >= thr.bullish ? "BULLISH"
@@ -199,6 +222,7 @@ export function computeBreadthVerdict(agg, opts = {}) {
   if (netHL < -5) alerts.push(`Expansión de nuevos mínimos (${newLowPct.toFixed(0)}%) sobre nuevos máximos (${newHighPct.toFixed(0)}%) — deterioro interno.`);
   if (pctAboveMA50 < 40) alerts.push(`Solo ${pctAboveMA50.toFixed(0)}% del mercado sobre su MA50 — amplitud rota.`);
   if (opts.spyBullish === true && pctAboveMA50 < 50 && avgRs20 < 0) alerts.push(`Divergencia de amplitud: el índice aguanta pero la participación cae (subida "hueca").`);
+  if (opts.spyBullish === null) alerts.push(`Régimen del SPY no disponible (fallo de datos del benchmark): veredicto sin confirmar tendencia primaria.`);
   if (mcc.available && mcc.value < 0) alerts.push(`Oscilador McClellan en negativo (${mcc.value}) — momento de amplitud girando a la baja.`);
 
   return {
@@ -258,10 +282,11 @@ export function computeBreadthFeedback(history, opts = {}) {
     const ret = ((future.spyClose - cur.spyClose) / cur.spyClose) * 100; // % forward SPY
     const b = buckets[cur.verdict];
     if (!b) continue;
-    // Acierto: ALCISTA acierta si el SPY sube; PULLBACK si baja; DETERIORO si no hay subida fuerte.
-    const hit = cur.verdict === "BULLISH" ? ret > 0
-      : cur.verdict === "PULLBACK_IMMINENT" ? ret < 0
-      : ret < 0.5;
+    // Acierto con buckets NO solapados: ALCISTA→SPY sube (ret>1); PULLBACK→SPY baja (ret<-1);
+    // DETERIORO→banda lateral (-1..1). Evita que DETERIORO solape con PULLBACK e infle su precisión.
+    const hit = cur.verdict === "BULLISH" ? ret > 1
+      : cur.verdict === "PULLBACK_IMMINENT" ? ret < -1
+      : (ret >= -1 && ret <= 1);
     b.total += 1; overallTotal += 1;
     if (hit) { b.hit += 1; overallHit += 1; }
   }
