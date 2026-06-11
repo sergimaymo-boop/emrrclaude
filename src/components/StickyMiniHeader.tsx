@@ -3,9 +3,10 @@ import type { SystemStatus } from "../types";
 // Scan phase shown inside the button
 export type ScanPhase =
   | "idle"
-  | "flows"    // step 1/3
-  | "rally"    // step 2/3
-  | "full"     // step 3/3
+  | "flows"    // step 1/4
+  | "rally"    // step 2/4
+  | "full"     // step 3/4
+  | "breadth"  // step 4/4 — market breadth verdict
   | "done";
 
 interface StickyMiniHeaderProps {
@@ -48,11 +49,12 @@ function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED
 
 // Button phase config
 const PHASE_CONFIG: Record<ScanPhase, { label: string; sub: string; progress: number }> = {
-  idle:  { label: "SCAN  EMRR",  sub: "Flujos  ·  Líderes  ·  TOP 8", progress: 0 },
-  flows: { label: "Flujos…",     sub: "Paso 1 / 3  —  Rotación sectorial",  progress: 15 },
-  rally: { label: "Líderes…",    sub: "Paso 2 / 3  —  Rally Leaders",        progress: 42 },
-  full:  { label: "TOP 8…",      sub: "Paso 3 / 3  —  Análisis completo",    progress: 68 },
-  done:  { label: "✓  Listo",    sub: "Señal Óptima actualizada",             progress: 100 },
+  idle:    { label: "SCAN  EMRR",  sub: "Amplitud  ·  Flujos  ·  Líderes  ·  TOP 8", progress: 0 },
+  flows:   { label: "Flujos…",     sub: "Paso 1 / 4  —  Rotación sectorial",  progress: 12 },
+  rally:   { label: "Líderes…",    sub: "Paso 2 / 4  —  Rally Leaders",        progress: 34 },
+  full:    { label: "TOP 8…",      sub: "Paso 3 / 4  —  Análisis completo",    progress: 56 },
+  breadth: { label: "Amplitud…",   sub: "Paso 4 / 4  —  Veredicto de mercado", progress: 82 },
+  done:    { label: "✓  Listo",    sub: "Señal Óptima + Amplitud actualizadas", progress: 100 },
 };
 
 export function StickyMiniHeader({

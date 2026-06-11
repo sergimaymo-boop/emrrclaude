@@ -54,6 +54,7 @@ import {
   type MarketBreadthResult,
   fetchMarketBreadth,
   initialMarketBreadth,
+  runBreadthScan,
 } from "../services/marketBreadthRefresh";
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
@@ -943,8 +944,17 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     // Wait for all three to complete
     await Promise.allSettled([flowsPromise, rallyPromise, fullPromise]);
 
+    // Paso 4/4 — Amplitud de mercado. Se ejecuta DESPUÉS (secuencial) para no saturar el
+    // proveedor de datos en paralelo con rally+top8. Run de cierre (close-based): si hay mercado
+    // abierto se marca intradía y NO contamina la serie histórica nocturna.
+    setScanPhase("breadth");
+    try {
+      const breadth = await runBreadthScan();
+      setMarketBreadth(breadth);
+    } catch { /* el panel conserva el último veredicto cacheado */ }
+
     setScanPhase("done");
-    showToast("✓ Análisis completo — Señal Óptima actualizada", "success");
+    showToast("✓ Análisis completo — Amplitud + Señal Óptima actualizadas", "success");
     setTimeout(() => setScanPhase("idle"), 4000);
   }
 

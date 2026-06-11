@@ -57,3 +57,37 @@ export async function fetchMarketBreadth(): Promise<MarketBreadthResult> {
     return initialMarketBreadth();
   }
 }
+
+/**
+ * Orquesta el recálculo bajo demanda del veredicto de amplitud: encadena el loop
+ * multi-batch (start → continue… → final), igual que el frontend orquesta el scan.
+ * Devuelve el veredicto final (o el último cacheado si algo falla). Pensado para el
+ * botón SCAN: un run intradía (close-based, no contamina el histórico nocturno).
+ * @param onProgress callback opcional con el % de cobertura (0-100) para feedback de UI.
+ */
+export async function runBreadthScan(onProgress?: (coverage: number) => void): Promise<MarketBreadthResult> {
+  const post = (body?: unknown) =>
+    fetch(`/api/market-breadth?action=${body ? "continue" : "start"}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((r) => r.json());
+
+  try {
+    let data = await post();
+    let guard = 0;
+    while (data && data.isFinal === false && data.breadthToken && guard < 30) {
+      if (onProgress && typeof data.coveragePercent === "number") onProgress(data.coveragePercent);
+      data = await post({ breadthToken: data.breadthToken });
+      guard += 1;
+    }
+    if (data && data.isFinal) {
+      if (onProgress) onProgress(100);
+      return data as MarketBreadthResult;
+    }
+    // No completó (p.ej. REAL_API_CALLS_DISABLED) → servir el último cacheado.
+    return await fetchMarketBreadth();
+  } catch {
+    return await fetchMarketBreadth();
+  }
+}
