@@ -28,6 +28,7 @@ export interface MarketBreadthResult {
   label: string;
   indicators?: MarketBreadthIndicators;
   alerts?: string[];
+  horizonDays?: number;
   sample?: { analyzed: number; skipped: number; adNet: number };
   spyBullish?: boolean | null;
   activeMarkets?: string[];

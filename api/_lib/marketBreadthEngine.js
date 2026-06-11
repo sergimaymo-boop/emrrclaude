@@ -37,9 +37,33 @@ export const BREADTH_WEIGHTS = Object.freeze({
 
 // Umbrales del semáforo (validados por el usuario: ≥70 / 50-70 / <50).
 export const BREADTH_THRESHOLDS = Object.freeze({
-  bullish: 70,        // score ≥ 70 → 🟢 ALCISTA
-  deteriorating: 50,  // 50 ≤ score < 70 → 🟡 DETERIORO
-  // score < 50 → 🔴 PULLBACK INMINENTE
+  bullish: 70,        // score ≥ 70 → 🟢 FAVORABLE
+  deteriorating: 50,  // 50 ≤ score < 70 → 🟡 NEUTRAL
+  // score < 50 → 🔴 RIESGO DE CORRECCIÓN
+});
+
+/**
+ * CALIBRACIÓN v2 (contraria, horizonte ~40 sesiones ≈ 1-2 meses).
+ * Derivada de un backtest walk-forward de 5 años (2021-2026), train/test temporal,
+ * validada OUT-OF-SAMPLE: corr +0.32, separación 🟢-🔴 ≈ 5pp. Hallazgo central: el breadth
+ * REVIERTE A LA MEDIA — amplitud sobrecomprada → retornos peores; sobreventa → mejores
+ * (por eso los pesos de participación son NEGATIVOS). El score es un blend de z-scores de los
+ * sub-scores con estos pesos firmados, mapeado a 0-100 anclando q33→50 y q66→70.
+ * Recalibrable (auditado) re-corriendo scripts/calibrate-breadth.mjs con más histórico.
+ */
+export const BREADTH_CALIBRATION = Object.freeze({
+  horizonDays: 40,
+  weights: Object.freeze({
+    pctAboveMA50: -0.199, pctAboveMA200: 0.045, advanceDecline: -0.140,
+    newHighLow: -0.044, distribution: -0.096, emaSlope: -0.221, mcclellan: -0.254,
+  }),
+  zstats: Object.freeze({
+    pctAboveMA50: { m: 55.48, s: 20.56 }, pctAboveMA200: { m: 57.72, s: 19.64 },
+    advanceDecline: { m: 52.95, s: 22.53 }, newHighLow: { m: 61.70, s: 16.20 },
+    distribution: { m: 77.04, s: 21.36 }, emaSlope: { m: 54.12, s: 21.91 },
+    mcclellan: { m: 50.34, s: 3.27 },
+  }),
+  thresholds: Object.freeze({ q33: -0.336, q66: 0.305 }),
 });
 
 // Parámetros de las señales por ticker.
@@ -193,45 +217,40 @@ export function computeBreadthVerdict(agg, opts = {}) {
     mcclellan: mcc.score,
   };
 
-  // Si el McClellan no está disponible (serie < 39 ciclos) se EXCLUYE del score y su peso se
-  // reparte proporcionalmente entre el resto — no anclar el score hacia 50 artificialmente.
-  const activeWeights = { ...weights };
-  if (!mcc.available) delete activeWeights.mcclellan;
-  const wSum = Object.values(activeWeights).reduce((a, b) => a + b, 0) || 1;
-  let score = 0;
-  for (const [k, w] of Object.entries(activeWeights)) score += (sub[k] ?? 50) * (w / wSum);
-  score = Math.round(clamp(score));
-
-  // Hard-override de régimen: si el SPY está bajo su EMA200, techo del veredicto
-  // (las mejores rachas fallan en régimen bajista — misma doctrina que marketPulse).
-  if (opts.spyBullish === false && score > thr.deteriorating) {
-    score = thr.deteriorating - 1;
-  } else if (opts.spyBullish === null && score >= thr.bullish) {
-    // Régimen SPY desconocido (fallo de proveedor): no confirmar un BULLISH pleno sin saber la
-    // tendencia primaria — degradar al tope del tramo de deterioro (cierra el fail-open).
-    score = thr.bullish - 1;
+  // ── SCORE v2 CALIBRADO (contrario, ~40 sesiones) ──────────────────────────────
+  // Blend de z-scores de los sub-scores con los pesos FIRMADOS de la calibración (negativo =
+  // contrario: amplitud alta resta, sobreventa suma). Mapeado a 0-100 anclando q33→50, q66→70.
+  // McClellan no disponible (serie < 39) → sub-score 50 → z≈0 → no aporta hasta acumular histórico.
+  const cal = opts.calibration ?? BREADTH_CALIBRATION;
+  let raw = 0;
+  for (const f of Object.keys(cal.weights)) {
+    const z = ((sub[f] ?? 50) - cal.zstats[f].m) / (cal.zstats[f].s || 1);
+    raw += cal.weights[f] * z;
   }
+  const { q33, q66 } = cal.thresholds;
+  const slope = 20 / ((q66 - q33) || 1);
+  const score = Math.round(clamp(50 + (raw - q33) * slope));
 
   const verdict = score >= thr.bullish ? "BULLISH"
     : score >= thr.deteriorating ? "DETERIORATING"
     : "PULLBACK_IMMINENT";
 
-  // Señales de alerta temprana (explicadas).
+  // Alertas en clave CONTRARIA: la SOBRECOMPRA es el riesgo; la SOBREVENTA, el viento a favor.
   const alerts = [];
-  if (distributionPct >= 30) alerts.push(`Distribución institucional: ${distributionPct.toFixed(0)}% de tickers con ventas de alto volumen.`);
-  if (netHL < -5) alerts.push(`Expansión de nuevos mínimos (${newLowPct.toFixed(0)}%) sobre nuevos máximos (${newHighPct.toFixed(0)}%) — deterioro interno.`);
-  if (pctAboveMA50 < 40) alerts.push(`Solo ${pctAboveMA50.toFixed(0)}% del mercado sobre su MA50 — amplitud rota.`);
-  if (opts.spyBullish === true && pctAboveMA50 < 50 && avgRs20 < 0) alerts.push(`Divergencia de amplitud: el índice aguanta pero la participación cae (subida "hueca").`);
-  if (opts.spyBullish === null) alerts.push(`Régimen del SPY no disponible (fallo de datos del benchmark): veredicto sin confirmar tendencia primaria.`);
-  if (mcc.available && mcc.value < 0) alerts.push(`Oscilador McClellan en negativo (${mcc.value}) — momento de amplitud girando a la baja.`);
+  if (pctAboveMA50 >= 75) alerts.push(`Amplitud sobrecomprada: ${pctAboveMA50.toFixed(0)}% sobre la MA50 — históricamente seguido de retornos más bajos a ~1-2 meses.`);
+  if (pctAboveMA50 <= 30) alerts.push(`Amplitud en sobreventa: solo ${pctAboveMA50.toFixed(0)}% sobre la MA50 — sesgo de rebote a ~1-2 meses.`);
+  if (distributionPct >= 35) alerts.push(`Presión vendedora elevada: ${distributionPct.toFixed(0)}% de tickers con ventas de alto volumen.`);
+  if (opts.spyBullish === false) alerts.push(`Régimen primario bajista (SPY < EMA200) — la reversión al alza es menos fiable en tendencia bajista.`);
+  if (opts.spyBullish === null) alerts.push(`Régimen del SPY no disponible (fallo de datos del benchmark).`);
 
   return {
     score,
-    verdict, // BULLISH | DETERIORATING | PULLBACK_IMMINENT
+    verdict, // BULLISH=favorable | DETERIORATING=neutral | PULLBACK_IMMINENT=riesgo corrección (~1-2 meses)
+    horizonDays: cal.horizonDays,
     color: verdict === "BULLISH" ? "#10b981" : verdict === "DETERIORATING" ? "#eab308" : "#ef4444",
-    label: verdict === "BULLISH" ? "Alcista — amplitud sana"
-      : verdict === "DETERIORATING" ? "Deterioro — vigilancia"
-      : "Pullback inminente — distribución",
+    label: verdict === "BULLISH" ? "Favorable — sesgo alcista (~1-2 meses)"
+      : verdict === "DETERIORATING" ? "Neutral — amplitud en zona media"
+      : "Riesgo de corrección — sobrecompra (~1-2 meses)",
     indicators: {
       pctAboveMA50: round1(pctAboveMA50),
       pctAboveMA200: round1(pctAboveMA200),
@@ -263,7 +282,7 @@ function round1(v) { return isNum(v) ? Math.round(v * 10) / 10 : 0; }
  * @param {Array<{verdict:string, spyClose:number}>} history  histórico append-only
  */
 export function computeBreadthFeedback(history, opts = {}) {
-  const fwd = opts.forwardSessions ?? 5;
+  const fwd = opts.forwardSessions ?? BREADTH_CALIBRATION.horizonDays; // ~40 sesiones (horizonte del modelo)
   const h = (history ?? []).filter((r) => isNum(r?.spyClose) && r?.verdict);
   if (h.length < fwd + 3) {
     return { available: false, reason: "INSUFFICIENT_HISTORY", samples: h.length, needed: fwd + 3, forwardSessions: fwd };
@@ -282,11 +301,11 @@ export function computeBreadthFeedback(history, opts = {}) {
     const ret = ((future.spyClose - cur.spyClose) / cur.spyClose) * 100; // % forward SPY
     const b = buckets[cur.verdict];
     if (!b) continue;
-    // Acierto con buckets NO solapados: ALCISTA→SPY sube (ret>1); PULLBACK→SPY baja (ret<-1);
-    // DETERIORO→banda lateral (-1..1). Evita que DETERIORO solape con PULLBACK e infle su precisión.
-    const hit = cur.verdict === "BULLISH" ? ret > 1
-      : cur.verdict === "PULLBACK_IMMINENT" ? ret < -1
-      : (ret >= -1 && ret <= 1);
+    // Acierto con buckets NO solapados a horizonte ~40 sesiones (banda ±2% por ser plazo largo):
+    // FAVORABLE→SPY sube (ret>2); RIESGO→SPY baja (ret<-2); NEUTRAL→lateral (-2..2).
+    const hit = cur.verdict === "BULLISH" ? ret > 2
+      : cur.verdict === "PULLBACK_IMMINENT" ? ret < -2
+      : (ret >= -2 && ret <= 2);
     b.total += 1; overallTotal += 1;
     if (hit) { b.hit += 1; overallHit += 1; }
   }

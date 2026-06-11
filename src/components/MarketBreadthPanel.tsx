@@ -20,18 +20,15 @@ const VERDICT_EMOJI: Record<string, string> = {
   UNKNOWN: "⚪",
 };
 const VERDICT_TITLE: Record<string, string> = {
-  BULLISH: "ALCISTA",
-  DETERIORATING: "DETERIORO",
-  PULLBACK_IMMINENT: "PULLBACK INMINENTE",
+  BULLISH: "FAVORABLE",
+  DETERIORATING: "NEUTRAL",
+  PULLBACK_IMMINENT: "RIESGO CORRECCIÓN",
   UNKNOWN: "CALCULANDO",
 };
 
-function metricTone(value: number, good: number, bad: number): string {
-  // good >= → verde; bad <= → rojo; intermedio → ámbar
-  if (value >= good) return "#34d399";
-  if (value <= bad) return "#f87171";
-  return "#eab308";
-}
+// Modelo CONTRARIO (validado): las métricas son lecturas descriptivas, no señales de bueno/malo
+// por sí mismas (amplitud muy alta = sobrecompra = riesgo). El veredicto sintetiza la dirección.
+const METRIC_MUTED = "#cbd5e1";
 
 function fmtTime(iso?: string): string {
   if (!iso) return "—";
@@ -51,14 +48,14 @@ export function MarketBreadthPanel({ breadth }: Props) {
   const ind = breadth.indicators;
 
   const metrics = ind ? [
-    { label: "Sobre MA50", value: ind.pctAboveMA50, unit: "%", tone: metricTone(ind.pctAboveMA50, 60, 40) },
-    { label: "Sobre MA200", value: ind.pctAboveMA200, unit: "%", tone: metricTone(ind.pctAboveMA200, 55, 40) },
-    { label: "Avances", value: ind.advancePct, unit: "%", tone: metricTone(ind.advancePct, 55, 45) },
-    { label: "Nuevos máx", value: ind.newHighPct, unit: "%", tone: metricTone(ind.newHighPct, 5, 0) },
-    { label: "Nuevos mín", value: ind.newLowPct, unit: "%", tone: metricTone(10 - ind.newLowPct, 8, 4) },
-    { label: "Distribución", value: ind.distributionPct, unit: "%", tone: metricTone(20 - ind.distributionPct, 12, 5) },
-    { label: "Pendiente↑", value: ind.slopeUpPct, unit: "%", tone: metricTone(ind.slopeUpPct, 55, 40) },
-    { label: "McClellan", value: ind.mcclellan, unit: "", tone: metricTone(ind.mcclellan, 0.1, -0.1) },
+    { label: "Sobre MA50", value: ind.pctAboveMA50, unit: "%", tone: METRIC_MUTED },
+    { label: "Sobre MA200", value: ind.pctAboveMA200, unit: "%", tone: METRIC_MUTED },
+    { label: "Avances", value: ind.advancePct, unit: "%", tone: METRIC_MUTED },
+    { label: "Nuevos máx", value: ind.newHighPct, unit: "%", tone: METRIC_MUTED },
+    { label: "Nuevos mín", value: ind.newLowPct, unit: "%", tone: METRIC_MUTED },
+    { label: "Distribución", value: ind.distributionPct, unit: "%", tone: METRIC_MUTED },
+    { label: "Pendiente↑", value: ind.slopeUpPct, unit: "%", tone: METRIC_MUTED },
+    { label: "McClellan", value: ind.mcclellan, unit: "", tone: METRIC_MUTED },
   ] : [];
 
   return (
@@ -79,10 +76,11 @@ export function MarketBreadthPanel({ breadth }: Props) {
         gap: 8, flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: accent }}>
-          ▦ Amplitud de Mercado
+          ▦ Amplitud de Mercado · señal contraria
         </span>
         <span style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", whiteSpace: "nowrap" }}>
           {breadth.sample?.analyzed != null ? `${breadth.sample.analyzed} tickers` : "—"}
+          {breadth.horizonDays ? ` · proyección ~${breadth.horizonDays}d` : ""}
           {breadth.activeMarkets?.length ? ` · ${breadth.activeMarkets.join("/")}` : ""}
         </span>
       </div>
