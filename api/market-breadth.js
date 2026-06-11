@@ -51,10 +51,32 @@ async function readBody(req) {
   try { return JSON.parse(req.body); } catch { return {}; }
 }
 
-// SPY bajo/sobre su EMA200 → régimen primario (override del veredicto).
-async function resolveSpyContext() {
+// Región de un ticker según el sufijo estilo EODHD (.US/.DE/.PA/.MI/.SW/.LSE…).
+function regionOfSymbol(providerSymbol) {
+  if (typeof providerSymbol !== "string") return "USA";
+  if (/\.US$/i.test(providerSymbol) || !providerSymbol.includes(".")) return "USA";
+  return "Europe";
+}
+
+// Recorta la última barra si es de HOY (UTC) Y la sesión de esa región sigue ABIERTA.
+// Así el veredicto es SIEMPRE close-based y estable: corra de noche (cron, nada abierto →
+// no recorta) o intradía con ambos mercados abiertos (no arrastra la vela diaria en formación,
+// que distorsionaría momentum/máx-mín/distribución/RVOL). Resuelve la petición "ambos abiertos".
+function trimFormingBar(bars, providerSymbol, openMarkets, todayUtc) {
+  if (!Array.isArray(bars) || bars.length === 0 || !openMarkets?.length) return bars;
+  const last = bars[bars.length - 1];
+  if (last?.date === todayUtc && openMarkets.includes(regionOfSymbol(providerSymbol))) {
+    return bars.slice(0, -1);
+  }
+  return bars;
+}
+
+// SPY bajo/sobre su EMA200 → régimen primario (override del veredicto). El SPY (región USA)
+// también se recorta si EE.UU. está abierto, para que RS y el override usen el último cierre completo.
+async function resolveSpyContext(openMarkets = [], todayUtc = "") {
   try {
-    const spyBars = await fetchSpyBars();
+    let spyBars = await fetchSpyBars();
+    spyBars = trimFormingBar(spyBars, "SPY.US", openMarkets, todayUtc);
     if (!Array.isArray(spyBars) || spyBars.length < 200) return { spyBars: spyBars ?? [], spyBullish: null };
     const closes = spyBars.map((b) => b.close).filter((v) => Number.isFinite(v));
     const ema200 = calculateEma(closes, 200);
@@ -64,13 +86,16 @@ async function resolveSpyContext() {
 }
 
 // Procesa un batch de tickers → acumulador de amplitud (fetch en paralelo, fold secuencial).
-async function processBatch(assets, spyBars) {
+async function processBatch(assets, spyBars, opts = {}) {
+  const { openMarkets = [], todayUtc = "" } = opts;
   const signalsList = await Promise.all(assets.map(async (asset) => {
     try {
       const hist = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
       if (!hist.ok || !Array.isArray(hist.bars) || hist.bars.length < 60) return null;
-      const tech = calculateTechnicals(hist.bars, spyBars);
-      return computeTickerBreadthSignals(tech.ok ? tech : { technicals: null }, hist.bars);
+      const bars = trimFormingBar(hist.bars, asset.providerSymbol, openMarkets, todayUtc);
+      if (bars.length < 60) return null;
+      const tech = calculateTechnicals(bars, spyBars);
+      return computeTickerBreadthSignals(tech.ok ? tech : { technicals: null }, bars);
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
@@ -88,7 +113,12 @@ async function loadWeights() {
 
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
 async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount) {
-  const { spyBars, spyBullish } = await resolveSpyContext();
+  const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
+  // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
+  // con todo cerrado → intraday=false. Los runs intradía SIRVEN el cache pero NO contaminan
+  // la serie histórica (que debe ser homogénea, solo cierres) para McClellan + feedback.
+  const intraday = Array.isArray(activeMarkets) && activeMarkets.length > 0;
+  const { spyBars, spyBullish } = await resolveSpyContext(activeMarkets ?? [], todayUtc);
   const history = (await kvGet(HISTORY_KEY).catch(() => null)) ?? [];
   const adNetSeries = Array.isArray(history) ? history.map((h) => h.adNet).filter((v) => Number.isFinite(v)) : [];
   const weights = await loadWeights();
@@ -110,20 +140,24 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
     spyBullish,
     activeMarkets,
     universeCount,
+    intraday,
     scanStartedAtUtc,
     cachedAtUtc,
   };
 
   await kvSet(CACHE_KEY, payload, 26 * 3600).catch(() => {});
 
-  // Histórico append-only (cap) para el feedback-loop y la serie McClellan.
-  const record = {
-    timestampUtc: cachedAtUtc, score: verdict.score, verdict: verdict.verdict,
-    adNet: verdict.adNet, pctAboveMA50: verdict.indicators.pctAboveMA50,
-    distributionPct: verdict.indicators.distributionPct, spyClose,
-  };
-  const nextHistory = [...(Array.isArray(history) ? history : []), record].slice(-HISTORY_CAP);
-  await kvSet(HISTORY_KEY, nextHistory, 120 * 24 * 3600).catch(() => {});
+  // Histórico append-only (cap), SOLO en runs de cierre → serie homogénea para feedback + McClellan.
+  if (!intraday) {
+    const record = {
+      timestampUtc: cachedAtUtc, score: verdict.score, verdict: verdict.verdict,
+      adNet: verdict.adNet, pctAboveMA50: verdict.indicators.pctAboveMA50,
+      distributionPct: verdict.indicators.distributionPct, spyClose,
+      universeCount, activeMarkets,
+    };
+    const nextHistory = [...(Array.isArray(history) ? history : []), record].slice(-HISTORY_CAP);
+    await kvSet(HISTORY_KEY, nextHistory, 120 * 24 * 3600).catch(() => {});
+  }
 
   return payload;
 }
@@ -146,9 +180,10 @@ async function handleStart(req, res) {
 
   const tickers = eligible.map((a) => a.providerSymbol);
   const batchesTotal = Math.ceil(tickers.length / BATCH_SIZE);
-  const { spyBars } = await resolveSpyContext();
+  const todayUtc = scanStartedAtUtc.slice(0, 10);
+  const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const agg = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars);
+  const agg = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
@@ -180,9 +215,10 @@ async function handleContinue(req, res) {
   const start = st.nextBatchIndex * BATCH_SIZE;
   const batchTickers = st.tickers.slice(start, start + BATCH_SIZE);
   const eligible = batchTickers.map((symbol) => ({ providerSymbol: symbol }));
-  const { spyBars } = await resolveSpyContext();
+  const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
+  const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const batchAgg = await processBatch(eligible, spyBars);
+  const batchAgg = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
