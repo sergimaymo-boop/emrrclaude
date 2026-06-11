@@ -1,0 +1,49 @@
+name: Market Breadth Daily
+
+# Recalcula 1×/día el VEREDICTO DE AMPLITUD DE MERCADO recorriendo todo el universo.
+# GitHub Actions orquesta el loop multi-batch (start → continue… → final), algo que un
+# cron simple (Vercel/cron-job.org, que hacen 1 sola llamada) no puede encadenar.
+# El veredicto de cierre no necesita hora exacta: GitHub puede retrasarse sin problema.
+on:
+  schedule:
+    - cron: "30 21 * * 1-5" # ~21:30 UTC, tras el cierre de EE.UU., lun-vie
+  workflow_dispatch: {}      # disparo manual para pruebas
+
+jobs:
+  breadth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run market breadth loop (start → continue… → final)
+        run: |
+          B="https://emrrclaude.vercel.app/api/market-breadth"
+
+          # Reintenta una llamada hasta 3 veces (cold start / red).
+          call() {
+            local out
+            for attempt in 1 2 3; do
+              out=$(curl -s --max-time 80 "$@" || echo '{"error":"curl_failed"}')
+              if echo "$out" | grep -qE '"ok":(true|false)|"isFinal"|"breadthToken"'; then echo "$out"; return 0; fi
+              sleep 10
+            done
+            echo "$out"; return 0
+          }
+
+          RESP=$(call -X POST "$B?action=start")
+          echo "start → $RESP"
+          TOKEN=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('breadthToken') or '')" 2>/dev/null)
+          FINAL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('isFinal'))" 2>/dev/null)
+
+          i=1
+          while [ "$FINAL" != "True" ] && [ -n "$TOKEN" ] && [ "$i" -le 30 ]; do
+            RESP=$(call -X POST "$B?action=continue" -H "Content-Type: application/json" -d "{\"breadthToken\":\"$TOKEN\"}")
+            TOKEN=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('breadthToken') or '')" 2>/dev/null)
+            FINAL=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('isFinal'))" 2>/dev/null)
+            COV=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('coveragePercent'))" 2>/dev/null)
+            echo "continue $i → final=$FINAL coverage=$COV%"
+            i=$((i+1))
+          done
+
+          echo "=== VEREDICTO FINAL ==="
+          echo "$RESP" | python3 -c "import sys,json;d=json.load(sys.stdin);print('verdict=%s score=%s analizados=%s'%(d.get('verdict'),d.get('score'),(d.get('sample') or {}).get('analyzed')))" 2>/dev/null
+          if [ "$FINAL" = "True" ]; then echo "✅ breadth verdict persisted"; exit 0; fi
+          echo "❌ breadth loop did not finish"; exit 1

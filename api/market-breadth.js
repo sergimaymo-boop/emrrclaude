@@ -17,7 +17,7 @@
  */
 
 import { buildUniverseResponse } from "./universe.js";
-import { filterActiveOperableAssets, getActiveMarketsAt } from "./_lib/scanSnapshot.js";
+import { getActiveMarketsAt } from "./_lib/scanSnapshot.js";
 import { fetchEodhdHistoricalBars } from "./_lib/historicalDataProvider.js";
 import { fetchSpyBars } from "./_lib/rallyBatchProcessor.js";
 import { calculateTechnicals, calculateEma } from "./_lib/technicalEngine.js";
@@ -133,16 +133,15 @@ async function handleStart(req, res) {
   if (!isRealApi()) return sendJson(res, 200, { ok: false, error: "REAL_API_CALLS_DISABLED" });
 
   const scanStartedAtUtc = new Date().toISOString();
+  // Veredicto de amplitud de CIERRE: analiza TODO el universo operable (US+EU) con el
+  // último cierre de cada ticker, así corre igual tras el cierre US (no filtra por hora,
+  // a diferencia del scan intradía). activeMarkets queda como dato informativo.
   const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
-  if (activeMarkets.length === 0) {
-    return sendJson(res, 200, { ok: false, status: "ALL_MARKETS_CLOSED", message: "Todos los mercados cerrados — se usa el último veredicto memorizado." });
-  }
-
   const universe = await buildUniverseResponse({ includeFullAssets: true });
   if (!universe.ok || !universe.assets?.length) {
     return sendJson(res, 409, { ok: false, error: universe.error ?? "UNIVERSE_NOT_READY" });
   }
-  const eligible = filterActiveOperableAssets(universe.assets, scanStartedAtUtc);
+  const eligible = (universe.assets ?? []).filter((a) => a?.operabilityStatus === "OPERABLE");
   if (eligible.length === 0) return sendJson(res, 409, { ok: false, error: "NO_OPERABLE_ASSETS", activeMarkets });
 
   const tickers = eligible.map((a) => a.providerSymbol);
@@ -176,13 +175,8 @@ async function handleContinue(req, res) {
   if (!decoded.ok) return sendJson(res, 400, { ok: false, error: "TOKEN_DECODE_FAILED" });
   const st = decoded.state;
 
-  // Aborta si cambió el conjunto de mercados activos a mitad (no mezclar sesiones).
-  const nowMarkets = getActiveMarketsAt(st.scanStartedAtUtc);
-  const sameMarkets = Array.isArray(st.activeMarkets) && st.activeMarkets.length === nowMarkets.length && st.activeMarkets.every((m) => nowMarkets.includes(m));
-  if (!sameMarkets || nowMarkets.length === 0) {
-    return sendJson(res, 409, { ok: false, error: "ACTIVE_MARKET_STATE_CHANGED" });
-  }
-
+  // La lista de tickers va fija en el token (universo de cierre estable), así que el
+  // loop no se "rompe" si cruza una apertura/cierre — no hay check de sesión que abortar.
   const start = st.nextBatchIndex * BATCH_SIZE;
   const batchTickers = st.tickers.slice(start, start + BATCH_SIZE);
   const eligible = batchTickers.map((symbol) => ({ providerSymbol: symbol }));

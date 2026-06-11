@@ -50,6 +50,12 @@ import {
   fetchMonetaryCycle,
   initialMonetaryCycle,
 } from "../services/monetaryCycleRefresh";
+import {
+  type MarketBreadthResult,
+  fetchMarketBreadth,
+  initialMarketBreadth,
+} from "../services/marketBreadthRefresh";
+import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -193,6 +199,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
   const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
   const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
+  const [marketBreadth, setMarketBreadth] = useState<MarketBreadthResult>(initialMarketBreadth());
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -976,6 +983,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Market Breadth — veredicto agregado de mercado (cacheado en servidor) ──
+  // Solo GET al endpoint cacheado; el loop pesado lo recalcula el cron 1×/día.
+  useEffect(() => {
+    fetchMarketBreadth().then(setMarketBreadth).catch(() => {});
+    const interval = setInterval(() => {
+      fetchMarketBreadth().then(setMarketBreadth).catch(() => {});
+    }, 10 * 60 * 1000); // 10 min
+    return () => clearInterval(interval);
+  }, []);
+
   // Load last rally scan + market regime on mount
   useEffect(() => {
     // El panel SIEMPRE muestra el último Rally scan 100% completado guardado en
@@ -1026,6 +1043,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         scanPhase={scanPhase}
         onLogout={onLogout}
       />
+      {/* ── AMPLITUD DE MERCADO — veredicto agregado, lo más alto del dashboard ── */}
+      <ErrorBoundary inline label="Market Breadth">
+        <MarketBreadthPanel breadth={marketBreadth} />
+      </ErrorBoundary>
       {/* ── CONVERGENCIA 3 MOTORES — hero card, ticker perfecto ─────────────── */}
       <ErrorBoundary inline label="Convergencia">
         <ConvergenceSignalBanner
