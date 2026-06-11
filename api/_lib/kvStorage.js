@@ -64,7 +64,7 @@ export async function loadLastRallySnapshot() {
 
 // ─── SPY Benchmark cache (4h TTL) — ensures RS is always calculable ───────────
 const KV_SPY_KEY = "benchmark_spy_bars";
-const KV_SPY_TTL_SECONDS = 4 * 60 * 60; // 4 hours
+const KV_SPY_TTL_SECONDS = 72 * 60 * 60; // 72h — el cierre diario del SPY sigue válido días para EMA200/régimen (evita re-fetch bajo rate-limit)
 
 export async function saveBenchmarkBars(bars) {
   try {

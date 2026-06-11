@@ -74,16 +74,30 @@ function trimFormingBar(bars, providerSymbol, openMarkets, todayUtc) {
 
 // SPY bajo/sobre su EMA200 → régimen primario (override del veredicto). El SPY (región USA)
 // también se recorta si EE.UU. está abierto, para que RS y el override usen el último cierre completo.
+const SPY_REGIME_KEY = "spy_bullish_last";
 async function resolveSpyContext(openMarkets = [], todayUtc = "") {
   try {
     let spyBars = await fetchSpyBars();
     spyBars = trimFormingBar(spyBars, "SPY.US", openMarkets, todayUtc);
-    if (!Array.isArray(spyBars) || spyBars.length < 200) return { spyBars: spyBars ?? [], spyBullish: null };
-    const closes = spyBars.map((b) => b.close).filter((v) => Number.isFinite(v));
-    const ema200 = calculateEma(closes, 200);
-    const last = closes.at(-1);
-    return { spyBars, spyBullish: (Number.isFinite(ema200) && Number.isFinite(last)) ? last > ema200 : null };
-  } catch { return { spyBars: [], spyBullish: null }; }
+    if (Array.isArray(spyBars) && spyBars.length >= 200) {
+      const closes = spyBars.map((b) => b.close).filter((v) => Number.isFinite(v));
+      const ema200 = calculateEma(closes, 200);
+      const last = closes.at(-1);
+      const spyBullish = (Number.isFinite(ema200) && Number.isFinite(last)) ? last > ema200 : null;
+      if (spyBullish !== null) {
+        // Persistir el régimen para reusarlo si una próxima ejecución no logra el histórico.
+        await kvSet(SPY_REGIME_KEY, { spyBullish, atUtc: new Date().toISOString() }, 72 * 3600).catch(() => {});
+        return { spyBars, spyBullish, spyRegimeStale: false };
+      }
+    }
+    // Histórico SPY no disponible (Yahoo rate-limita la IP de Vercel durante el scan) → reusar el
+    // último régimen conocido (alcista/bajista de ayer sigue siendo válido para la anotación de tendencia).
+    const cached = await kvGet(SPY_REGIME_KEY).catch(() => null);
+    if (cached && typeof cached.spyBullish === "boolean") {
+      return { spyBars: spyBars ?? [], spyBullish: cached.spyBullish, spyRegimeStale: true };
+    }
+    return { spyBars: spyBars ?? [], spyBullish: null, spyRegimeStale: false };
+  } catch { return { spyBars: [], spyBullish: null, spyRegimeStale: false }; }
 }
 
 // Mantiene los 15 mejores candidatos del ranking al fusionar batches.

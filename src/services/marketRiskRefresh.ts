@@ -1,8 +1,9 @@
 /**
  * Market Risk — semáforo de RIESGO en tiempo real (módulo independiente).
  * Responde "¿es un momento seguro para entrar HOY?" midiendo el estrés ACTUAL del mercado
- * (VIX + crédito/bonos), NO prediciendo dirección. Validado: en calma (VIX bajo) solo el ~7%
- * de los días sufre una caída brusca a 5d; en estrés (VIX alto), el ~27%. Es un filtro de RIESGO.
+ * (VIX + crédito/bonos), NO prediciendo dirección. Validado por scripts/backtest-vix-risk.mjs:
+ * en calma (VIX bajo) solo el ~7% de los días sufre una caída brusca a 5d; en estrés, el ~29%.
+ * Es un filtro de RIESGO (1 ventana 2021-2026; reproducible).
  */
 
 export type RiskLevel = "BAJO" | "MEDIO" | "ALTO" | "UNKNOWN";
@@ -19,11 +20,12 @@ export interface MarketRisk {
   cachedAtUtc?: string;
 }
 
-// Umbrales VALIDADOS por backtest (terciles del VIX 2021-2026) + prob. de caída brusca a 5 días.
+// Umbrales y probabilidades reproducibles por scripts/backtest-vix-risk.mjs (VIX vs S&P500, 5 años):
+// % = días con caída brusca del SPY (>3% a 5 sesiones). Calma 7% · medio 13% · estrés 29%.
 function levelFromVix(vix: number): { level: RiskLevel; color: string; label: string; prob: number } {
   if (vix < 16) return { level: "BAJO", color: "#10b981", label: "Riesgo bajo — entorno favorable para entrar", prob: 7 };
-  if (vix < 21) return { level: "MEDIO", color: "#eab308", label: "Riesgo medio — entrar con cautela y stop", prob: 14 };
-  return { level: "ALTO", color: "#ef4444", label: "Riesgo alto — entorno peligroso, mejor esperar", prob: 27 };
+  if (vix < 21) return { level: "MEDIO", color: "#eab308", label: "Riesgo medio — entrar con cautela y stop", prob: 13 };
+  return { level: "ALTO", color: "#ef4444", label: "Riesgo alto — entorno peligroso, mejor esperar", prob: 29 };
 }
 
 export function initialMarketRisk(): MarketRisk {

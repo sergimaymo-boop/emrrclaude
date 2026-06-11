@@ -50,8 +50,8 @@ function RankWatchlist({ tickers, horizon, baseUp, isNarrow }: {
         </button>
       </div>
       <div style={{ fontSize: 8, color: "#64748b", marginBottom: 7, lineHeight: 1.45 }}>
-        Sesgo de sobreventa (mean-reversion) a ~{horizon ?? 60}d · prob. histórica ~{tickers[0]?.probUp ?? 60}% vs base {baseUp ?? 58}%.
-        Edge modesto (screener, no recomendación de compra).
+        Sesgo de sobreventa a ~{horizon ?? 60}d · edge MUY débil (IC ≈ 0.01). La prob. mostrada es el histórico del
+        bin superior (frágil con IC tan bajo). <b style={{ color: "#94a3b8" }}>Ideas para investigar, NO señal de compra.</b>
       </div>
 
       {/* Cabecera de columnas (estilo Bloomberg) */}

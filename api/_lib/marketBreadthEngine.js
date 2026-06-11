@@ -45,7 +45,9 @@ export const BREADTH_THRESHOLDS = Object.freeze({
 /**
  * CALIBRACIÓN v2 (contraria, horizonte ~40 sesiones ≈ 1-2 meses).
  * Derivada de un backtest walk-forward de 5 años (2021-2026), train/test temporal,
- * validada OUT-OF-SAMPLE: corr +0.32, separación 🟢-🔴 ≈ 5pp. Hallazgo central: el breadth
+ * validada OUT-OF-SAMPLE: corr ~+0.25, separación 🟢-🔴 ≈ 2.8pp (reproducible con
+ * scripts/calibrate-breadth.mjs; el +0.32 inicial era el mejor de un barrido de 5 horizontes →
+ * sesgo de selección; dataset Yahoo no fijado). Hallazgo central: el breadth
  * REVIERTE A LA MEDIA — amplitud sobrecomprada → retornos peores; sobreventa → mejores
  * (por eso los pesos de participación son NEGATIVOS). El score es un blend de z-scores de los
  * sub-scores con estos pesos firmados, mapeado a 0-100 anclando q33→50 y q66→70.
@@ -424,7 +426,10 @@ export function scoreTickerRank(ft, cal = RANK_CALIBRATION) {
   for (const k of Object.keys(cal.weights)) {
     const g = cal.gstats[k];
     if (!g) continue;
-    score += cal.weights[k] * ((ft[k] - g.m) / (g.s || 1));
+    // Winsorizar el z a [-3,3]: evita que un único feature extremo (p.ej. momentum +68%)
+    // domine y cuele nombres ajenos al perfil de sobreventa en el top.
+    const z = Math.max(-3, Math.min(3, (ft[k] - g.m) / (g.s || 1)));
+    score += cal.weights[k] * z;
   }
   let prob = cal.baseUp;
   for (const b of cal.probTable) if (score >= b.sMin) prob = b.p;
