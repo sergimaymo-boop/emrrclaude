@@ -384,6 +384,11 @@ export function computeTickerRankFeatures(bars) {
   const closes = bars.map((b) => b.close).filter(isNum);
   if (closes.length < 210) return null;
   const last = closes.at(-1);
+  // Guarda anti-glitch / split sin ajustar: si la última vela se desvía >40% de la mediana de las
+  // 5 anteriores, casi seguro es dato corrupto o split no ajustado → descartar (no rankear basura).
+  const recent5 = closes.slice(-6, -1).slice().sort((a, b) => a - b);
+  const med = recent5.length ? recent5[Math.floor(recent5.length / 2)] : null;
+  if (isNum(med) && med > 0 && Math.abs(last / med - 1) > 0.40) return null;
   const win = bars.slice(-260);
   const highs = win.map((b) => b.high).filter(isNum);
   const lows = win.map((b) => b.low).filter(isNum);
