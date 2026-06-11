@@ -57,6 +57,8 @@ import {
   runBreadthScan,
 } from "../services/marketBreadthRefresh";
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
+import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
+import { MarketRiskGauge } from "../components/MarketRiskGauge";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -201,6 +203,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
   const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadthResult>(initialMarketBreadth());
+  const [marketRisk, setMarketRisk] = useState<MarketRisk>(initialMarketRisk());
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -1003,6 +1006,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Market Risk — semáforo de riesgo en tiempo real (¿entrar HOY?). Refresco frecuente. ──
+  useEffect(() => {
+    fetchMarketRisk().then(setMarketRisk).catch(() => {});
+    const interval = setInterval(() => {
+      fetchMarketRisk().then(setMarketRisk).catch(() => {});
+    }, 3 * 60 * 1000); // 3 min
+    return () => clearInterval(interval);
+  }, []);
+
   // Load last rally scan + market regime on mount
   useEffect(() => {
     // El panel SIEMPRE muestra el último Rally scan 100% completado guardado en
@@ -1053,7 +1065,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         scanPhase={scanPhase}
         onLogout={onLogout}
       />
-      {/* ── AMPLITUD DE MERCADO — veredicto agregado, lo más alto del dashboard ── */}
+      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?), lo más alto ── */}
+      <ErrorBoundary inline label="Market Risk">
+        <MarketRiskGauge risk={marketRisk} />
+      </ErrorBoundary>
+      {/* ── AMPLITUD DE MERCADO — veredicto agregado (timing 1-2 meses) ── */}
       <ErrorBoundary inline label="Market Breadth">
         <MarketBreadthPanel breadth={marketBreadth} />
       </ErrorBoundary>
