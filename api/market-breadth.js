@@ -137,6 +137,7 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
     subScores: verdict.subScores,
     alerts: verdict.alerts,
     sample: verdict.sample,
+    horizonDays: verdict.horizonDays,
     spyBullish,
     activeMarkets,
     universeCount,
