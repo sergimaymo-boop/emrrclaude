@@ -26,6 +26,7 @@ import {
   mergeAggregators, computeBreadthVerdict, computeBreadthFeedback, BREADTH_WEIGHTS,
   computeTickerRankFeatures, scoreTickerRank, RANK_CALIBRATION,
 } from "./_lib/marketBreadthEngine.js";
+import { computeFable5Features, scoreFable5, mergeFable5, FABLE5_CALIBRATION } from "./_lib/fable5Engine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
@@ -120,17 +121,24 @@ async function processBatch(assets, spyBars, opts = {}) {
       const ft = computeTickerRankFeatures(bars);
       const rank = ft ? scoreTickerRank(ft) : null;
       const cand = (ft && rank) ? { sym: asset.providerSymbol, score: rank.score, prob: rank.prob, ft } : null;
-      return { signals, cand };
+      // FABLE 5 — módulo independiente (tendencia limpia); reaprovecha las MISMAS barras.
+      const fft = computeFable5Features(bars);
+      const fab = fft ? scoreFable5(fft) : null;
+      const fabCand = (fft && fab) ? { sym: asset.providerSymbol, score: fab.score, ft: fft } : null;
+      return { signals, cand, fabCand };
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
   const candidates = [];
+  const fable5 = [];
   for (const r of results) {
     foldTickerSignals(agg, r?.signals ?? null);
     if (r?.cand) candidates.push(r.cand);
+    if (r?.fabCand) fable5.push(r.fabCand);
   }
   candidates.sort((a, b) => b.score - a.score);
-  return { agg, candidates: candidates.slice(0, 15) };
+  fable5.sort((a, b) => b.score - a.score);
+  return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15) };
 }
 
 async function loadWeights() {
@@ -181,8 +189,50 @@ async function enrichTopRank(topRank) {
   });
 }
 
+// FABLE 5 — enriquece el top-10 (tendencia limpia) y lo persiste en su PROPIA clave.
+const FABLE5_KEY = "fable5_v1";
+async function persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCount) {
+  const top = (topFab ?? []).slice(0, 10);
+  if (top.length === 0) return;
+  let nameMap = new Map();
+  try {
+    const uni = await buildUniverseResponse({ includeFullAssets: true });
+    nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.providerSymbol]));
+  } catch { /* fallback al símbolo */ }
+  const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const items = top.map((c, i) => {
+    const price = c.ft.close;
+    const prev = c.ft.prevClose;
+    const atrPctVal = Number.isFinite(c.ft.atrPct) ? c.ft.atrPct * 100 : null;
+    const m = FABLE5_CALIBRATION.trailingMults;
+    const trail = (mult) => (atrPctVal && Number.isFinite(price))
+      ? { pct: r2n(atrPctVal * mult), price: r2n(price * (1 - (atrPctVal * mult) / 100)) }
+      : null;
+    return {
+      rank: i + 1,
+      symbol: c.sym,
+      name: nameMap.get(c.sym) ?? c.sym,
+      price: r2n(price),
+      pctDay: (Number.isFinite(price) && Number.isFinite(prev) && prev > 0) ? r2n((price / prev - 1) * 100) : null,
+      score: c.score,
+      r2: r2n(c.ft.r2),
+      slope20: r2n(c.ft.slope20 * 100),
+      dist52H: r2n(c.ft.dist52H * 100),
+      trailing: { ajustado: trail(m.ajustado), normal: trail(m.normal), ampliado: trail(m.ampliado) },
+    };
+  });
+  const payload = {
+    ok: true, items, universeCount, activeMarkets,
+    oosWin: FABLE5_CALIBRATION.oos.win,
+    horizon: FABLE5_CALIBRATION.horizonSessions,
+    scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
+  };
+  await kvSet(FABLE5_KEY, payload, 26 * 3600).catch(() => {});
+}
+
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
-async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = []) {
+async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topFab = []) {
+  await persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCount).catch(() => {});
   const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
   // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
   // con todo cerrado → intraday=false. Los runs intradía SIRVEN el cache pero NO contaminan
@@ -258,15 +308,15 @@ async function handleStart(req, res) {
   const todayUtc = scanStartedAtUtc.slice(0, 10);
   const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const { agg, candidates } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
+  const { agg, candidates, fable5 } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates);
+    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, fable5);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates });
+  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topFab: fable5 });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal, batchesCompleted: 1, coveragePercent: Math.round(100 / batchesTotal),
@@ -293,18 +343,19 @@ async function handleContinue(req, res) {
   const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
   const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const { agg: batchAgg, candidates: batchCands } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
+  const { agg: batchAgg, candidates: batchCands, fable5: batchFab } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
   const mergedRank = mergeTopRank(st.topRank ?? [], batchCands);
+  const mergedFab = mergeFable5(st.topFab ?? [], batchFab);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank);
+    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedFab);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank });
+  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topFab: mergedFab });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal: st.batchesTotal, batchesCompleted: newCompleted,

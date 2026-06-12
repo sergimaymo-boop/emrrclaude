@@ -59,6 +59,8 @@ import {
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
+import { type Fable5Result, fetchFable5, initialFable5 } from "../services/fable5Refresh";
+import { Fable5Panel } from "../components/Fable5Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -204,6 +206,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadthResult>(initialMarketBreadth());
   const [marketRisk, setMarketRisk] = useState<MarketRisk>(initialMarketRisk());
+  const [fable5, setFable5] = useState<Fable5Result>(initialFable5());
+  const [fable5Progress, setFable5Progress] = useState<number | null>(null);
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -957,9 +961,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     // abierto se marca intradía y NO contamina la serie histórica nocturna.
     setScanPhase("breadth");
     try {
-      const breadth = await runBreadthScan();
+      setFable5Progress(0);
+      const breadth = await runBreadthScan((coverage) => setFable5Progress(coverage));
       setMarketBreadth(breadth);
+      // El mismo loop del scan calcula y persiste FABLE 5 → refrescar su panel.
+      fetchFable5().then(setFable5).catch(() => {});
     } catch { /* el panel conserva el último veredicto cacheado */ }
+    finally { setFable5Progress(null); }
 
     setScanPhase("done");
     showToast("✓ Análisis completo — Amplitud + Señal Óptima actualizadas", "success");
@@ -1020,6 +1028,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // ── FABLE 5 — top-10 tendencia limpia (cacheado; el SCAN/cron lo recalcula) ──
+  useEffect(() => {
+    fetchFable5().then(setFable5).catch(() => {});
+    const interval = setInterval(() => {
+      fetchFable5().then(setFable5).catch(() => {});
+    }, 10 * 60 * 1000); // 10 min
+    return () => clearInterval(interval);
+  }, []);
+
 
   // Load last rally scan + market regime on mount
   useEffect(() => {
@@ -1071,7 +1088,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         scanPhase={scanPhase}
         onLogout={onLogout}
       />
-      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?), lo más alto ── */}
+      {/* ── FABLE 5 — top-10 tendencia limpia, PRIMER módulo del dashboard ── */}
+      <ErrorBoundary inline label="Fable5">
+        <Fable5Panel data={fable5} scanProgress={fable5Progress} />
+      </ErrorBoundary>
+      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
       <ErrorBoundary inline label="Market Risk">
         <MarketRiskGauge risk={marketRisk} />
       </ErrorBoundary>
