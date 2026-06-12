@@ -26,6 +26,7 @@ import {
   mergeAggregators, computeBreadthVerdict, computeBreadthFeedback, BREADTH_WEIGHTS,
   computeTickerRankFeatures, scoreTickerRank, RANK_CALIBRATION,
 } from "./_lib/marketBreadthEngine.js";
+import { computeEscogidosFeatures, scoreEscogidos, mergeEscogidos, ESCOGIDOS_CALIBRATION } from "./_lib/escogidosEngine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
@@ -120,17 +121,24 @@ async function processBatch(assets, spyBars, opts = {}) {
       const ft = computeTickerRankFeatures(bars);
       const rank = ft ? scoreTickerRank(ft) : null;
       const cand = (ft && rank) ? { sym: asset.providerSymbol, score: rank.score, prob: rank.prob, ft } : null;
-      return { signals, cand };
+      // LOS ESCOGIDOS — módulo independiente; reaprovecha las MISMAS barras (cero fetch extra).
+      const eft = computeEscogidosFeatures(bars);
+      const esc = eft ? scoreEscogidos(eft) : null;
+      const escCand = (eft && esc) ? { sym: asset.providerSymbol, score: esc.score, prob: esc.prob, ft: eft } : null;
+      return { signals, cand, escCand };
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
   const candidates = [];
+  const escogidos = [];
   for (const r of results) {
     foldTickerSignals(agg, r?.signals ?? null);
     if (r?.cand) candidates.push(r.cand);
+    if (r?.escCand) escogidos.push(r.escCand);
   }
   candidates.sort((a, b) => b.score - a.score);
-  return { agg, candidates: candidates.slice(0, 15) };
+  escogidos.sort((a, b) => b.score - a.score);
+  return { agg, candidates: candidates.slice(0, 15), escogidos: escogidos.slice(0, 15) };
 }
 
 async function loadWeights() {
@@ -181,8 +189,49 @@ async function enrichTopRank(topRank) {
   });
 }
 
+// LOS ESCOGIDOS — enriquece el top-10 y lo persiste en su PROPIA clave (módulo independiente).
+const ESCOGIDOS_KEY = "escogidos_v1";
+async function persistEscogidos(topEsc, scanStartedAtUtc, activeMarkets, universeCount) {
+  const top = (topEsc ?? []).slice(0, 10);
+  if (top.length === 0) return;
+  let nameMap = new Map();
+  try {
+    const uni = await buildUniverseResponse({ includeFullAssets: true });
+    nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.providerSymbol]));
+  } catch { /* fallback al símbolo */ }
+  const r2 = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const items = top.map((c, i) => {
+    const price = c.ft.close;
+    const atrPctVal = Number.isFinite(c.ft.atrPct) ? c.ft.atrPct * 100 : null;
+    const trail = (mult) => (atrPctVal && Number.isFinite(price))
+      ? { pct: r2(atrPctVal * mult), price: r2(price * (1 - (atrPctVal * mult) / 100)) }
+      : null;
+    return {
+      rank: i + 1,
+      symbol: c.sym,
+      name: nameMap.get(c.sym) ?? c.sym,
+      price: r2(price),
+      // "% de los últimos 7 días": cierre de hace 5 sesiones (~7 días naturales) → ahora.
+      ret7d: r2((c.ft.ret5 ?? 0) * 100),
+      score: c.score,
+      probUp: Math.round((c.prob ?? 0) * 100),
+      rsi3: r2(c.ft.rsi3),
+      downStreak: c.ft.downStreak ?? 0,
+      trailing: { corto: trail(0.65), neutro: trail(1.0), ampliado: trail(1.45) },
+    };
+  });
+  const payload = {
+    ok: true, items, universeCount, activeMarkets,
+    horizonSessions: ESCOGIDOS_CALIBRATION.horizonSessions,
+    baseUp: Math.round(ESCOGIDOS_CALIBRATION.baseUp * 100),
+    scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
+  };
+  await kvSet(ESCOGIDOS_KEY, payload, 26 * 3600).catch(() => {});
+}
+
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
-async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = []) {
+async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topEsc = []) {
+  await persistEscogidos(topEsc, scanStartedAtUtc, activeMarkets, universeCount).catch(() => {});
   const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
   // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
   // con todo cerrado → intraday=false. Los runs intradía SIRVEN el cache pero NO contaminan
@@ -258,15 +307,15 @@ async function handleStart(req, res) {
   const todayUtc = scanStartedAtUtc.slice(0, 10);
   const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const { agg, candidates } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
+  const { agg, candidates, escogidos } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates);
+    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, escogidos);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates });
+  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topEsc: escogidos });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal, batchesCompleted: 1, coveragePercent: Math.round(100 / batchesTotal),
@@ -293,18 +342,19 @@ async function handleContinue(req, res) {
   const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
   const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const { agg: batchAgg, candidates: batchCands } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
+  const { agg: batchAgg, candidates: batchCands, escogidos: batchEsc } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
   const mergedRank = mergeTopRank(st.topRank ?? [], batchCands);
+  const mergedEsc = mergeEscogidos(st.topEsc ?? [], batchEsc);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank);
+    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedEsc);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank });
+  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topEsc: mergedEsc });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal: st.batchesTotal, batchesCompleted: newCompleted,

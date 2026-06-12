@@ -59,6 +59,8 @@ import {
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
+import { type EscogidosResult, fetchEscogidos, initialEscogidos } from "../services/escogidosRefresh";
+import { LosEscogidosPanel } from "../components/LosEscogidosPanel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -204,6 +206,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadthResult>(initialMarketBreadth());
   const [marketRisk, setMarketRisk] = useState<MarketRisk>(initialMarketRisk());
+  const [escogidos, setEscogidos] = useState<EscogidosResult>(initialEscogidos());
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -959,6 +962,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     try {
       const breadth = await runBreadthScan();
       setMarketBreadth(breadth);
+      // El mismo loop del scan calcula y persiste Los Escogidos → refrescar su panel.
+      fetchEscogidos().then(setEscogidos).catch(() => {});
     } catch { /* el panel conserva el último veredicto cacheado */ }
 
     setScanPhase("done");
@@ -1020,6 +1025,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Los Escogidos — top-10 a ~7 días (cacheado; el SCAN/cron lo recalcula) ──
+  useEffect(() => {
+    fetchEscogidos().then(setEscogidos).catch(() => {});
+    const interval = setInterval(() => {
+      fetchEscogidos().then(setEscogidos).catch(() => {});
+    }, 10 * 60 * 1000); // 10 min
+    return () => clearInterval(interval);
+  }, []);
+
   // Load last rally scan + market regime on mount
   useEffect(() => {
     // El panel SIEMPRE muestra el último Rally scan 100% completado guardado en
@@ -1070,7 +1084,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         scanPhase={scanPhase}
         onLogout={onLogout}
       />
-      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?), lo más alto ── */}
+      {/* ── LOS ESCOGIDOS — top-10 a ~7 días, PRIMER módulo del dashboard ── */}
+      <ErrorBoundary inline label="Los Escogidos">
+        <LosEscogidosPanel data={escogidos} />
+      </ErrorBoundary>
+      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
       <ErrorBoundary inline label="Market Risk">
         <MarketRiskGauge risk={marketRisk} />
       </ErrorBoundary>
