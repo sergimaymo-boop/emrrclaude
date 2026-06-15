@@ -1069,7 +1069,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           onLogout={onLogout}
         />
       </ErrorBoundary>
-      {/* ── FABLE01 — salud de tendencia + asignación de capital, PRIMER módulo ── */}
+      {/* ── FEAR & GREED — PRIMER módulo ── */}
+      <ErrorBoundary inline label="Fear & Greed">
+        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
+      </ErrorBoundary>
+      {/* ── FABLE01 — salud de tendencia + asignación de capital ── */}
       <ErrorBoundary inline label="Fable01">
         <Fable01Panel data={fable01} scanProgress={fable01Progress} />
       </ErrorBoundary>
@@ -1153,9 +1157,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       <ErrorBoundary inline label="Estado del scan">
         <ScanStatusPanel scanState={scanState} />
-      </ErrorBoundary>
-      <ErrorBoundary inline label="Fear & Greed">
-        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
       </ErrorBoundary>
       <ErrorBoundary inline label="Flujos de Capital">
         <IntraDayFlowsPanel flowsState={flowsState} />
