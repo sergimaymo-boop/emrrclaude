@@ -65,6 +65,7 @@ import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
+import { Claude01Panel } from "../components/Claude01Panel";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -1068,7 +1069,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
       <ScanSummaryBar systemStatus={systemStatus} />
-      {/* ── FEAR & GREED — PRIMER módulo ── */}
+      {/* ── CLAUDE01 — PRIMER módulo: Momentum Catalítico Adaptativo ── */}
+      <ErrorBoundary inline label="Claude01">
+        <Claude01Panel />
+      </ErrorBoundary>
+      {/* ── FEAR & GREED — SEGUNDO módulo ── */}
       <ErrorBoundary inline label="Fear & Greed">
         <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
       </ErrorBoundary>
