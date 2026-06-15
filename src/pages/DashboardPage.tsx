@@ -63,7 +63,6 @@ import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLive
 import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
-import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 
@@ -1096,9 +1095,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
 
       {/* Signal History — Last 5 confluences detected */}
-      <ErrorBoundary inline label="Histórico de Señales">
-        <SignalHistoryPanel />
-      </ErrorBoundary>
 
       {/* Progress bars are now inside each module: ScanStatusPanel, IntraDayFlowsPanel */}
 
