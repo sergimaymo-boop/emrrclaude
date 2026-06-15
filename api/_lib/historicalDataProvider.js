@@ -3,9 +3,10 @@ import { cascadeHistory } from "./providerCascade.js";
 
 const PROVIDER_TIMEOUT_MS = 8000;
 const CACHE_TTL_SECONDS = 86400;
-// 400 calendar days ≈ 280 trading days — enough to get 260 valid bars
+// 400 calendar days ≈ 280 trading days — triggers Yahoo "2y" path (>300) → ~500 barras
 const DEFAULT_LOOKBACK_DAYS = 400;
-const MAX_BARS = 400;
+// 520 = margen por encima de los ~509 que devuelve Yahoo 2y en tickers EU
+const MAX_BARS = 520;
 const PLACEHOLDER_PARTS = ["your_", "_here", "placeholder"];
 const historyCache = new Map();
 

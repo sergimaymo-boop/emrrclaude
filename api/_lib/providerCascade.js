@@ -375,37 +375,71 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
   return { ok: true, provider: "FMP", bars };
 }
 
+// Convierte los datos crudos de Yahoo en un array de barras limpias.
+function _parseYahooBars(chartResult) {
+  if (!chartResult) return [];
+  const ts = chartResult.timestamp ?? [];
+  const q = chartResult.indicators?.quote?.[0] ?? {};
+  return ts
+    .map((t, i) => ({
+      date: new Date(t * 1000).toISOString().slice(0, 10),
+      open:   finiteOrNull(q.open?.[i]),
+      high:   finiteOrNull(q.high?.[i]),
+      low:    finiteOrNull(q.low?.[i]),
+      close:  finiteOrNull(q.close?.[i]),
+      volume: finiteOrNull(q.volume?.[i]) ?? 0,
+    }))
+    .filter(b => b.close && b.close > 0);
+}
+
+// Intenta un único par (range, host). Devuelve barras o null.
+async function _fetchYahooOnce(symbol, range, host) {
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
+  const extraHeaders = { "accept-language": "en-US,en;q=0.9" };
+  const r = await fetchJson(`https://${host}${path}`, extraHeaders);
+  if (!r.ok) return null;
+  const bars = _parseYahooBars(r.data?.chart?.result?.[0]);
+  return bars.length > 0 ? bars : null;
+}
+
+/**
+ * YAHOO HISTORY — doble ruta: 1y (251 barras) y 2y (500 barras).
+ *
+ * Ruta "1y" (conservada): lookbackDays ≤ 300 — suficiente para RS60, momentum, ATR.
+ * Ruta "2y" (nueva):     lookbackDays > 300 — EMA200 necesita 220 barras de calentamiento;
+ *   "1y" solo dejaba 31 de margen, "2y" da ~280. Si "2y" falla en ambos hosts, cae a "1y".
+ *
+ * Cada ruta prueba query1 → query2 antes de rendir.
+ * Verificado en vivo: US ~500/251 barras, EU (DE/FR/NL) ~505/253 barras.
+ */
 async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
   const symbol = toYahooSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Yahoo", reason: `No Yahoo mapping for ${eodhdSymbol}` };
 
-  // "2y" = ~500 barras (vs "1y" = 251): EMA200 necesita 220 barras de calentamiento,
-  // con "1y" solo quedan 31 de margen y la EMA200 es imprecisa. "2y" da +270 de margen.
-  const range = lookbackDays > 180 ? "2y" : lookbackDays > 90 ? "6mo" : "3mo";
-  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
+  const HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
 
-  // Punto único Yahoo: ante fallo/429/timeout, reintentar en el host alterno query2
-  // (red de seguridad gratuita, sin clave) antes de darse por vencido.
-  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
-    const r = await fetchJson(`https://${host}${path}`);
-    if (!r.ok) continue;
-    const result = r.data?.chart?.result?.[0];
-    if (!result) continue;
-    const ts = result.timestamp ?? [];
-    const q = result.indicators?.quote?.[0] ?? {};
-    const bars = ts
-      .map((t, i) => ({
-        date: new Date(t * 1000).toISOString().slice(0, 10),
-        open: finiteOrNull(q.open?.[i]),
-        high: finiteOrNull(q.high?.[i]),
-        low: finiteOrNull(q.low?.[i]),
-        close: finiteOrNull(q.close?.[i]),
-        volume: finiteOrNull(q.volume?.[i]) ?? 0,
-      }))
-      .filter(b => b.close && b.close > 0);
-    if (bars.length > 0) return { ok: true, provider: "Yahoo", bars };
+  // Decide si necesitamos profundidad 2y (400-day lookback del scan = FABLE01/EMA200)
+  const needDeep = lookbackDays > 300;
+  const primaryRange = needDeep ? "2y"
+    : lookbackDays > 180 ? "1y"
+    : lookbackDays > 90  ? "6mo"
+    : "3mo";
+
+  // Intentar con la ruta primaria (query1 → query2)
+  for (const host of HOSTS) {
+    const bars = await _fetchYahooOnce(symbol, primaryRange, host);
+    if (bars) return { ok: true, provider: "Yahoo", bars, range: primaryRange, host };
   }
-  return { ok: false, provider: "Yahoo", reason: "No valid bars (query1+query2)" };
+
+  // Fallback "1y": si "2y" falló (ticker raro / throttle puntual), intentar con 1y
+  if (needDeep) {
+    for (const host of HOSTS) {
+      const bars = await _fetchYahooOnce(symbol, "1y", host);
+      if (bars) return { ok: true, provider: "Yahoo", bars, range: "1y", host };
+    }
+  }
+
+  return { ok: false, provider: "Yahoo", reason: `No valid bars (${primaryRange}+fallback, query1+query2)` };
 }
 
 async function fetchStooqHistory(eodhdSymbol, lookbackDays) {
