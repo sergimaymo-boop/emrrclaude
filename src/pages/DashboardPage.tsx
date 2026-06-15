@@ -60,7 +60,7 @@ import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
 import { type Fable5Result, fetchFable5, initialFable5 } from "../services/fable5Refresh";
 import { Fable5Panel } from "../components/Fable5Panel";
-import { type Fable01Result, fetchFable01, initialFable01 } from "../services/fable01Refresh";
+import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLiveQuotes } from "../services/fable01Refresh";
 import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
@@ -211,6 +211,20 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [fable5Progress, setFable5Progress] = useState<number | null>(null);
   const [fable01, setFable01] = useState<Fable01Result>(initialFable01());
   const [fable01Progress, setFable01Progress] = useState<number | null>(null);
+  const fable01Ref = useRef<Fable01Result>(fable01);
+  useEffect(() => { fable01Ref.current = fable01; }, [fable01]);
+  // Carga FABLE01 (items del scan cacheado) + enriquece sus precios en VIVO (US+EU) antes de mostrar.
+  async function loadFable01() {
+    try {
+      const res = await fetchFable01();
+      if (res.items && res.items.length) {
+        const items = await enrichFable01WithLiveQuotes(res.items);
+        setFable01({ ...res, items });
+      } else {
+        setFable01(res);
+      }
+    } catch { /* conserva el estado actual */ }
+  }
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -894,7 +908,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       setMarketBreadth(breadth);
       // El mismo loop del scan calcula y persiste FABLE 5 y FABLE01 → refrescar sus paneles (independientes).
       fetchFable5().then(setFable5).catch(() => {});
-      fetchFable01().then(setFable01).catch(() => {});
+      loadFable01();
     } catch { /* los paneles conservan su último estado cacheado */ }
     finally { setFable5Progress(null); setFable01Progress(null); }
 
@@ -966,12 +980,25 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── FABLE01 — salud de tendencia + asignación de capital (cacheado; SCAN/cron recalcula) ──
+  // ── FABLE01 — items del scan (cacheado; SCAN/cron recalcula) + precios en VIVO al cargar ──
   useEffect(() => {
-    fetchFable01().then(setFable01).catch(() => {});
+    loadFable01();
     const interval = setInterval(() => {
-      fetchFable01().then(setFable01).catch(() => {});
-    }, 10 * 60 * 1000); // 10 min
+      loadFable01();
+    }, 10 * 60 * 1000); // 10 min — los items cambian poco; el precio se refresca aparte (abajo)
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── FABLE01 — refresco de PRECIOS EN VIVO cada 90s (como el Top 8), sin re-pedir los items ──
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const cur = fable01Ref.current;
+      if (cur.items && cur.items.length && !scanActiveRef.current) {
+        enrichFable01WithLiveQuotes(cur.items)
+          .then((items) => setFable01((prev) => ({ ...prev, items })))
+          .catch(() => {});
+      }
+    }, 90_000);
     return () => clearInterval(interval);
   }, []);
 

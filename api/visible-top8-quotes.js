@@ -5,6 +5,10 @@ const ENDPOINT = "VISIBLE_TOP8_QUOTES";
 const ENDPOINT_VERSION = "DATA_INTEGRITY_FIX_2026_06_01";
 const CACHE_TTL_SECONDS = 60;
 const REQUEST_TIMEOUT_MS = 5_000;
+// Tope de assets por llamada. 12 (no 8) para que el top-10 de FABLE01/FABLE 5 quepa en UNA
+// petición; el bucle es Promise.all (paralelo), así que el coste temporal no crece. El Top 8
+// sigue enviando ≤8 (compatible). Es enriquecimiento de precio en vivo, no fuente de ranking.
+const MAX_ASSETS = 12;
 
 const quoteCache = new Map();
 
@@ -254,7 +258,7 @@ export default async function handler(req, res) {
       ok: true,
       mode: "PRICE_ENRICHMENT_ONLY",
       realApiCallsEnabled: realApiCallsEnabled(),
-      maxAssets: 8,
+      maxAssets: MAX_ASSETS,
       selectedTickers: [],
       acceptsExternalSymbols: false,
       rankingSource: false,
@@ -277,11 +281,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (selectedAssets.length > 8) {
+  if (selectedAssets.length > MAX_ASSETS) {
     json(res, 400, {
       ok: false,
-      error: "MAX_VISIBLE_TOP8_EXCEEDED",
-      maxAssets: 8,
+      error: "MAX_VISIBLE_QUOTES_EXCEEDED",
+      maxAssets: MAX_ASSETS,
     });
     return;
   }
