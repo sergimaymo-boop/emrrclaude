@@ -63,7 +63,6 @@ import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLive
 import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
-import { PullbackRiskIndicator } from "../components/PullbackRiskIndicator";
 import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
@@ -1135,11 +1134,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         </div>
       )}
 
-      {/* Pullback Risk semaphore — early-warning for the current Ticket Perfecto candidate
-          (NOT the market regime; this flags an imminent pullback/drop on THAT specific stock) */}
-      <ErrorBoundary inline label="Pullback Risk">
-        <PullbackRiskIndicator rallyState={rallyState} top8={top8} />
-      </ErrorBoundary>
 
       <ErrorBoundary inline label="Cabecera técnica">
         <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
