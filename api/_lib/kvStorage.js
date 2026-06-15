@@ -22,7 +22,8 @@ export async function saveLastScanSnapshot(snapshot) {
     if (!redis) return false;
     await redis.set(KV_KEY, snapshot, { ex: KV_TTL_SECONDS });
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
     return false;
   }
 }
@@ -33,7 +34,8 @@ export async function loadLastScanSnapshot() {
     if (!redis) return null;
     const data = await redis.get(KV_KEY);
     return data ?? null;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
     return null;
   }
 }
@@ -46,7 +48,8 @@ export async function saveLastRallySnapshot(snapshot) {
     if (!redis) return false;
     await redis.set(KV_RALLY_KEY, snapshot, { ex: KV_TTL_SECONDS });
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
     return false;
   }
 }
@@ -57,7 +60,8 @@ export async function loadLastRallySnapshot() {
     if (!redis) return null;
     const data = await redis.get(KV_RALLY_KEY);
     return data ?? null;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
     return null;
   }
 }
@@ -72,7 +76,8 @@ export async function saveBenchmarkBars(bars) {
     if (!redis) return false;
     await redis.set(KV_SPY_KEY, { bars, cachedAtUtc: new Date().toISOString() }, { ex: KV_SPY_TTL_SECONDS });
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
     return false;
   }
 }
@@ -84,7 +89,8 @@ export async function loadBenchmarkBars() {
     const data = await redis.get(KV_SPY_KEY);
     if (!data || !Array.isArray(data.bars) || data.bars.length < 61) return null;
     return data.bars;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
     return null;
   }
 }
@@ -96,7 +102,8 @@ export async function kvGet(key) {
     const redis = getRedis();
     if (!redis) return null;
     return await redis.get(key);
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
     return null;
   }
 }
@@ -107,7 +114,8 @@ export async function kvSet(key, value, exSeconds) {
     if (!redis) return false;
     await redis.set(key, value, { ex: exSeconds });
     return true;
-  } catch {
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
     return false;
   }
 }

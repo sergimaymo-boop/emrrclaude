@@ -227,6 +227,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   useEffect(() => { masterIndicatorsRef.current = masterIndicators; }, [masterIndicators]);
   const systemStatusRef = useRef<SystemStatus>(systemStatus);
   useEffect(() => { systemStatusRef.current = systemStatus; }, [systemStatus]);
+  // Ref de "scan en curso" para que los intervals (closures) sepan si hay un scan activo
+  // sin depender de estado obsoleto (audit fix: no refrescar cotizaciones durante un scan).
+  const scanActiveRef = useRef(false);
+  useEffect(() => { scanActiveRef.current = scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done"); }, [scanState.isScanning, scanPhase]);
 
   // Cleanup: abort any in-progress rally scan on unmount to prevent
   // state updates on an unmounted component (audit fix).
@@ -425,7 +429,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const current = top8Ref.current;
-      if (current.length > 0) refreshVisibleQuotes(current);
+      // No refrescar durante un scan: handleScanAll ya gestiona las cotizaciones (evita carrera).
+      if (current.length > 0 && !scanActiveRef.current) refreshVisibleQuotes(current);
     }, 90_000);
     return () => window.clearInterval(timer);
   }, []);
@@ -639,7 +644,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }));
     }
 
-    const lastRealDataUpdate = latestTimestamp(quoteRealUpdate, indicatorRealUpdate, systemStatus.lastRealDataUpdate);
+    const lastRealDataUpdate = latestTimestamp(quoteRealUpdate, indicatorRealUpdate, systemStatusRef.current.lastRealDataUpdate);
     const dashboardDataMode = deriveDashboardDataMode(nextTop8, nextIndicators, {
       isScanning: options.keepScanning,
       coveragePercent: nextSnapshotFields.coveragePercent,
@@ -704,7 +709,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   async function handleScan() {
-    if (scanState.isScanning) return;
+    // Guarda cruzada: no arrancar si ya corre el SCAN ALL (scanPhase) ni otro scan (audit fix concurrencia).
+    if (scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done")) return;
     const savedScroll = window.scrollY; // keep user's position
 
     clearSessionCacheForNewScan();
@@ -742,7 +748,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   async function handleContinueScan() {
-    if (scanState.isScanning || !scanState.snapshotToken) return;
+    if (scanState.isScanning || !scanState.snapshotToken || (scanPhase !== "idle" && scanPhase !== "done")) return;
 
     const startedAt = createTimestampPair();
     setScanState((current) => ({
@@ -754,13 +760,20 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }));
 
     const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
-    await Promise.all([
-      scanDelay,
-      applySnapshotResult(continueScanSnapshot(scanState.snapshotToken), startedAt, {
-        keepScanning: false,
-        suppressToast: false,
-      }),
-    ]);
+    // try/catch/finally: si applySnapshotResult lanza, no dejar isScanning colgado para siempre
+    // (coherente con handleScan). Permite reintentar el CONTINUE.
+    try {
+      await Promise.all([
+        scanDelay,
+        applySnapshotResult(continueScanSnapshot(scanState.snapshotToken), startedAt, {
+          keepScanning: false,
+          suppressToast: false,
+        }),
+      ]);
+    } catch {
+      setScanState((current) => ({ ...current, isScanning: false, label: "Continue scan failed — reintenta" }));
+      showToast("Continue scan falló — puedes reintentar", "error");
+    }
   }
 
   async function handleCopyTop8() {
@@ -825,13 +838,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           top10: r.top10 ?? prev.top10,
         }));
       }
+      // Si el bucle se cortó por desmontaje (abort), no actualizar estado de un componente ya ido.
+      if (rallyAbortRef.current) return;
       setRallyState(prev => ({
         ...prev, status: "RALLY_FINAL", isScanning: false, rallyToken: null,
         top10: r.top10 ?? prev.top10,
         coveragePercent: r.coveragePercent ?? prev.coveragePercent,
         lastRun: new Date().toLocaleString(),
       }));
-    } catch { setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false })); }
+    } catch { if (!rallyAbortRef.current) setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false })); }
   }
 
   async function runFull() {
@@ -844,7 +859,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }
 
   async function handleScanAll() {
-    if (scanPhase !== "idle" && scanPhase !== "done") return;
+    // Guarda cruzada: no arrancar si ya hay un SCAN/CONTINUE individual en curso (audit fix concurrencia).
+    if ((scanPhase !== "idle" && scanPhase !== "done") || scanState.isScanning) return;
     const savedScroll = window.scrollY;
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
 
@@ -1004,12 +1020,14 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   return (
     <main className="dashboard-shell">
-      <StickyMiniHeader
-        systemStatus={systemStatus}
-        onScanAll={handleScanAll}
-        scanPhase={scanPhase}
-        onLogout={onLogout}
-      />
+      <ErrorBoundary inline label="Cabecera">
+        <StickyMiniHeader
+          systemStatus={systemStatus}
+          onScanAll={handleScanAll}
+          scanPhase={scanPhase}
+          onLogout={onLogout}
+        />
+      </ErrorBoundary>
       {/* ── FABLE 5 — top-10 tendencia limpia, PRIMER módulo del dashboard ── */}
       <ErrorBoundary inline label="Fable5">
         <Fable5Panel data={fable5} scanProgress={fable5Progress} />
@@ -1089,10 +1107,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       {/* Pullback Risk semaphore — early-warning for the current Ticket Perfecto candidate
           (NOT the market regime; this flags an imminent pullback/drop on THAT specific stock) */}
-      <PullbackRiskIndicator rallyState={rallyState} top8={top8} />
+      <ErrorBoundary inline label="Pullback Risk">
+        <PullbackRiskIndicator rallyState={rallyState} top8={top8} />
+      </ErrorBoundary>
 
-      <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
-      <ScanStatusPanel scanState={scanState} />
+      <ErrorBoundary inline label="Cabecera técnica">
+        <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
+      </ErrorBoundary>
+      <ErrorBoundary inline label="Estado del scan">
+        <ScanStatusPanel scanState={scanState} />
+      </ErrorBoundary>
       <ErrorBoundary inline label="Fear & Greed">
         <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
       </ErrorBoundary>
@@ -1114,7 +1138,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
             : "Continuar scan"
         }
       />
-      <SystemStatusCards systemStatus={systemStatus} />
+      <ErrorBoundary inline label="Estado del sistema">
+        <SystemStatusCards systemStatus={systemStatus} />
+      </ErrorBoundary>
       {toast ? <Toast key={toast.id} message={toast.message} tone={toast.tone} /> : null}
     </main>
   );

@@ -21,7 +21,7 @@ jobs:
           call() {
             local out
             for attempt in 1 2 3; do
-              out=$(curl -s --max-time 80 "$@" || echo '{"error":"curl_failed"}')
+              out=$(curl -s --max-time 65 "$@" || echo '{"error":"curl_failed"}')
               if echo "$out" | grep -qE '"ok":(true|false)|"isFinal"|"breadthToken"'; then echo "$out"; return 0; fi
               sleep 10
             done

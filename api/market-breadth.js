@@ -159,7 +159,10 @@ async function loadWeights() {
 
 // Enriquece el top-10 del ranking con nombres (universo cacheado) y formatea para la watchlist.
 async function enrichTopRank(topRank) {
-  const top = (topRank ?? []).slice(0, 10);
+  // Defensivo: descarta candidatos sin features válidas (p.ej. de un token manipulado o de un
+  // cambio futuro en la forma del candidato), para que un dato corrupto de un ticker NUNCA
+  // bloquee el persistir del veredicto completo (auditoría de estabilidad).
+  const top = (topRank ?? []).filter((c) => c && c.ft && Number.isFinite(c.ft.close)).slice(0, 10);
   if (top.length === 0) return [];
   let nameMap = new Map();
   try {
@@ -403,6 +406,11 @@ async function handleContinue(req, res) {
   const decoded = decodeToken(body.breadthToken);
   if (!decoded.ok) return sendJson(res, 400, { ok: false, error: "TOKEN_DECODE_FAILED" });
   const st = decoded.state;
+  // Validar la FORMA del estado (no solo que sea JSON): un token con campos ausentes/erróneos
+  // reventaría más abajo (st.tickers.slice) como un 500 mudo. Mejor un 400 estructurado.
+  if (!st || !Array.isArray(st.tickers) || !Number.isInteger(st.nextBatchIndex) || !Number.isInteger(st.batchesTotal)) {
+    return sendJson(res, 400, { ok: false, error: "TOKEN_STATE_INVALID" });
+  }
 
   // La lista de tickers va fija en el token (universo de cierre estable), así que el
   // loop no se "rompe" si cruza una apertura/cierre — no hay check de sesión que abortar.
@@ -458,8 +466,15 @@ async function handleFeedback(req, res) {
 
 export default async function handler(req, res) {
   const action = req.query?.action ?? req.url?.split("action=")[1]?.split("&")[0] ?? "";
-  if (action === "start") return handleStart(req, res);
-  if (action === "continue") return handleContinue(req, res);
-  if (action === "feedback") return handleFeedback(req, res);
-  return handleGet(req, res);
+  // try/catch global: cualquier excepción no prevista devuelve un 500 ESTRUCTURADO (con body JSON)
+  // en vez de un FUNCTION_INVOCATION_FAILED mudo, para que el orquestador externo pueda reaccionar.
+  try {
+    if (action === "start") return await handleStart(req, res);
+    if (action === "continue") return await handleContinue(req, res);
+    if (action === "feedback") return await handleFeedback(req, res);
+    return await handleGet(req, res);
+  } catch (err) {
+    console.error("[market-breadth] handler error:", err);
+    if (!res.headersSent) return sendJson(res, 500, { ok: false, error: "INTERNAL_ERROR", detail: String(err?.message ?? err) });
+  }
 }

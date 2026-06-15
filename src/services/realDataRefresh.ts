@@ -187,7 +187,9 @@ function execDisabledReason(asset: Top8Asset): string | undefined {
 }
 
 export async function fetchVisibleTop8Quotes(selectedAssets: Top8Asset[]): Promise<VisibleTop8QuotesResponse> {
-  const response = await fetch("/api/visible-top8-quotes", {
+  // Con timeout/AbortController: una petición colgada falla de forma controlada (audit fix)
+  // en vez de dejar el refresco bloqueado indefinidamente.
+  return fetchJsonWithTimeout<VisibleTop8QuotesResponse>("/api/visible-top8-quotes", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
@@ -200,26 +202,14 @@ export async function fetchVisibleTop8Quotes(selectedAssets: Top8Asset[]): Promi
         providerSymbol: asset.providerSymbol,
       })),
     }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`VISIBLE_TOP8_QUOTES_HTTP_${response.status}`);
-  }
-
-  return response.json();
+  }, 12000);
 }
 
 export async function fetchMasterIndicators(): Promise<MasterIndicatorsApiResponse> {
-  const response = await fetch("/api/master-indicators", {
+  return fetchJsonWithTimeout<MasterIndicatorsApiResponse>("/api/master-indicators", {
     method: "GET",
     headers: { accept: "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`MASTER_INDICATORS_HTTP_${response.status}`);
-  }
-
-  return response.json();
+  }, 12000);
 }
 
 export async function fetchTop8Status(): Promise<Top8StatusApiResponse> {

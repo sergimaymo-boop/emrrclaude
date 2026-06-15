@@ -53,6 +53,12 @@
     },
     "api/market-breadth.js": {
       "maxDuration": 60
+    },
+    "api/rally-scan.js": {
+      "maxDuration": 60
+    },
+    "api/scan-snapshot.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
