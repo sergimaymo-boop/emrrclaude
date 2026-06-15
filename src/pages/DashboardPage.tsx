@@ -1096,34 +1096,35 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       {/* Signal History — Last 5 confluences detected */}
 
-      {/* Progress bars are now inside each module: ScanStatusPanel, IntraDayFlowsPanel */}
-
-
-
       <ErrorBoundary inline label="Cabecera técnica">
         <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
-      </ErrorBoundary>
-      <ErrorBoundary inline label="Estado del scan">
-        <ScanStatusPanel scanState={scanState} />
       </ErrorBoundary>
       <ErrorBoundary inline label="Flujos de Capital">
         <IntraDayFlowsPanel flowsState={flowsState} />
       </ErrorBoundary>
-      <ErrorBoundary inline label="Top 8">
-        <Top8Grid assets={top8} />
-      </ErrorBoundary>
-      <ActionButtons
-        onScan={handleScan}
-        onContinueScan={handleContinueScan}
-        onCopy={handleCopyTop8}
-        isScanning={scanState.isScanning}
-        canContinueScan={Boolean(scanState.snapshotToken && scanState.coveragePercent !== 100)}
-        continueLabel={
-          scanState.nextBatchIndex && scanState.batchesTotal
-            ? `Continuar scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
-            : "Continuar scan"
-        }
-      />
+
+      {/* ── TOP 8 — bloque unificado: botón de carga arriba, estado del scan y grid dentro ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        <ActionButtons
+          onScan={handleScan}
+          onContinueScan={handleContinueScan}
+          onCopy={handleCopyTop8}
+          isScanning={scanState.isScanning}
+          canContinueScan={Boolean(scanState.snapshotToken && scanState.coveragePercent !== 100)}
+          continueLabel={
+            scanState.nextBatchIndex && scanState.batchesTotal
+              ? `Continuar scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
+              : "Continuar scan"
+          }
+        />
+        <ErrorBoundary inline label="Estado del scan">
+          <ScanStatusPanel scanState={scanState} />
+        </ErrorBoundary>
+        <ErrorBoundary inline label="Top 8">
+          <Top8Grid assets={top8} />
+        </ErrorBoundary>
+      </div>
+
       <ErrorBoundary inline label="Estado del sistema">
         <SystemStatusCards systemStatus={systemStatus} />
       </ErrorBoundary>
