@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { MasterIndicator } from "../types";
 import { IndicatorRow } from "./MasterIndicatorsGrid";
+import { SegmentedControl } from "./DensityToggle";
 
 interface FearGreedData {
   score: number;
@@ -21,7 +22,6 @@ const FG_INDICATOR_ORDER: MasterIndicator["symbol"][] = ["HYG", "MOVE", "VIX", "
 export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any; masterIndicators?: MasterIndicator[] }) {
   const [fgData, setFgData] = useState<FearGreedData | null>(null);
   const [showIndicators, setShowIndicators] = useState(false);
-  const indicatorsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // AUDIT FIX (F&G "frozen" / "esta mal"): este fetch antes solo se ejecutaba
@@ -141,32 +141,24 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
           )}
         </div>
       </div>
-      {/* Indicadores de mercado — desplegables bajo botón */}
+      {/* Indicadores de mercado — desplegables con SegmentedControl */}
       {masterIndicators && masterIndicators.length > 0 && (
         <div style={{ marginTop: 14 }}>
-          <button
-            onClick={() => setShowIndicators((v) => !v)}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              background: "none", border: "none", cursor: "pointer", padding: 0,
-              fontSize: 9, fontWeight: 700, color: "#64748b",
-              letterSpacing: "0.05em", textTransform: "uppercase",
-              marginBottom: showIndicators ? 8 : 0,
-            }}
-          >
-            <span style={{
-              display: "inline-block", fontSize: 8,
-              transform: showIndicators ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-            }}>▶</span>
-            Indicadores de mercado
-          </button>
+          <SegmentedControl
+            ariaLabel="Indicadores de mercado"
+            options={[
+              { key: "show", label: "INDICADORES", icon: "☰" },
+              { key: "hide", label: "OCULTAR",      icon: "▤" },
+            ]}
+            value={showIndicators ? "show" : "hide"}
+            onChange={(v) => setShowIndicators(v === "show")}
+          />
           <div
-            ref={indicatorsRef}
             style={{
               overflow: "hidden",
-              maxHeight: showIndicators ? `${(indicatorsRef.current?.scrollHeight ?? 300)}px` : "0px",
+              maxHeight: showIndicators ? "400px" : "0px",
               transition: "max-height 0.25s ease",
+              marginTop: showIndicators ? 10 : 0,
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
