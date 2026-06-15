@@ -331,7 +331,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setSystemStatus((current) =>
           updateSystemStatusForDataMode(
             refreshSystemMarketStatus(current),
-            deriveDashboardDataMode([], mergedIndicators.indicators, {
+            deriveDashboardDataMode(top8Ref.current, mergedIndicators.indicators, {
               coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
             }),
             mergedIndicators.lastRealDataUpdate ?? current.lastRealDataUpdate,
@@ -605,6 +605,17 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       const snapshot = snapshotSettled.value;
       statusBase = mergeScanSnapshotUniverseStatus(statusBase, snapshot);
       nextTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
+      // When a complete global scan produces 0 candidates (likely provider failures),
+      // fall back to the last valid Redis snapshot so the panel stays populated.
+      if (snapshot.isGlobalTop8Final && nextTop8.length === 0) {
+        try {
+          const fallback = await fetchLastScanSnapshot();
+          if (fallback) {
+            const fallbackTop8 = buildDashboardTop8FromScanSnapshot(fallback);
+            if (fallbackTop8.length > 0) nextTop8 = fallbackTop8;
+          }
+        } catch { /* keep nextTop8 = [] if fallback also fails */ }
+      }
       nextSnapshotToken = snapshot.snapshotToken ?? null;
       nextSnapshotFields = {
         scanId: snapshot.scanId,
