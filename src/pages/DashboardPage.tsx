@@ -61,6 +61,8 @@ import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
 import { type Fable5Result, fetchFable5, initialFable5 } from "../services/fable5Refresh";
 import { Fable5Panel } from "../components/Fable5Panel";
+import { type Fable01Result, fetchFable01, initialFable01 } from "../services/fable01Refresh";
+import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
@@ -208,6 +210,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [marketRisk, setMarketRisk] = useState<MarketRisk>(initialMarketRisk());
   const [fable5, setFable5] = useState<Fable5Result>(initialFable5());
   const [fable5Progress, setFable5Progress] = useState<number | null>(null);
+  const [fable01, setFable01] = useState<Fable01Result>(initialFable01());
+  const [fable01Progress, setFable01Progress] = useState<number | null>(null);
 
   function showToast(message: string, tone: ToastState["tone"]) {
     setToast({ id: Date.now(), message, tone });
@@ -962,12 +966,14 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setScanPhase("breadth");
     try {
       setFable5Progress(0);
-      const breadth = await runBreadthScan((coverage) => setFable5Progress(coverage));
+      setFable01Progress(0);
+      const breadth = await runBreadthScan((coverage) => { setFable5Progress(coverage); setFable01Progress(coverage); });
       setMarketBreadth(breadth);
-      // El mismo loop del scan calcula y persiste FABLE 5 → refrescar su panel.
+      // El mismo loop del scan calcula y persiste FABLE 5 y FABLE01 → refrescar sus paneles (independientes).
       fetchFable5().then(setFable5).catch(() => {});
-    } catch { /* el panel conserva el último veredicto cacheado */ }
-    finally { setFable5Progress(null); }
+      fetchFable01().then(setFable01).catch(() => {});
+    } catch { /* los paneles conservan su último estado cacheado */ }
+    finally { setFable5Progress(null); setFable01Progress(null); }
 
     setScanPhase("done");
     showToast("✓ Análisis completo — Amplitud + Señal Óptima actualizadas", "success");
@@ -1037,6 +1043,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
+  // ── FABLE01 — salud de tendencia + asignación de capital (cacheado; SCAN/cron recalcula) ──
+  useEffect(() => {
+    fetchFable01().then(setFable01).catch(() => {});
+    const interval = setInterval(() => {
+      fetchFable01().then(setFable01).catch(() => {});
+    }, 10 * 60 * 1000); // 10 min
+    return () => clearInterval(interval);
+  }, []);
+
 
   // Load last rally scan + market regime on mount
   useEffect(() => {
@@ -1091,6 +1106,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       {/* ── FABLE 5 — top-10 tendencia limpia, PRIMER módulo del dashboard ── */}
       <ErrorBoundary inline label="Fable5">
         <Fable5Panel data={fable5} scanProgress={fable5Progress} />
+      </ErrorBoundary>
+      {/* ── FABLE01 — salud de tendencia + asignación de capital, SEGUNDO módulo ── */}
+      <ErrorBoundary inline label="Fable01">
+        <Fable01Panel data={fable01} scanProgress={fable01Progress} />
       </ErrorBoundary>
       {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
       <ErrorBoundary inline label="Market Risk">

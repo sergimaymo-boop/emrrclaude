@@ -27,6 +27,7 @@ import {
   computeTickerRankFeatures, scoreTickerRank, RANK_CALIBRATION,
 } from "./_lib/marketBreadthEngine.js";
 import { computeFable5Features, scoreFable5, mergeFable5, FABLE5_CALIBRATION } from "./_lib/fable5Engine.js";
+import { computeFable01Features, scoreFable01, mergeFable01, assignBand, allocateFable01, FABLE01_CALIBRATION } from "./_lib/fable01Engine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
@@ -125,20 +126,27 @@ async function processBatch(assets, spyBars, opts = {}) {
       const fft = computeFable5Features(bars);
       const fab = fft ? scoreFable5(fft) : null;
       const fabCand = (fft && fab) ? { sym: asset.providerSymbol, score: fab.score, ft: fft } : null;
-      return { signals, cand, fabCand };
+      // FABLE01 — módulo independiente (salud de tendencia + allocation); MISMAS barras + spyBars (RS).
+      const f01ft = computeFable01Features(bars, spyBars);
+      const f01 = f01ft ? scoreFable01(f01ft) : null;
+      const f01Cand = (f01ft && f01) ? { sym: asset.providerSymbol, score: f01.score, ft: f01ft } : null;
+      return { signals, cand, fabCand, f01Cand };
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
   const candidates = [];
   const fable5 = [];
+  const fable01 = [];
   for (const r of results) {
     foldTickerSignals(agg, r?.signals ?? null);
     if (r?.cand) candidates.push(r.cand);
     if (r?.fabCand) fable5.push(r.fabCand);
+    if (r?.f01Cand) fable01.push(r.f01Cand);
   }
   candidates.sort((a, b) => b.score - a.score);
   fable5.sort((a, b) => b.score - a.score);
-  return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15) };
+  fable01.sort((a, b) => b.score - a.score);
+  return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15), fable01: fable01.slice(0, 15) };
 }
 
 async function loadWeights() {
@@ -230,8 +238,67 @@ async function persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCo
   await kvSet(FABLE5_KEY, payload, 26 * 3600).catch(() => {});
 }
 
+// FABLE01 — enriquece el top-10 (salud de tendencia + asignación de capital blindada) en su PROPIA clave.
+const FABLE01_KEY = "fable01_v1";
+async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish) {
+  const top = (topF01 ?? []).slice(0, 10);
+  if (top.length === 0) return;
+  let nameMap = new Map();
+  try {
+    const uni = await buildUniverseResponse({ includeFullAssets: true });
+    nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.providerSymbol]));
+  } catch { /* fallback al símbolo */ }
+  const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  // Régimen: risk-on si SPY>EMA200 (o desconocido → asumir risk-on, como hace breadth).
+  const regimeRiskOn = spyBullish !== false;
+  const { weights, deploymentPct } = allocateFable01(top, { regimeRiskOn });
+  const m = FABLE01_CALIBRATION.trailingMults;
+  // allocationPct redondeado a entero que suma exactamente 100 (reparto del residuo al mayor).
+  const raw = weights.map((w) => (w ?? 0) * 100);
+  const alloc = raw.map((v) => Math.floor(v));
+  let resid = 100 - alloc.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]);
+  for (let k = 0; k < order.length && resid > 0; k++) { if (raw[order[k][1]] > 0) { alloc[order[k][1]]++; resid--; } }
+
+  const items = top.map((c, i) => {
+    const price = c.ft.close;
+    const prev = c.ft.prevClose;
+    const atrPctVal = Number.isFinite(c.ft.atrPct) ? c.ft.atrPct * 100 : null; // ATR diario %
+    const band = assignBand(c.ft);
+    const bandMult = m[band];
+    const stopPct = atrPctVal ? r2n(atrPctVal * bandMult) : null;
+    const stopPrice = (atrPctVal && Number.isFinite(price)) ? r2n(price * (1 - (atrPctVal * bandMult) / 100)) : null;
+    const allLevels = atrPctVal ? {
+      TR: r2n(atrPctVal * m.TR), TN: r2n(atrPctVal * m.TN), TA: r2n(atrPctVal * m.TA),
+    } : null;
+    return {
+      rank: i + 1,
+      symbol: c.sym,
+      name: nameMap.get(c.sym) ?? c.sym,
+      score: Math.round(c.score),
+      allocationPct: alloc[i] ?? 0,
+      price: r2n(price),
+      pctDay: (Number.isFinite(price) && Number.isFinite(prev) && prev > 0) ? r2n((price / prev - 1) * 100) : null,
+      trailingBand: band,
+      trailingStopPct: stopPct,
+      trailingStopPrice: stopPrice,
+      trailingLevelsPct: allLevels,
+      rs60: r2n(c.ft.rs60 * 100),
+      slope20: r2n(c.ft.slope20 * 100),
+    };
+  });
+  const payload = {
+    ok: true, items, universeCount, activeMarkets,
+    badge: FABLE01_CALIBRATION.badge,
+    oos: FABLE01_CALIBRATION.oos,
+    deploymentPct, regimeRiskOn,
+    scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
+  };
+  await kvSet(FABLE01_KEY, payload, 26 * 3600).catch(() => {});
+}
+
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
-async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topFab = []) {
+async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topFab = [], topF01 = []) {
   await persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCount).catch(() => {});
   const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
   // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
@@ -239,6 +306,8 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   // la serie histórica (que debe ser homogénea, solo cierres) para McClellan + feedback.
   const intraday = Array.isArray(activeMarkets) && activeMarkets.length > 0;
   const { spyBars, spyBullish } = await resolveSpyContext(activeMarkets ?? [], todayUtc);
+  // FABLE01 — persiste con el régimen SPY (risk-on/off) para el colchón de caja del overlay blindado.
+  await persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish).catch(() => {});
   const history = (await kvGet(HISTORY_KEY).catch(() => null)) ?? [];
   const adNetSeries = Array.isArray(history) ? history.map((h) => h.adNet).filter((v) => Number.isFinite(v)) : [];
   const weights = await loadWeights();
@@ -308,15 +377,15 @@ async function handleStart(req, res) {
   const todayUtc = scanStartedAtUtc.slice(0, 10);
   const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const { agg, candidates, fable5 } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
+  const { agg, candidates, fable5, fable01 } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, fable5);
+    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, fable5, fable01);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topFab: fable5 });
+  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topFab: fable5, topF01: fable01 });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal, batchesCompleted: 1, coveragePercent: Math.round(100 / batchesTotal),
@@ -343,19 +412,20 @@ async function handleContinue(req, res) {
   const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
   const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const { agg: batchAgg, candidates: batchCands, fable5: batchFab } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
+  const { agg: batchAgg, candidates: batchCands, fable5: batchFab, fable01: batchF01 } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
   const mergedRank = mergeTopRank(st.topRank ?? [], batchCands);
   const mergedFab = mergeFable5(st.topFab ?? [], batchFab);
+  const mergedF01 = mergeFable01(st.topF01 ?? [], batchF01);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedFab);
+    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedFab, mergedF01);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topFab: mergedFab });
+  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topFab: mergedFab, topF01: mergedF01 });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal: st.batchesTotal, batchesCompleted: newCompleted,
