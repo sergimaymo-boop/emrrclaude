@@ -1102,37 +1102,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       {/* Progress bars are now inside each module: ScanStatusPanel, IntraDayFlowsPanel */}
 
-      {/* Market Regime semaphore — internal analysis, only label shown */}
-      {marketRegime !== "UNKNOWN" && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 8,
-          padding: "8px 16px",
-          margin: "0 0 4px",
-          borderRadius: 999,
-          background: marketRegime === "BULLISH" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)",
-          border: `1px solid ${marketRegime === "BULLISH" ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
-        }}>
-          <span style={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            background: marketRegime === "BULLISH" ? "#10b981" : "#ef4444",
-            boxShadow: `0 0 10px ${marketRegime === "BULLISH" ? "#10b981" : "#ef4444"}`,
-          }} />
-          <span style={{
-            fontSize: 12,
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: marketRegime === "BULLISH" ? "#10b981" : "#ef4444",
-          }}>
-            {marketRegime === "BULLISH" ? "Régimen Alcista" : "Régimen Bajista"}
-          </span>
-        </div>
-      )}
 
 
       <ErrorBoundary inline label="Cabecera técnica">
