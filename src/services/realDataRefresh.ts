@@ -117,6 +117,8 @@ export interface ScanSnapshotResponse {
   };
   assets?: Array<Record<string, unknown>>;
   topCandidates?: Array<Record<string, unknown>>;
+  dataIntegrityScore?: number;
+  dataIntegrity?: { tickersOk: number; tickersFailed: number; score: number };
   error?: string;
 }
 
@@ -478,6 +480,7 @@ export function mergeScanSnapshotUniverseStatus(systemStatus: SystemStatus, resp
         candidatesAnalysed,
         estimatedProviderCalls: response.estimatedProviderCalls,
         actualProviderCalls: response.actualProviderCalls,
+        dataIntegrityScore: response.dataIntegrityScore ?? null,
         recommendedNextAction: response.recommendedNextAction,
       },
     },

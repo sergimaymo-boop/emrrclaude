@@ -107,6 +107,7 @@ export interface UniverseStats {
   candidatesAnalysed?: number;
   estimatedProviderCalls?: number;
   actualProviderCalls?: number;
+  dataIntegrityScore?: number | null;
   costPolicy?: Record<string, unknown> | null;
   recommendedNextAction?: string | null;
 }

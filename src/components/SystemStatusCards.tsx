@@ -49,6 +49,13 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
         {/* ── Scan ── */}
         <Row label="Cobertura"       value={`${u.coveragePercent ?? 0}%`} c={(u.coveragePercent ?? 0) === 100 ? "#10b981" : "#eab308"} />
         <Row label="Batches"         value={`${u.batchesCompleted ?? 0} / ${u.batchesTotal ?? 0}`} c="#9ca3af" />
+        {u.dataIntegrityScore != null && (
+          <Row
+            label="Integridad datos"
+            value={`${u.dataIntegrityScore}%`}
+            c={u.dataIntegrityScore >= 85 ? "#10b981" : u.dataIntegrityScore >= 70 ? "#eab308" : "#ef4444"}
+          />
+        )}
         <Row label="Scope"           value={u.resultScope ?? "—"} />
         <Row label="Scan ID"         value={u.scanId ? u.scanId.slice(0, 16) + "…" : "—"} c="#6b7280" />
 
