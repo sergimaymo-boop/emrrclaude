@@ -10,9 +10,13 @@
  *   · Trailing = corazón del módulo. Barrido ATR: el más AJUSTADO que aún deja correr = 3.5×ATR.
  *     Bandas TR=3.0× / TN=3.5× / TA=4.5×, asignadas por volatilidad y continuidad de cada ticker.
  *
- * VERDAD HONESTA (OOS, 20bps costes, TODO el histórico incl. bear 2022): es un motor de momentum
- * pro-cíclico de ALTA BETA. CAGR ~20%, maxDD ~23%, MAR ~0.89, gana al SPY en 3/6 tramos.
- * Brilla en bulls limpios (+57% en tramos), sufre en lateral/bear. Badge honesto = 21/100.
+ * VERDAD HONESTA — MECÁNICA DE ROTACIÓN (como se usa: al saltar el trailing, rotar al siguiente
+ * ticker sano del scan; calibrate-fable01-rotation.mjs, 20bps ida+vuelta, TODO el histórico incl.
+ * bear 2022): CAGR ~28%, maxDD ~17.5%, MAR ~1.58, gana al SPY en 4/6 tramos (+167% vs +86%).
+ * Banda óptima = TN 3.5×ATR ("lo más ajustado que deja correr"); MÁS ajustado RESTA por costes
+ * (1.5× = −7% CAGR, 836 trades/año). Win por trade ~40%: el edge es la ASIMETRÍA, no acertar.
+ * Badge crudo ≈59; con haircut honesto (survivorship + IRPF de rotación anual + slippage + sesgo
+ * bull reciente) → 50/100 "media". No es alta fiabilidad: es regime-dependiente.
  *
  * Módulo independiente: no lee/escribe ningún otro motor; se alimenta de las MISMAS barras del scan.
  */
@@ -28,8 +32,11 @@ export const FABLE01_CALIBRATION = Object.freeze({
   cap: 0.20,             // tope blando por nombre (§8: protege overfit del ganador histórico)
   floorPct: 5,           // suelo ejecutable: por debajo → 0% (§4.2)
   riskOffInvest: 0.35,   // colchón de caja: en risk-off (SPY<EMA200) invierte solo 35%
-  badge: 21,             // fiabilidad honesta cross-régimen (0-100), del backtest blindado
-  oos: Object.freeze({ cagr: 20.3, maxDD: 22.9, mar: 0.89, winPos: 53, beatsSpy: "3/6" }),
+  // Fiabilidad para la MECÁNICA DE ROTACIÓN (rotar al siguiente sano cuando salta el trailing),
+  // que es como se usa el módulo. Badge crudo ≈59 → haircut honesto (survivorship + IRPF + slippage
+  // + sesgo bull reciente) → 50/100 "media". Banda óptima TN 3.5× (más ajustado RESTA por costes).
+  badge: 50,
+  oos: Object.freeze({ cagr: 27.7, maxDD: 17.5, mar: 1.58, winPos: 42, beatsSpy: "4/6", tradesYr: 123 }),
 });
 
 function emaOf(vals, p) {

@@ -26,8 +26,8 @@ export interface Fable01Item {
 export interface Fable01Result {
   ok: boolean;
   items: Fable01Item[];
-  badge?: number;            // 0-100 fiabilidad honesta cross-régimen
-  oos?: { cagr: number; maxDD: number; mar: number; winPos: number; beatsSpy: string };
+  badge?: number;            // 0-100 fiabilidad honesta (mecánica de rotación, con haircut)
+  oos?: { cagr: number; maxDD: number; mar: number; winPos: number; beatsSpy: string; tradesYr?: number };
   deploymentPct?: number;    // % de capital a desplegar ahora (100 risk-on / 35 risk-off)
   regimeRiskOn?: boolean;    // régimen SPY (true=risk-on)
   universeCount?: number;

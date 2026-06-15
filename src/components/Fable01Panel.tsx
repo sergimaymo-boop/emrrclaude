@@ -44,6 +44,7 @@ export function Fable01Panel({ data, scanProgress }: { data: Fable01Result; scan
   const items = data.items ?? [];
   const scanning = scanProgress !== null && scanProgress < 100;
   const badge = typeof data.badge === "number" ? data.badge : null;
+  const oos = data.oos;
   const riskOn = data.regimeRiskOn !== false;
   const deploy = typeof data.deploymentPct === "number" ? data.deploymentPct : (riskOn ? 100 : 35);
 
@@ -102,19 +103,20 @@ export function Fable01Panel({ data, scanProgress }: { data: Fable01Result; scan
         </div>
       )}
 
-      {/* Disclaimer honesto */}
+      {/* Disclaimer honesto — mecánica de ROTACIÓN (como se usa el módulo) */}
       <div style={{ fontSize: 8, color: "#64748b", padding: "6px 14px 2px", lineHeight: 1.45 }}>
-        Top-10 con la tendencia más SANA del universo (RS vs SPY + pendiente + consistencia), con %
-        de capital concentrado (suma 100; débiles 0%) y trailing por ticker. Es un motor de momentum de
-        <b style={{ color: "#fb923c" }}> alta beta</b>: brilla en bulls, sufre en lateral/bear.
-        <b style={{ color: "#94a3b8" }}> Fiabilidad honesta {badge ?? "—"}/100</b> (OOS con costes incl. bear 2022:
-        CAGR ~{data.oos?.cagr ?? "—"}%, drawdown ~{data.oos?.maxDD ?? "—"}%, gana al SPY {data.oos?.beatsSpy ?? "—"}).
-        <b style={{ color: "#94a3b8" }}> Ideas de asignación, NO señal de compra. No es asesoramiento financiero.</b>
+        Top-10 con la tendencia más SANA del universo (RS vs SPY + pendiente + consistencia), con % de capital.
+        Úsalo en <b style={{ color: "#94a3b8" }}>ROTACIÓN</b>: al saltar el trailing, rota al siguiente sano del scan.
+        Validado así (rotación + costes, incl. bear 2022): <b style={{ color: "#94a3b8" }}>CAGR ~{oos?.cagr ?? "—"}%,
+        drawdown ~{oos?.maxDD ?? "—"}%, gana al SPY {oos?.beatsSpy ?? "—"}, ~{oos?.tradesYr ?? "—"} trades/año</b>.
+        Banda óptima <b style={{ color: "#a78bfa" }}>TN 3.5×</b> (más ajustado RESTA por costes). Win ~{oos?.winPos ?? "—"}%:
+        el edge es la <b style={{ color: "#fb923c" }}>asimetría</b>, no acertar. Neto de impuestos/survivorship espera menos.
+        <b style={{ color: "#94a3b8" }}> Fiabilidad honesta {badge ?? "—"}/100 (media). Ideas, NO señal de compra. No es asesoramiento financiero.</b>
       </div>
 
       {/* Leyenda trailing */}
       <div style={{ fontSize: 7.5, color: "#64748b", padding: "0 14px 4px", fontWeight: 700, letterSpacing: "0.03em" }}>
-        Trailing: TR=Reducido (3.0×ATR) · TN=Normal (3.5×ATR) · TA=Ampliado (4.5×ATR) — cada ticker muestra su banda activa.
+        Trailing: TR=Reducido (3.0×ATR) · <b style={{ color: "#a78bfa" }}>TN=Normal (3.5×ATR) ★ óptima</b> · TA=Ampliado (4.5×ATR) — cada ticker muestra su banda activa.
       </div>
 
       {items.length === 0 && !scanning ? (
