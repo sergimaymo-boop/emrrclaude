@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FearGreedPanel } from "../components/FearGreedPanel";
-import { RallyLeadersPanel } from "../components/RallyLeadersPanel";
 import { ScanStatusPanel } from "../components/ScanStatusPanel";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
 import { SystemStatusCards } from "../components/SystemStatusCards";
@@ -776,98 +775,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     else showToast("Listo para copiar manualmente", "info");
   }
 
-  // ─── Rally Leaders Engine handlers ───────────────────────────────────────
-
-  async function handleScanRally() {
-    if (rallyState.isScanning || scanState.isScanning) return;
-    const savedScroll = window.scrollY;
-    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
-    rallyAbortRef.current = false;
-
-    setRallyState(prev => ({
-      ...prev,
-      status: "RALLY_SCANNING",
-      isScanning: true,
-      label: "Rally scan running…",
-      coveragePercent: 0,
-      batchesCompleted: 0,
-      // No vaciamos top10 aquí: el panel debe seguir mostrando el último scan
-      // completado mientras corre uno nuevo (petición del usuario: "antes de
-      // actualizar que visualice el ultimo scan realizado siempre"). Se sustituye
-      // solo cuando lleguen datos nuevos más abajo (response.top10 / r.top10).
-    }));
-
-    try {
-      let response = await startRallyScan();
-
-      if (!response.ok && response.error) {
-        setRallyState(prev => ({
-          ...prev,
-          status: "RALLY_DATA_UNAVAILABLE",
-          isScanning: false,
-          label: response.message ?? "Rally scan unavailable",
-        }));
-        showToast(response.message ?? "Rally scan failed", "error");
-        return;
-      }
-
-      setRallyState(prev => ({
-        ...prev,
-        scanId: response.scanId ?? null,
-        rallyToken: response.rallyToken ?? null,
-        coveragePercent: response.coveragePercent ?? 0,
-        batchesCompleted: response.batchesCompleted ?? 0,
-        batchesTotal: response.batchesTotal ?? 0,
-        top10: response.top10 ?? [],
-        label: response.isRallyFinal
-          ? `Rally Leaders — ${(response.top10 ?? []).length} líderes encontrados`
-          : `Rally scan batch ${response.batchesCompleted}/${response.batchesTotal}…`,
-      }));
-
-      // Continue batches until complete
-      while (!response.isRallyFinal && response.rallyToken && !rallyAbortRef.current) {
-        response = await continueRallyScan(response.rallyToken);
-
-        setRallyState(prev => ({
-          ...prev,
-          rallyToken: response.rallyToken ?? null,
-          coveragePercent: response.coveragePercent ?? prev.coveragePercent,
-          batchesCompleted: response.batchesCompleted ?? prev.batchesCompleted,
-          top10: response.top10 ?? prev.top10,
-          label: response.isRallyFinal
-            ? `Rally Leaders — ${(response.top10 ?? []).length} líderes encontrados`
-            : `Rally scan batch ${response.batchesCompleted}/${response.batchesTotal}…`,
-        }));
-      }
-
-      const finalTop10 = response.top10 ?? [];
-      setRallyState(prev => ({
-        ...prev,
-        status: response.isRallyFinal ? "RALLY_FINAL" : "RALLY_PARTIAL_DIAGNOSTIC",
-        isScanning: false,
-        rallyToken: null,
-        coveragePercent: response.coveragePercent ?? prev.coveragePercent,
-        top10: finalTop10,
-        label: response.isRallyFinal
-          ? `Rally Leaders Final — ${finalTop10.length} líderes`
-          : `Rally Partial — ${finalTop10.length} encontrados`,
-        lastRun: new Date().toLocaleString(),
-      }));
-
-      if (response.isRallyFinal) {
-        showToast(`Rally Leaders Final — ${finalTop10.length} líderes identificados`, "success");
-      }
-    } catch (error) {
-      setRallyState(prev => ({
-        ...prev,
-        status: "RALLY_ERROR",
-        isScanning: false,
-        label: "Rally scan error",
-      }));
-      showToast("Rally scan failed", "error");
-    }
-  }
-
   // ─── SCAN ALL — FLOWS en paralelo con RALLY+FULL ────────────────────────
   //
   // Secuencia óptima:
@@ -905,8 +812,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         ...prev, status: "RALLY_SCANNING", isScanning: true,
         scanId: r.scanId ?? null, rallyToken: r.rallyToken ?? null,
         coveragePercent: r.coveragePercent ?? 0, batchesCompleted: r.batchesCompleted ?? 0,
-        // Igual que en handleScanRally: no sustituir top10 por [] al arrancar —
-        // mantener el último scan visible hasta que lleguen datos nuevos.
+        // No sustituir top10 por [] al arrancar — mantener el último scan
+        // visible hasta que lleguen datos nuevos.
         batchesTotal: r.batchesTotal ?? 0, top10: r.top10 ?? prev.top10,
       }));
       while (!r.isRallyFinal && r.rallyToken && !rallyAbortRef.current) {
@@ -1146,7 +1053,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         <SignalHistoryPanel />
       </ErrorBoundary>
 
-      {/* Progress bars are now inside each module: ScanStatusPanel, RallyLeadersPanel, IntraDayFlowsPanel */}
+      {/* Progress bars are now inside each module: ScanStatusPanel, IntraDayFlowsPanel */}
 
       {/* Market Regime semaphore — internal analysis, only label shown */}
       {marketRegime !== "UNKNOWN" && (
@@ -1191,9 +1098,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       <ErrorBoundary inline label="Flujos de Capital">
         <IntraDayFlowsPanel flowsState={flowsState} />
-      </ErrorBoundary>
-      <ErrorBoundary inline label="Rally Leaders">
-        <RallyLeadersPanel rallyState={rallyState} onScanRally={handleScanRally} />
       </ErrorBoundary>
       <ErrorBoundary inline label="Top 8">
         <Top8Grid assets={top8} />
