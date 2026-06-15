@@ -64,6 +64,7 @@ import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
+import { ScanSummaryBar } from "../components/ScanSummaryBar";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -1065,6 +1066,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           onLogout={onLogout}
         />
       </ErrorBoundary>
+      {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
+      <ScanSummaryBar systemStatus={systemStatus} />
       {/* ── FEAR & GREED — PRIMER módulo ── */}
       <ErrorBoundary inline label="Fear & Greed">
         <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
