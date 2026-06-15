@@ -3,6 +3,7 @@
  * Consume el veredicto agregado de mercado desde /api/market-breadth (GET cacheado).
  * No toca ningún otro servicio; el panel del dashboard lo usa de forma aislada.
  */
+import { fetchLiveQuoteMap, liveTickerOf } from "./liveQuotes";
 
 export type MarketBreadthVerdict = "BULLISH" | "DETERIORATING" | "PULLBACK_IMMINENT" | "UNKNOWN";
 
@@ -79,6 +80,23 @@ export async function fetchMarketBreadth(): Promise<MarketBreadthResult> {
   } catch {
     return initialMarketBreadth();
   }
+}
+
+/**
+ * Enriquece la watchlist (topTickers) con PRECIO EN TIEMPO REAL (price + pctChange) vía el helper
+ * compartido (US+EU). Solo actualiza lo MOSTRADO; el veredicto, score y ranking del scan quedan
+ * intactos. Conserva el cierre si la cotización no está disponible. No lanza nunca.
+ */
+export async function enrichBreadthWithLiveQuotes(result: MarketBreadthResult): Promise<MarketBreadthResult> {
+  const items = result?.topTickers ?? [];
+  if (items.length === 0) return result;
+  const map = await fetchLiveQuoteMap(items.map((t) => t.symbol));
+  if (map.size === 0) return result;
+  const topTickers = items.map((t) => {
+    const q = map.get(liveTickerOf(t.symbol));
+    return q ? { ...t, price: q.price, pctChange: q.changePercent ?? t.pctChange } : t;
+  });
+  return { ...result, topTickers };
 }
 
 /**

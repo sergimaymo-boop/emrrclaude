@@ -54,11 +54,12 @@ import {
   fetchMarketBreadth,
   initialMarketBreadth,
   runBreadthScan,
+  enrichBreadthWithLiveQuotes,
 } from "../services/marketBreadthRefresh";
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
-import { type Fable5Result, fetchFable5, initialFable5 } from "../services/fable5Refresh";
+import { type Fable5Result, fetchFable5, initialFable5, enrichFable5WithLiveQuotes } from "../services/fable5Refresh";
 import { Fable5Panel } from "../components/Fable5Panel";
 import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLiveQuotes } from "../services/fable01Refresh";
 import { Fable01Panel } from "../components/Fable01Panel";
@@ -213,6 +214,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [fable01Progress, setFable01Progress] = useState<number | null>(null);
   const fable01Ref = useRef<Fable01Result>(fable01);
   useEffect(() => { fable01Ref.current = fable01; }, [fable01]);
+  const fable5Ref = useRef<Fable5Result>(fable5);
+  useEffect(() => { fable5Ref.current = fable5; }, [fable5]);
+  const marketBreadthRef = useRef<MarketBreadthResult>(marketBreadth);
+  useEffect(() => { marketBreadthRef.current = marketBreadth; }, [marketBreadth]);
   // Carga FABLE01 (items del scan cacheado) + enriquece sus precios en VIVO (US+EU) antes de mostrar.
   async function loadFable01() {
     try {
@@ -223,6 +228,27 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       } else {
         setFable01(res);
       }
+    } catch { /* conserva el estado actual */ }
+  }
+  // FABLE 5 — items del scan + precios en VIVO antes de mostrar (la señal no cambia).
+  async function loadFable5() {
+    try {
+      const res = await fetchFable5();
+      if (res.items && res.items.length) {
+        const items = await enrichFable5WithLiveQuotes(res.items);
+        setFable5({ ...res, items });
+      } else {
+        setFable5(res);
+      }
+    } catch { /* conserva el estado actual */ }
+  }
+  // Amplitud — veredicto cacheado + precios en VIVO de la watchlist (el veredicto/ranking no cambia).
+  async function loadMarketBreadth() {
+    try {
+      const res = await fetchMarketBreadth();
+      setMarketBreadth(res);
+      const enriched = await enrichBreadthWithLiveQuotes(res);
+      setMarketBreadth(enriched);
     } catch { /* conserva el estado actual */ }
   }
 
@@ -906,8 +932,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       setFable01Progress(0);
       const breadth = await runBreadthScan((coverage) => { setFable5Progress(coverage); setFable01Progress(coverage); });
       setMarketBreadth(breadth);
-      // El mismo loop del scan calcula y persiste FABLE 5 y FABLE01 → refrescar sus paneles (independientes).
-      fetchFable5().then(setFable5).catch(() => {});
+      enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
+      // El mismo loop del scan calcula y persiste FABLE 5 y FABLE01 → refrescar sus paneles (con precios en vivo).
+      loadFable5();
       loadFable01();
     } catch { /* los paneles conservan su último estado cacheado */ }
     finally { setFable5Progress(null); setFable01Progress(null); }
@@ -955,9 +982,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // ── Market Breadth — veredicto agregado de mercado (cacheado en servidor) ──
   // Solo GET al endpoint cacheado; el loop pesado lo recalcula el cron 1×/día.
   useEffect(() => {
-    fetchMarketBreadth().then(setMarketBreadth).catch(() => {});
+    loadMarketBreadth();
     const interval = setInterval(() => {
-      fetchMarketBreadth().then(setMarketBreadth).catch(() => {});
+      loadMarketBreadth();
     }, 10 * 60 * 1000); // 10 min
     return () => clearInterval(interval);
   }, []);
@@ -971,11 +998,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── FABLE 5 — top-10 tendencia limpia (cacheado; el SCAN/cron lo recalcula) ──
+  // ── FABLE 5 — top-10 tendencia limpia (cacheado; el SCAN/cron lo recalcula) + precios en VIVO ──
   useEffect(() => {
-    fetchFable5().then(setFable5).catch(() => {});
+    loadFable5();
     const interval = setInterval(() => {
-      fetchFable5().then(setFable5).catch(() => {});
+      loadFable5();
     }, 10 * 60 * 1000); // 10 min
     return () => clearInterval(interval);
   }, []);
@@ -989,14 +1016,24 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── FABLE01 — refresco de PRECIOS EN VIVO cada 90s (como el Top 8), sin re-pedir los items ──
+  // ── Precios EN VIVO cada 90s (como el Top 8) para FABLE01 + FABLE 5 + watchlist de Amplitud,
+  //    sin re-pedir los items (solo refresca el precio/‍% mostrado). En pausa durante un scan. ──
   useEffect(() => {
     const interval = setInterval(() => {
-      const cur = fable01Ref.current;
-      if (cur.items && cur.items.length && !scanActiveRef.current) {
-        enrichFable01WithLiveQuotes(cur.items)
-          .then((items) => setFable01((prev) => ({ ...prev, items })))
-          .catch(() => {});
+      if (scanActiveRef.current) return;
+      const f01 = fable01Ref.current;
+      if (f01.items && f01.items.length) {
+        enrichFable01WithLiveQuotes(f01.items)
+          .then((items) => setFable01((prev) => ({ ...prev, items }))).catch(() => {});
+      }
+      const f5 = fable5Ref.current;
+      if (f5.items && f5.items.length) {
+        enrichFable5WithLiveQuotes(f5.items)
+          .then((items) => setFable5((prev) => ({ ...prev, items }))).catch(() => {});
+      }
+      const br = marketBreadthRef.current;
+      if (br.topTickers && br.topTickers.length) {
+        enrichBreadthWithLiveQuotes(br).then(setMarketBreadth).catch(() => {});
       }
     }, 90_000);
     return () => clearInterval(interval);

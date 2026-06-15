@@ -4,6 +4,8 @@
  * todo el universo US+EU y servido cacheado desde /api/fable5.
  */
 
+import { fetchLiveQuoteMap, liveTickerOf } from "./liveQuotes";
+
 export interface Fable5Trailing { pct: number | null; price: number | null; }
 
 export interface Fable5Item {
@@ -45,4 +47,19 @@ export async function fetchFable5(): Promise<Fable5Result> {
   } catch {
     return initialFable5();
   }
+}
+
+/**
+ * Enriquece los items de FABLE 5 con PRECIO EN TIEMPO REAL (price + pctDay) vía el helper
+ * compartido (cascade Finnhub→Yahoo→Stooq, US y EU). Solo actualiza lo que se MUESTRA; la
+ * señal/ranking del scan (cierres completos) queda intacta. Conserva el cierre si falla.
+ */
+export async function enrichFable5WithLiveQuotes(items: Fable5Item[]): Promise<Fable5Item[]> {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  const map = await fetchLiveQuoteMap(items.map((it) => it.symbol));
+  if (map.size === 0) return items;
+  return items.map((it) => {
+    const q = map.get(liveTickerOf(it.symbol));
+    return q ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay } : it;
+  });
 }

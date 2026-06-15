@@ -5,6 +5,8 @@
  * Aislado: un fallo aquí no afecta a otros módulos (devuelve estado vacío).
  */
 
+import { fetchLiveQuoteMap, liveTickerOf } from "./liveQuotes";
+
 export type TrailingBand = "TR" | "TN" | "TA";
 
 export interface Fable01Item {
@@ -52,53 +54,18 @@ export async function fetchFable01(): Promise<Fable01Result> {
   }
 }
 
-// Moneda según el sufijo del símbolo (solo para el endpoint de cotizaciones; no afecta a la señal).
-function currencyOf(symbol: string): "USD" | "EUR" | "GBX" {
-  const suf = symbol.split(".")[1] ?? "";
-  if (suf === "" || suf === "US") return "USD";
-  if (suf === "L" || suf === "LSE") return "GBX";
-  return "EUR"; // MI, PA, AS, DE, SW, BR, LS…
-}
-
 /**
- * Enriquece los items de FABLE01 con PRECIO EN TIEMPO REAL (price + pctDay) usando el mismo
- * endpoint de cotizaciones en vivo que el Top 8 (cascade Finnhub→Yahoo→Stooq, US y EU).
- * El precio del scan es el último CIERRE (correcto para la señal/trend); esto solo actualiza
- * lo que se MUESTRA. Si una cotización no está disponible, conserva el valor cacheado (no rompe).
- * Aislado: un fallo aquí nunca afecta a otros módulos.
+ * Enriquece los items de FABLE01 con PRECIO EN TIEMPO REAL (price + pctDay) vía el helper
+ * compartido (cascade Finnhub→Yahoo→Stooq, US y EU). El precio del scan es el último CIERRE
+ * (correcto para la señal); esto solo actualiza lo que se MUESTRA. Conserva el cierre si la
+ * cotización no está disponible. Aislado: nunca afecta a otros módulos.
  */
 export async function enrichFable01WithLiveQuotes(items: Fable01Item[]): Promise<Fable01Item[]> {
   if (!Array.isArray(items) || items.length === 0) return items;
-  try {
-    const res = await fetch("/api/visible-top8-quotes", {
-      method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify({
-        selectedAssets: items.slice(0, 12).map((it) => ({
-          ticker: it.symbol.replace(/\.[A-Z]+$/, ""),
-          name: it.name,
-          exchange: it.symbol.split(".")[1] ?? "US",
-          currency: currencyOf(it.symbol),
-          providerSymbol: it.symbol,
-        })),
-      }),
-    });
-    if (!res.ok) return items;
-    const data = await res.json();
-    const quotes: Array<{ ticker?: string; price?: number; changePercent?: number }> = data?.assets ?? [];
-    const byTicker = new Map(quotes.map((q) => [String(q.ticker ?? "").toUpperCase(), q]));
-    return items.map((it) => {
-      const q = byTicker.get(it.symbol.replace(/\.[A-Z]+$/, "").toUpperCase());
-      if (q && typeof q.price === "number" && Number.isFinite(q.price) && q.price > 0) {
-        return {
-          ...it,
-          price: q.price,
-          pctDay: typeof q.changePercent === "number" && Number.isFinite(q.changePercent) ? q.changePercent : it.pctDay,
-        };
-      }
-      return it;
-    });
-  } catch {
-    return items;
-  }
+  const map = await fetchLiveQuoteMap(items.map((it) => it.symbol));
+  if (map.size === 0) return items;
+  return items.map((it) => {
+    const q = map.get(liveTickerOf(it.symbol));
+    return q ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay } : it;
+  });
 }
