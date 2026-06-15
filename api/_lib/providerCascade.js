@@ -379,7 +379,9 @@ async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
   const symbol = toYahooSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Yahoo", reason: `No Yahoo mapping for ${eodhdSymbol}` };
 
-  const range = lookbackDays > 180 ? "1y" : lookbackDays > 90 ? "6mo" : "3mo";
+  // "2y" = ~500 barras (vs "1y" = 251): EMA200 necesita 220 barras de calentamiento,
+  // con "1y" solo quedan 31 de margen y la EMA200 es imprecisa. "2y" da +270 de margen.
+  const range = lookbackDays > 180 ? "2y" : lookbackDays > 90 ? "6mo" : "3mo";
   const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
 
   // Punto único Yahoo: ante fallo/429/timeout, reintentar en el host alterno query2
