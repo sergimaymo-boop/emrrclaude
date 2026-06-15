@@ -63,7 +63,6 @@ import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLive
 import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
-import { ConvergenceSignalBanner } from "../components/ConvergenceSignalBanner";
 import { PullbackRiskIndicator } from "../components/PullbackRiskIndicator";
 import { SignalHistoryPanel } from "../components/SignalHistoryPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
@@ -1084,16 +1083,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       {/* ── AMPLITUD DE MERCADO — veredicto agregado (timing 1-2 meses) ── */}
       <ErrorBoundary inline label="Market Breadth">
         <MarketBreadthPanel breadth={marketBreadth} />
-      </ErrorBoundary>
-      {/* ── CONVERGENCIA 3 MOTORES — hero card, ticker perfecto ─────────────── */}
-      <ErrorBoundary inline label="Convergencia">
-        <ConvergenceSignalBanner
-          marketRegime={marketRegime}
-          flowsState={flowsState}
-          rallyState={rallyState}
-          top8={top8}
-          monetaryCycle={monetaryCycle}
-        />
       </ErrorBoundary>
 
       {/* ── SEÑAL ÓPTIMA — detalle de los 5 filtros ────────────────────────── */}
