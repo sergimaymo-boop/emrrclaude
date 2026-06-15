@@ -252,9 +252,9 @@ export function Top8Grid({ assets }: Top8GridProps) {
               <div className="trailing-line">
                 <span>Trailing stop</span>
                 <div className="trailing-values">
-                  <strong>Tight <b>{asset.trailingAdjusted}</b></strong>
-                  <strong>Medium <b>{asset.trailingMedium}</b></strong>
-                  <strong>Wide <b>{asset.trailingWide}</b></strong>
+                  <strong>TR= <b>{asset.trailingAdjusted}</b></strong>
+                  <strong>TN= <b>{asset.trailingMedium}</b></strong>
+                  <strong>TA= <b>{asset.trailingWide}</b></strong>
                 </div>
               </div>
 

@@ -98,7 +98,7 @@ export function Fable5Panel({ data, scanProgress }: { data: Fable5Result; scanPr
               </div>
               {/* Línea b) 3 trailing stops */}
               <div style={{ display: "flex", gap: 6, marginTop: 4, marginLeft: 24, flexWrap: "wrap" }}>
-                {([["Ajustado", t.trailing?.ajustado], ["Normal", t.trailing?.normal], ["Ampliado", t.trailing?.ampliado]] as const).map(([k, lvl]) => (
+                {([["TR=", t.trailing?.ajustado], ["TN=", t.trailing?.normal], ["TA=", t.trailing?.ampliado]] as const).map(([k, lvl]) => (
                   <span key={k} style={{
                     display: "inline-flex", alignItems: "baseline", gap: 4, fontSize: 9,
                     background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.10)",
