@@ -131,12 +131,19 @@ export function Fable01Panel({ data, scanProgress }: { data: Fable01Result; scan
               <div style={{ display: "grid", gridTemplateColumns: "18px 1fr 56px 58px 66px", alignItems: "center", gap: 6 }}>
                 <span style={{ color: "#64748b", fontWeight: 700, fontSize: 9 }}>{t.rank}</span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ fontWeight: 800, color: "#e2e8f0", fontSize: 12 }}>{tickerOf(t.symbol)}</span>
-                  <span style={{ color: "#94a3b8", fontSize: 9, marginLeft: 6 }}>
-                    {isNarrow ? "" : `score ${t.score}`}
+                  <span style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "nowrap" }}>
+                    <span style={{ fontWeight: 800, color: "#e2e8f0", fontSize: 12, flexShrink: 0 }}>{tickerOf(t.symbol)}</span>
+                    <span style={{ color: "#94a3b8", fontSize: 9, flexShrink: 0 }}>
+                      {isNarrow ? "" : `score ${t.score}`}
+                    </span>
                   </span>
-                  <span style={{ display: "block", color: "#94a3b8", fontSize: 8.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {t.name} · {marketOf(t.symbol)}
+                  {/* Mercado — siempre visible, nunca truncado */}
+                  <span style={{ display: "block", color: "#a78bfa", fontSize: 8, fontWeight: 700, letterSpacing: "0.03em", whiteSpace: "nowrap" }}>
+                    {marketOf(t.symbol)}
+                  </span>
+                  {/* Nombre empresa — puede truncar, es menos crítico */}
+                  <span style={{ display: "block", color: "#64748b", fontSize: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.name}
                   </span>
                 </span>
                 <span style={{ textAlign: "right", fontWeight: 800, fontSize: 12.5, color: t.allocationPct > 0 ? ACCENT : "#475569", fontVariantNumeric: "tabular-nums" }}>
