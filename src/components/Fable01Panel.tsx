@@ -153,22 +153,31 @@ export function Fable01Panel({ data, scanProgress }: { data: Fable01Result; scan
               <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden", margin: "4px 0 4px 24px" }}>
                 <div style={{ width: `${Math.min(100, t.allocationPct)}%`, height: "100%", background: ACCENT, opacity: t.allocationPct > 0 ? 0.85 : 0 }} />
               </div>
-              {/* Línea b) banda activa + niveles + contexto */}
-              <div style={{ display: "flex", gap: 6, marginLeft: 24, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{
-                  display: "inline-flex", alignItems: "baseline", gap: 4, fontSize: 9,
-                  background: `${ACCENT}1a`, border: `1px solid ${ACCENT}55`, borderRadius: 5, padding: "2px 7px",
-                }}>
-                  <span style={{ color: ACCENT, fontWeight: 800, textTransform: "uppercase", fontSize: 8 }}>{t.trailingBand} {BANDS[t.trailingBand] ?? ""}</span>
-                  <span style={{ color: "#fbbf24", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>−{fmt(t.trailingStopPct)}%</span>
-                  <span style={{ color: "#64748b", fontSize: 8, fontVariantNumeric: "tabular-nums" }}>({fmt(t.trailingStopPrice)})</span>
-                </span>
-                {!isNarrow && t.trailingLevelsPct && (
-                  <span style={{ color: "#475569", fontSize: 7.5, fontVariantNumeric: "tabular-nums" }}>
-                    TR −{fmt(t.trailingLevelsPct.TR)}% · TN −{fmt(t.trailingLevelsPct.TN)}% · TA −{fmt(t.trailingLevelsPct.TA)}%
-                  </span>
-                )}
-                <span style={{ color: "#64748b", fontSize: 8, marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>
+              {/* Línea b) 3 trailing stops en una sola línea + contexto */}
+              <div style={{ display: "flex", gap: 5, marginLeft: 24, alignItems: "center", flexWrap: "nowrap", overflow: "hidden" }}>
+                {(["TR", "TN", "TA"] as const).map((band) => {
+                  const isActive = t.trailingBand === band;
+                  const pct = t.trailingLevelsPct?.[band];
+                  return (
+                    <span key={band} style={{
+                      display: "inline-flex", alignItems: "baseline", gap: 3, flexShrink: 0,
+                      fontSize: 9, borderRadius: 5, padding: "2px 6px",
+                      background: isActive ? `${ACCENT}22` : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${isActive ? ACCENT + "66" : "rgba(255,255,255,0.08)"}`,
+                    }}>
+                      <span style={{ color: isActive ? ACCENT : "#64748b", fontWeight: 800, fontSize: 8 }}>{band}=</span>
+                      <span style={{ color: isActive ? "#fbbf24" : "#94a3b8", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                        −{pct != null ? fmt(pct) : "—"}%
+                      </span>
+                      {isActive && t.trailingStopPrice != null && (
+                        <span style={{ color: "#64748b", fontSize: 7.5, fontVariantNumeric: "tabular-nums" }}>
+                          ({fmt(t.trailingStopPrice)})
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+                <span style={{ color: "#475569", fontSize: 7.5, marginLeft: "auto", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                   RS60 {fmtPc(t.rs60)} · pend {fmt(t.slope20)}%
                 </span>
               </div>
