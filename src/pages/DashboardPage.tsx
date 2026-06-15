@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FearGreedPanel } from "../components/FearGreedPanel";
-import { ScanStatusPanel } from "../components/ScanStatusPanel";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
 import { SystemStatusCards } from "../components/SystemStatusCards";
 import { TechnicalHeader } from "../components/TechnicalHeader";
@@ -1117,9 +1116,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
               : "Continuar scan"
           }
         />
-        <ErrorBoundary inline label="Estado del scan">
-          <ScanStatusPanel scanState={scanState} />
-        </ErrorBoundary>
         <ErrorBoundary inline label="Top 8">
           <Top8Grid assets={top8} />
         </ErrorBoundary>
