@@ -1,14 +1,23 @@
 name: Market Pulse Telegram
 
-# Disparador FIABLE del aviso diario de Telegram. Reemplaza en la práctica al cron
-# de Vercel (plan Hobby = "best-effort", se retrasa o se salta). El endpoint deduplica
-# por día, así que el cron de Vercel sigue activo como respaldo sin riesgo de duplicar.
+# Disparador FIABLE del aviso diario de Telegram.
+# 3 oleadas escalonadas garantizan la entrega aunque las primeras fallen.
+# El endpoint deduplica por día (KV key), así que nunca se duplica el mensaje.
+#
+# Oleada 1 — 14:00 UTC (15:00 Canarias verano) — justo tras la apertura US
+# Oleada 2 — 14:30 UTC — respaldo automático si la 1ª falla
+# Oleada 3 — 16:00 UTC — último recurso si las dos primeras fallan
+#
+# Mejoras vs versión anterior:
+#   - Detecta BOT_BLOCKED → falla rápido con instrucción clara (sin reintentos inútiles)
+#   - 5 reintentos para errores transitorios (red/timeout) con backoff
+#   - Timeout más largo (90s) para dar margen a las APIs de indicadores
+#   - Tercera oleada a las 16:00 UTC como último recurso
 on:
   schedule:
-    # 14:00 UTC (≈15:00 Canarias verano), ~30 min tras la apertura US, lun-vie.
-    - cron: '0 14 * * 1-5'
-    # Respaldo 30 min después por si el primero se retrasa o falla (dedupe evita duplicado).
-    - cron: '30 14 * * 1-5'
+    - cron: '0 14 * * 1-5'   # Oleada 1: 14:00 UTC lun-vie
+    - cron: '30 14 * * 1-5'  # Oleada 2: 14:30 UTC lun-vie
+    - cron: '0 16 * * 1-5'   # Oleada 3: 16:00 UTC lun-vie (último recurso)
   workflow_dispatch:
     inputs:
       force:
@@ -20,12 +29,9 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger market-pulse endpoint (with retries)
-        # IMPORTANTE (footgun): si algún día configuras CRON_SECRET como env var en Vercel,
-        # el endpoint EXIGIRÁ 'Authorization: Bearer <secret>'. Para que este workflow no se
-        # rompa en silencio (401), añade ENTONCES un secret de repo llamado CRON_SECRET con
-        # el MISMO valor — el curl ya lo envía abajo. Si CRON_SECRET no existe (estado actual),
-        # el header va vacío y el endpoint lo ignora (no exige auth). No lo dejes a medias.
+      - name: Trigger market-pulse endpoint
+        # IMPORTANTE: si añades CRON_SECRET en Vercel, añade el mismo valor
+        # como secret de repo (CRON_SECRET) — el curl ya lo envía abajo.
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
@@ -39,16 +45,65 @@ jobs:
           if [ -n "${CRON_SECRET}" ]; then
             AUTH=(-H "Authorization: Bearer ${CRON_SECRET}")
           fi
-          echo "Calling: ${URL}"
-          for attempt in 1 2 3; do
-            RESP=$(curl -s --max-time 75 "${AUTH[@]}" "${URL}" || echo '{"ok":false,"error":"curl_failed"}')
-            echo "Attempt ${attempt} response: ${RESP}"
+          echo "▶ Calling: ${URL}"
+
+          MAX_ATTEMPTS=5
+          attempt=1
+          while [ $attempt -le $MAX_ATTEMPTS ]; do
+            echo ""
+            echo "── Attempt ${attempt}/${MAX_ATTEMPTS} ──────────────────────────"
+            RESP=$(curl -s --max-time 90 "${AUTH[@]}" "${URL}" || echo '{"ok":false,"telegram":{"errorType":"TRANSIENT"},"error":"curl_failed"}')
+            echo "Response: ${RESP}"
+
+            # Éxito real o ya enviado hoy → salir OK
             if echo "${RESP}" | grep -q '"ok":true'; then
-              echo "✅ Market pulse delivered (or already sent today)."
+              echo ""
+              echo "✅ Market pulse delivered (or already sent today). Done."
               exit 0
             fi
-            echo "Retry in 15s..."
-            sleep 15
+
+            # BOT_BLOCKED / INVALID_TOKEN / CHAT_NOT_FOUND → error permanente, no reintentar
+            if echo "${RESP}" | grep -qE '"errorType":"(BOT_BLOCKED|INVALID_TOKEN|CHAT_NOT_FOUND|CONFIG_MISSING)"'; then
+              ERROR_TYPE=$(echo "${RESP}" | grep -oE '"errorType":"[^"]+"' | head -1)
+              echo ""
+              echo "❌ PERMANENT ERROR — ${ERROR_TYPE}"
+              echo ""
+              if echo "${RESP}" | grep -q 'BOT_BLOCKED'; then
+                echo "══════════════════════════════════════════════════════"
+                echo "  ACCIÓN REQUERIDA: el usuario bloqueó el bot de Telegram."
+                echo "  → Abrir Telegram → buscar el bot → pulsar Start/Iniciar"
+                echo "══════════════════════════════════════════════════════"
+              elif echo "${RESP}" | grep -q 'INVALID_TOKEN'; then
+                echo "══════════════════════════════════════════════════════"
+                echo "  ACCIÓN REQUERIDA: TELEGRAM_BOT_TOKEN inválido o expirado."
+                echo "  → Ir a @BotFather en Telegram → regenerar el token"
+                echo "  → Actualizar la env var TELEGRAM_BOT_TOKEN en Vercel"
+                echo "══════════════════════════════════════════════════════"
+              elif echo "${RESP}" | grep -q 'CHAT_NOT_FOUND'; then
+                echo "══════════════════════════════════════════════════════"
+                echo "  ACCIÓN REQUERIDA: TELEGRAM_CHAT_ID incorrecto."
+                echo "  → Verificar el valor de TELEGRAM_CHAT_ID en Vercel"
+                echo "══════════════════════════════════════════════════════"
+              fi
+              exit 1
+            fi
+
+            # REAL_API_CALLS_DISABLED → configuración de Vercel, no reintentar
+            if echo "${RESP}" | grep -q 'REAL_API_CALLS_DISABLED'; then
+              echo "❌ REAL_API_CALLS_DISABLED — la env var ENABLE_REAL_API_CALLS no está en 'true' en Vercel."
+              exit 1
+            fi
+
+            # Error transitorio → espera con backoff y reintenta
+            if [ $attempt -lt $MAX_ATTEMPTS ]; then
+              WAIT=$((attempt * 20))
+              echo "⚠️  Transient error. Retrying in ${WAIT}s…"
+              sleep $WAIT
+            fi
+
+            attempt=$((attempt + 1))
           done
-          echo "❌ Market pulse failed after 3 attempts."
+
+          echo ""
+          echo "❌ Market pulse failed after ${MAX_ATTEMPTS} attempts."
           exit 1

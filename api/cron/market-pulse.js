@@ -220,6 +220,34 @@ export default async function handler(request, response) {
     await kvSet(todayKey, generatedAtUtc, 26 * 3600).catch(() => {});
   }
 
+  // Guardar diagnóstico del último intento (éxito O fallo) para poder inspeccionarlo.
+  // TTL 8 días — permite auditar la semana anterior.
+  const diagKey = `market_pulse_diag_${generatedAtUtc.slice(0, 10)}`;
+  await kvSet(diagKey, JSON.stringify({
+    sentAtUtc: generatedAtUtc,
+    ok: sendResult.ok,
+    errorType: sendResult.errorType ?? null,
+    reason: sendResult.ok ? null : sendResult.reason,
+    composite: indicators.composite,
+    signal: semaphore.signal,
+  }), 8 * 24 * 3600).catch(() => {});
+
+  // Log claro en Vercel para que los errores no se pierdan en el ruido.
+  if (!sendResult.ok) {
+    console.error(
+      `[market-pulse] ❌ Telegram send FAILED. errorType=${sendResult.errorType ?? "?"} reason="${sendResult.reason}" — ` +
+      (sendResult.errorType === "BOT_BLOCKED"
+        ? "ACCIÓN REQUERIDA: el usuario bloqueó el bot. Ir a Telegram → buscar el bot → pulsar Start/Iniciar."
+        : sendResult.errorType === "INVALID_TOKEN"
+        ? "ACCIÓN REQUERIDA: TELEGRAM_BOT_TOKEN inválido o expirado. Regenerar el token en @BotFather."
+        : sendResult.errorType === "CHAT_NOT_FOUND"
+        ? "ACCIÓN REQUERIDA: TELEGRAM_CHAT_ID incorrecto. Verificar el chat_id en Vercel env vars."
+        : "Error transitorio — el siguiente disparador reintentará automáticamente.")
+    );
+  } else {
+    console.log(`[market-pulse] ✅ Telegram sent OK. composite=${indicators.composite} signal=${semaphore.signal}`);
+  }
+
   return sendJson(response, sendResult.ok ? 200 : 502, {
     ok: sendResult.ok,
     telegram: sendResult,
