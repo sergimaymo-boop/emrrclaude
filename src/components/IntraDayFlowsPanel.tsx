@@ -220,9 +220,10 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
 
 interface Props {
   flowsState: IntraDayFlowsState;
+  onRefresh?: () => void;
 }
 
-export function IntraDayFlowsPanel({ flowsState }: Props) {
+export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
   const [view, setView] = useState<"tiles" | "list">("tiles");
   const { status, sectors, spy, marketOpen, scannedAt } = flowsState;
 
@@ -257,6 +258,24 @@ export function IntraDayFlowsPanel({ flowsState }: Props) {
               {new Date(scannedAt).toLocaleTimeString()}
             </span>
           )}
+          {/* Refresh button — visible when done or after error */}
+          {(isDone || isError) && onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              title="Actualizar flujos"
+              style={{
+                padding: "3px 8px", fontSize: 9, fontWeight: 700, cursor: "pointer",
+                border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6,
+                background: "transparent", color: "#475569",
+                transition: "background 120ms, color 120ms",
+              }}
+              onMouseEnter={e => { (e.target as HTMLButtonElement).style.color = "#94a3b8"; (e.target as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
+              onMouseLeave={e => { (e.target as HTMLButtonElement).style.color = "#475569"; (e.target as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              ↺
+            </button>
+          )}
           {isDone && sectors.length > 0 && (
             <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
               {(["tiles", "list"] as const).map(v => (
@@ -282,10 +301,8 @@ export function IntraDayFlowsPanel({ flowsState }: Props) {
 
       {/* ── States ── */}
       {isIdle && (
-        <div style={{ padding: "24px 0", textAlign: "center" }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
-          <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>Pulsa SCAN FLOWS para detectar rotación de capital</div>
-          <div style={{ fontSize: 10, color: "#64748b" }}>Analiza 10 sectores US · Detecta en segundos donde va el dinero</div>
+        <div style={{ padding: "20px 0", textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: "#64748b" }}>Cargando flujos de capital…</div>
         </div>
       )}
 
@@ -313,7 +330,20 @@ export function IntraDayFlowsPanel({ flowsState }: Props) {
 
       {isError && (
         <div style={{ padding: "16px 0", textAlign: "center" }}>
-          <div style={{ fontSize: 12, color: "#ef4444" }}>Error al obtener datos · Reintenta el scan</div>
+          <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>Error al obtener datos</div>
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              style={{
+                padding: "5px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer",
+                border: "1px solid rgba(239,68,68,0.4)", borderRadius: 6,
+                background: "rgba(239,68,68,0.08)", color: "#f87171",
+              }}
+            >
+              ↺ Reintentar
+            </button>
+          )}
         </div>
       )}
 

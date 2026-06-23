@@ -959,6 +959,19 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
+  // ── Flujos de Capital — carga al montar y refresca cada 5 min ───────────────
+  // Todos los demás módulos auto-cargan al montar; Flujos de Capital también debe
+  // hacerlo para que el panel nunca se quede en IDLE esperando una acción manual.
+  // El refresco de 5 min es adecuado: la API es rápida (<3s) y los datos cambian
+  // a esa cadencia durante la sesión. Silencioso (sin toast) para no interrumpir.
+  useEffect(() => {
+    runFlows();
+    const interval = setInterval(() => {
+      if (flowsState.status !== "SCANNING") runFlows();
+    }, 5 * 60 * 1000); // 5 min
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Ciclo monetario — fetch al montar y refrescar cada hora ────────────────
   useEffect(() => {
     fetchMonetaryCycle().then(setMonetaryCycle).catch(() => {});
@@ -1107,7 +1120,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       </ErrorBoundary>
       <ErrorBoundary inline label="Flujos de Capital">
-        <IntraDayFlowsPanel flowsState={flowsState} />
+        <IntraDayFlowsPanel flowsState={flowsState} onRefresh={handleScanFlows} />
       </ErrorBoundary>
 
       {/* ── TOP 8 — bloque unificado: botón de carga arriba, estado del scan y grid dentro ── */}
