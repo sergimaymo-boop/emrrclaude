@@ -45,7 +45,8 @@
     { "source": "/api/fear-greed",             "destination": "/api/market-data?source=fear-greed"        },
     { "source": "/api/market-regime",          "destination": "/api/market-data?source=market-regime"    },
     { "source": "/api/monetary-cycle",         "destination": "/api/market-data?source=monetary-cycle"   },
-    { "source": "/api/master-indicators",      "destination": "/api/market-data?source=master-indicators" }
+    { "source": "/api/master-indicators",      "destination": "/api/market-data?source=master-indicators" },
+    { "source": "/api/optimal2026",            "destination": "/api/market-data?source=optimal2026"       }
   ],
   "functions": {
     "api/cron/market-pulse.js": {
