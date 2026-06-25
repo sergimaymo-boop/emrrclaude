@@ -134,7 +134,7 @@ async function processBatch(assets, spyBars, opts = {}) {
       // OPTIMAL2026 — módulo independiente (dual momentum risk-parity); MISMAS barras + spyBars.
       const o26ft = computeOptimal2026Features(bars, spyBars);
       const o26 = o26ft ? scoreOptimal2026(o26ft) : null;
-      const o26Cand = (o26ft && o26) ? { sym: asset.providerSymbol, score: o26.score, ft: o26ft } : null;
+      const o26Cand = (o26ft && o26) ? { sym: asset.providerSymbol, score: o26.score, raw: o26.raw, ft: o26ft } : null;
       return { signals, cand, fabCand, f01Cand, o26Cand };
     } catch { return null; }
   }));
@@ -153,7 +153,8 @@ async function processBatch(assets, spyBars, opts = {}) {
   candidates.sort((a, b) => b.score - a.score);
   fable5.sort((a, b) => b.score - a.score);
   fable01.sort((a, b) => b.score - a.score);
-  optimal2026.sort((a, b) => b.score - a.score);
+  // Optimal2026 ordena por `raw` (score crudo del backtest) para preservar el ranking exacto.
+  optimal2026.sort((a, b) => (b.raw ?? b.score) - (a.raw ?? a.score));
   return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15), fable01: fable01.slice(0, 15), optimal2026: optimal2026.slice(0, 10) };
 }
 
@@ -311,7 +312,8 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
 // OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
 const OPTIMAL2026_KEY = "optimal2026_v1";
 async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars) {
-  const top = (topO26 ?? []).slice(0, 10);
+  // Top 4 para mostrar: 2 invertidos (con allocation) + 2 "en banca" a 0% (candidatos de rotación).
+  const top = (topO26 ?? []).slice(0, 4);
   if (top.length === 0) return;
   let nameMap = new Map();
   try {
@@ -334,10 +336,10 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
       price: r2n(price),
       pctDay: (Number.isFinite(price) && Number.isFinite(prev) && prev > 0) ? r2n((price / prev - 1) * 100) : null,
       riskAdjMom: r2n(c.ft?.riskAdjMom),
-      ret252: r2n(c.ft?.ret252 != null ? c.ft.ret252 * 100 : null),
-      rs252: r2n(c.ft?.rs252 != null ? c.ft.rs252 * 100 : null),
+      retLong: r2n(c.ft?.retLong != null ? c.ft.retLong * 100 : null),
+      rsLong: r2n(c.ft?.rsLong != null ? c.ft.rsLong * 100 : null),
       vol63: r2n(c.ft?.vol63 != null ? c.ft.vol63 * 100 : null),
-      r2_252: r2n(c.ft?.r2_252),
+      r2: r2n(c.ft?.r2),
       align: c.ft?.align ?? null,
       stopPct: stops.stopPct,
       stopPrice: stops.stopPrice,

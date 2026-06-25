@@ -2,7 +2,10 @@
  * Optimal2026 — frontend service
  * Fetches the last computed snapshot from /api/optimal2026 (KV cache).
  * Live price enrichment: updates price / pctDay from real-time providers.
+ * Aislado: un fallo aquí NUNCA afecta a otros módulos (devuelve estado/seguro).
  */
+
+import { fetchLiveQuoteMap, liveTickerOf } from "./liveQuotes";
 
 export interface Optimal2026Item {
   rank: number;
@@ -12,12 +15,12 @@ export interface Optimal2026Item {
   allocationPct: number;
   price: number | null;
   pctDay: number | null;
-  riskAdjMom: number | null;  // primary signal: (ret252 - ret21) / vol63
-  ret252: number | null;      // 12m return %
-  rs252: number | null;       // relative strength vs SPY 12m %
-  vol63: number | null;       // 3m annualized volatility %
-  r2_252: number | null;      // trend quality (R²)
-  align: number | null;       // EMA alignment 0-3
+  riskAdjMom: number | null;  // señal primaria: (retLong − retSkip) / vol63
+  retLong: number | null;     // retorno momentum largo 9m %
+  rsLong: number | null;      // fuerza relativa vs SPY (ventana larga) %
+  vol63: number | null;       // volatilidad anualizada 3m %
+  r2: number | null;          // calidad de tendencia (R²)
+  align: number | null;       // alineación EMA 0-3
   stopPct: number | null;
   stopPrice: number | null;
   stopBand: "TR" | "TN" | "TA" | null;
@@ -26,7 +29,7 @@ export interface Optimal2026Item {
 export interface Optimal2026Result {
   ok: boolean;
   items: Optimal2026Item[];
-  regime?: "FULL" | "HALF" | "ZERO";
+  regime?: "RISK_ON" | "RISK_OFF";
   deployPct?: number;
   regimeReason?: string;
   badge?: number;
@@ -63,34 +66,20 @@ export async function fetchOptimal2026(): Promise<Optimal2026Result> {
   return data as Optimal2026Result;
 }
 
-// Live price enrichment — same pattern as fable01Refresh
+/**
+ * Enriquece los items de Optimal2026 con PRECIO EN TIEMPO REAL (price + pctDay) vía el helper
+ * compartido (cascade Finnhub→Yahoo→Stooq, US y EU) — el MISMO que usa FABLE01, probado y estable.
+ * El precio del scan es el último CIERRE (correcto para la señal); esto solo actualiza lo que se
+ * MUESTRA. Conserva el cierre si la cotización no está disponible. Aislado: nunca afecta a otros módulos.
+ */
 export async function enrichOptimal2026WithLiveQuotes(
   items: Optimal2026Item[],
 ): Promise<Optimal2026Item[]> {
-  if (!items || items.length === 0) return items;
-
-  const symbols = items.map((i) => i.symbol).filter(Boolean);
-  if (symbols.length === 0) return items;
-
-  try {
-    const qs = symbols.map((s) => `symbols=${encodeURIComponent(s)}`).join("&");
-    const res = await fetch(`/api/visible-top8-quotes?${qs}`);
-    if (!res.ok) return items;
-    const data = await res.json();
-    const quotes: Record<string, { price?: number; pctDay?: number }> = {};
-    for (const q of data.quotes ?? []) {
-      if (q.symbol) quotes[q.symbol] = { price: q.price, pctDay: q.pctDay };
-    }
-    return items.map((item) => {
-      const q = quotes[item.symbol];
-      if (!q) return item;
-      return {
-        ...item,
-        price: q.price ?? item.price,
-        pctDay: q.pctDay ?? item.pctDay,
-      };
-    });
-  } catch {
-    return items;
-  }
+  if (!Array.isArray(items) || items.length === 0) return items;
+  const map = await fetchLiveQuoteMap(items.map((it) => it.symbol));
+  if (map.size === 0) return items;
+  return items.map((it) => {
+    const q = map.get(liveTickerOf(it.symbol));
+    return q ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay } : it;
+  });
 }

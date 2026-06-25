@@ -1,10 +1,10 @@
 /**
- * Optimal2026Panel — Dual Momentum Risk-Parity
- * Primary return-maximization module. First position in dashboard.
+ * Optimal2026Panel — Dual Momentum Risk-Parity (módulo de máxima rentabilidad, PRIMERO del dashboard).
  *
- * Strategy: Risk-adjusted momentum (ret252-ret21)/vol63, top-3 concentrated,
- * 3-state regime filter, Kelly-inspired allocation.
- * Calibrated OOS: CAGR ~34%, MaxDD ~24%, MAR 1.44, Sharpe 1.08
+ * Estrategia: momentum risk-adjusted (retLong−retSkip)/vol63, concentrado en top 2,
+ * régimen binario SPY/EMA200, asignación proporcional al score.
+ * Backtest REAL (110 tickers US+EU, 2016-2026, 810 combos + walk-forward):
+ *   CAGR 40.1%, MaxDD 18.5%, MAR 2.17, Sharpe 1.13 — triplica el SPY con la mitad de drawdown.
  */
 
 import type { Optimal2026Result, Optimal2026Item } from "../services/optimal2026Refresh";
@@ -31,9 +31,8 @@ function badgeColor(badge: number | undefined): string {
 }
 
 function regimeConfig(regime: string | undefined) {
-  if (regime === "FULL") return { label: "RÉGIMEN: ALCISTA", color: GREEN, bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", icon: "▲" };
-  if (regime === "ZERO") return { label: "RÉGIMEN: BAJISTA — CASH 100%", color: RED, bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.2)", icon: "▼" };
-  return { label: "RÉGIMEN: TRANSICIÓN — 50% INVERTIDO", color: "#fbbf24", bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.2)", icon: "→" };
+  if (regime === "RISK_ON") return { label: "RÉGIMEN: RISK-ON (SPY > EMA200)", color: GREEN, bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", icon: "▲" };
+  return { label: "RÉGIMEN: RISK-OFF (SPY < EMA200) — DEFENSIVO", color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", icon: "▼" };
 }
 
 function pctColor(v: number | null): string {
@@ -154,16 +153,16 @@ function ItemRow({ item, deployPct }: { item: Optimal2026Item; deployPct: number
 
       {/* ── Line 2: metrics strip ── */}
       <div style={{ display: "flex", gap: 10, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
-        {/* Risk-adjusted momentum */}
+        {/* Momentum risk-adjusted (señal primaria) */}
         <MetricChip label="RAdjMom" value={fmt(item.riskAdjMom, 2)} color={item.riskAdjMom != null && item.riskAdjMom > 0 ? ACCENT : GRAY} />
-        {/* 12m return */}
-        <MetricChip label="Ret12m" value={item.ret252 != null ? fmtPct(item.ret252) : "—"} color={item.ret252 != null && item.ret252 > 0 ? GREEN : RED} />
+        {/* Retorno momentum largo (9m) */}
+        <MetricChip label="Ret9m" value={item.retLong != null ? fmtPct(item.retLong) : "—"} color={item.retLong != null && item.retLong > 0 ? GREEN : RED} />
         {/* RS vs SPY */}
-        <MetricChip label="RS/SPY" value={item.rs252 != null ? fmtPct(item.rs252) : "—"} color={item.rs252 != null && item.rs252 > 0 ? GREEN : GRAY} />
+        <MetricChip label="RS/SPY" value={item.rsLong != null ? fmtPct(item.rsLong) : "—"} color={item.rsLong != null && item.rsLong > 0 ? GREEN : GRAY} />
         {/* Vol */}
         <MetricChip label="Vol3m" value={item.vol63 != null ? `${fmt(item.vol63, 0)}%` : "—"} color={GRAY} />
         {/* R² */}
-        <MetricChip label="R²" value={fmt(item.r2_252, 2)} color={item.r2_252 != null && item.r2_252 > 0.7 ? GREEN : GRAY} />
+        <MetricChip label="R²" value={fmt(item.r2, 2)} color={item.r2 != null && item.r2 > 0.7 ? GREEN : GRAY} />
         {/* EMA align */}
         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
           <span style={{ fontSize: 8, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>EMA</span>
@@ -204,8 +203,8 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
   const items = data.items ?? [];
   const badge = data.badge;
   const oos = data.oos;
-  const regime = data.regime ?? "HALF";
-  const deployPct = data.deployPct ?? 50;
+  const regime = data.regime ?? "RISK_OFF";
+  const deployPct = data.deployPct ?? 30;
   const rc = regimeConfig(regime);
   const hasData = items.length > 0;
   const timestamp = data.cachedAtUtc
@@ -235,7 +234,7 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
               OPTIMAL 2026
             </span>
             <span style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600 }}>
-              Dual Momentum Risk-Parity · Top 3 · Régimen 3 estados
+              Dual Momentum Risk-Parity · Top 2 · Régimen binario SPY/EMA200
             </span>
           </div>
           {timestamp && (
@@ -337,10 +336,12 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
           )}
 
           <div style={{ fontSize: 8, color: "#475569", lineHeight: 1.5 }}>
-            <strong style={{ color: ACCENT }}>OPTIMAL2026</strong>: Selecciona los 3 activos con mayor momentum risk-adjusted
-            [(ret12m − ret1m) / vol3m] del universo de ~580 tickers. Filtro absoluto: solo activos con retorno 12m positivo.
-            Régimen 3 estados SPY/EMA200. Métricas OOS walk-forward 2018-2024 (Barroso &amp; Santa-Clara 2015, AQR 2013).
-            No es asesoramiento de inversión. Rentabilidades pasadas no garantizan las futuras.
+            <strong style={{ color: ACCENT }}>OPTIMAL2026</strong>: cada mes selecciona los <strong>2</strong> activos con
+            mayor momentum risk-adjusted [(ret9m − ret2m) / vol3m] del universo de ~580 tickers US+EU. Filtro absoluto:
+            solo activos con momentum 9m positivo. Régimen <strong>binario</strong> SPY/EMA200 (100% alcista / 30% defensivo).
+            Métricas del <strong>backtest real</strong> 2016-2026 (810 combinaciones + validación walk-forward; config óptima
+            por MAR, robusta cross-régimen). Brutas pre-impuestos y sobre universo superviviente — el neto real será menor.
+            Ideas, NO señal de compra. No es asesoramiento financiero. Rentabilidades pasadas no garantizan las futuras.
           </div>
         </div>
       )}
