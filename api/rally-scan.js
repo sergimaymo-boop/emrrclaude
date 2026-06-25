@@ -71,10 +71,8 @@ async function handleStart(req, res) {
   }
 
   const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
-  const isLastCloseMode = activeMarkets.length === 0;
-  const eligibleAssets = isLastCloseMode
-    ? (universe.assets ?? []).filter(a => a?.operabilityStatus === 'OPERABLE')
-    : filterActiveOperableAssets(universe.assets ?? [], scanStartedAtUtc);
+  // Siempre universo completo. Mercados abiertos → precios en tiempo real; cerrados → último cierre.
+  const eligibleAssets = (universe.assets ?? []).filter(a => a?.operabilityStatus === 'OPERABLE');
   if (eligibleAssets.length === 0) {
     return sendJson(res, 409, { ok: false, status: 'RALLY_DATA_UNAVAILABLE', error: 'NO_OPERABLE_ASSETS', activeMarkets, message: 'No operable assets in universe.' }, 'RALLY_SCAN_START');
   }
@@ -93,10 +91,9 @@ async function handleStart(req, res) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
   }
 
-  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
-  const marketMode = isLastCloseMode ? 'LAST_CLOSE' : 'LIVE';
+  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', marketMode, status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
 }
 
 // ─── continue handler ─────────────────────────────────────────────────────────
@@ -111,18 +108,10 @@ async function handleContinue(req, res) {
   if (!decoded.ok) return sendJson(res, 400, { ok: false, error: decoded.error }, 'RALLY_SCAN_CONTINUE');
 
   const state = decoded.state;
-  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers, topCandidates, actualProviderCalls } = state;
+  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers, topCandidates, actualProviderCalls } = state;
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
     return sendJson(res, 400, { ok: false, error: 'SCAN_ALREADY_COMPLETE' }, 'RALLY_SCAN_CONTINUE');
-  }
-
-  const activeMarketsNow = getActiveMarketsAt(scanStartedAtUtc);
-  const sameActiveMarkets = Array.isArray(activeMarkets)
-    ? activeMarkets.length === activeMarketsNow.length && activeMarkets.every(m => activeMarketsNow.includes(m))
-    : true;
-  if (!isLastCloseMode && (!sameActiveMarkets || activeMarketsNow.length === 0)) {
-    return sendJson(res, 409, { ok: false, error: 'ACTIVE_MARKET_STATE_CHANGED', scanId, scanStartedAtUtc, activeMarkets: activeMarketsNow, message: 'El estado de los mercados activos cambió durante el Rally scan — se aborta.' }, 'RALLY_SCAN_CONTINUE');
   }
 
   const eligibleAssets = eligibleTickers.map(ticker => ({ providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0], market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe', exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR' }));
@@ -139,10 +128,9 @@ async function handleContinue(req, res) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });
   }
 
-  const newToken = isComplete ? null : encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length });
-  const marketModeContinue = isLastCloseMode ? 'LAST_CLOSE' : 'LIVE';
+  const newToken = isComplete ? null : encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length });
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', marketMode: marketModeContinue, status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
 }
 
 // ─── last handler ─────────────────────────────────────────────────────────────

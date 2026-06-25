@@ -55,10 +55,7 @@ export function ScanSummaryBar({ systemStatus }: ScanSummaryBarProps) {
   const scope = u.resultScope;
 
   const universeSubLabel =
-    systemStatus.marketMode === "BOTH_OPEN" ? "US + EU" :
-    systemStatus.marketMode === "US_OPEN"   ? "solo US" :
-    systemStatus.marketMode === "EU_OPEN"   ? "solo EU" :
-    "último cierre";
+    systemStatus.marketMode === "CLOSED" ? "último cierre" : "tiempo real";
 
   return (
     <div style={{
