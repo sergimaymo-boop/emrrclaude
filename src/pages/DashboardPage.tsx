@@ -66,6 +66,13 @@ import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Claude01Panel } from "../components/Claude01Panel";
+import { Optimal2026Panel } from "../components/Optimal2026Panel";
+import {
+  type Optimal2026Result,
+  fetchOptimal2026,
+  initialOptimal2026,
+  enrichOptimal2026WithLiveQuotes,
+} from "../services/optimal2026Refresh";
 
 interface DashboardPageProps {
   onLogout: () => void;
@@ -208,6 +215,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [fable01Progress, setFable01Progress] = useState<number | null>(null);
   const fable01Ref = useRef<Fable01Result>(fable01);
   useEffect(() => { fable01Ref.current = fable01; }, [fable01]);
+  const [optimal2026, setOptimal2026] = useState<Optimal2026Result>(initialOptimal2026());
+  const optimal2026Ref = useRef<Optimal2026Result>(optimal2026);
+  useEffect(() => { optimal2026Ref.current = optimal2026; }, [optimal2026]);
   const marketBreadthRef = useRef<MarketBreadthResult>(marketBreadth);
   useEffect(() => { marketBreadthRef.current = marketBreadth; }, [marketBreadth]);
   // Carga FABLE01 (items del scan cacheado) + enriquece sus precios en VIVO (US+EU) antes de mostrar.
@@ -222,6 +232,18 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }
     } catch { /* conserva el estado actual */ }
   }
+  async function loadOptimal2026() {
+    try {
+      const res = await fetchOptimal2026();
+      if (res.items && res.items.length) {
+        const items = await enrichOptimal2026WithLiveQuotes(res.items);
+        setOptimal2026({ ...res, items });
+      } else {
+        setOptimal2026(res);
+      }
+    } catch { /* conserva el estado actual */ }
+  }
+
   // Amplitud — veredicto cacheado + precios en VIVO de la watchlist (el veredicto/ranking no cambia).
   async function loadMarketBreadth() {
     try {
@@ -1009,8 +1031,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Precios EN VIVO cada 90s (como el Top 8) para FABLE01 + watchlist de Amplitud,
-  //    sin re-pedir los items (solo refresca el precio/‍% mostrado). En pausa durante un scan. ──
+  // ── OPTIMAL2026 — carga al montar; refresca cada 10 min (ídem FABLE01) ──
+  useEffect(() => {
+    loadOptimal2026();
+    const interval = setInterval(() => {
+      loadOptimal2026();
+    }, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Precios EN VIVO cada 90s (como el Top 8) para FABLE01 + Optimal2026 + watchlist Amplitud ──
   useEffect(() => {
     const interval = setInterval(() => {
       if (scanActiveRef.current) return;
@@ -1018,6 +1048,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       if (f01.items && f01.items.length) {
         enrichFable01WithLiveQuotes(f01.items)
           .then((items) => setFable01((prev) => ({ ...prev, items }))).catch(() => {});
+      }
+      const o26 = optimal2026Ref.current;
+      if (o26.items && o26.items.length) {
+        enrichOptimal2026WithLiveQuotes(o26.items)
+          .then((items) => setOptimal2026((prev) => ({ ...prev, items }))).catch(() => {});
       }
       const br = marketBreadthRef.current;
       if (br.topTickers && br.topTickers.length) {
@@ -1082,7 +1117,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
       <ScanSummaryBar systemStatus={systemStatus} />
-      {/* ── CLAUDE01 — PRIMER módulo: Momentum Catalítico Adaptativo ── */}
+      {/* ── OPTIMAL2026 — PRIMER módulo: Dual Momentum Risk-Parity (máxima rentabilidad) ── */}
+      <ErrorBoundary inline label="Optimal2026">
+        <Optimal2026Panel data={optimal2026} />
+      </ErrorBoundary>
+      {/* ── CLAUDE01 — segundo módulo: Momentum Catalítico Adaptativo ── */}
       <ErrorBoundary inline label="Claude01">
         <Claude01Panel />
       </ErrorBoundary>

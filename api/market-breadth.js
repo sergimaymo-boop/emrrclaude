@@ -28,6 +28,7 @@ import {
 } from "./_lib/marketBreadthEngine.js";
 import { computeFable5Features, scoreFable5, mergeFable5, FABLE5_CALIBRATION } from "./_lib/fable5Engine.js";
 import { computeFable01Features, scoreFable01, mergeFable01, assignBand, allocateFable01, FABLE01_CALIBRATION } from "./_lib/fable01Engine.js";
+import { computeOptimal2026Features, scoreOptimal2026, mergeOptimal2026, detectOptimal2026Regime, allocateOptimal2026, assignOptimal2026Stops, OPTIMAL2026_CALIBRATION } from "./_lib/optimal2026Engine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
@@ -130,23 +131,30 @@ async function processBatch(assets, spyBars, opts = {}) {
       const f01ft = computeFable01Features(bars, spyBars);
       const f01 = f01ft ? scoreFable01(f01ft) : null;
       const f01Cand = (f01ft && f01) ? { sym: asset.providerSymbol, score: f01.score, ft: f01ft } : null;
-      return { signals, cand, fabCand, f01Cand };
+      // OPTIMAL2026 — módulo independiente (dual momentum risk-parity); MISMAS barras + spyBars.
+      const o26ft = computeOptimal2026Features(bars, spyBars);
+      const o26 = o26ft ? scoreOptimal2026(o26ft) : null;
+      const o26Cand = (o26ft && o26) ? { sym: asset.providerSymbol, score: o26.score, ft: o26ft } : null;
+      return { signals, cand, fabCand, f01Cand, o26Cand };
     } catch { return null; }
   }));
   const agg = emptyBreadthAggregator();
   const candidates = [];
   const fable5 = [];
   const fable01 = [];
+  const optimal2026 = [];
   for (const r of results) {
     foldTickerSignals(agg, r?.signals ?? null);
     if (r?.cand) candidates.push(r.cand);
     if (r?.fabCand) fable5.push(r.fabCand);
     if (r?.f01Cand) fable01.push(r.f01Cand);
+    if (r?.o26Cand) optimal2026.push(r.o26Cand);
   }
   candidates.sort((a, b) => b.score - a.score);
   fable5.sort((a, b) => b.score - a.score);
   fable01.sort((a, b) => b.score - a.score);
-  return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15), fable01: fable01.slice(0, 15) };
+  optimal2026.sort((a, b) => b.score - a.score);
+  return { agg, candidates: candidates.slice(0, 15), fable5: fable5.slice(0, 15), fable01: fable01.slice(0, 15), optimal2026: optimal2026.slice(0, 10) };
 }
 
 async function loadWeights() {
@@ -300,8 +308,56 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
   await kvSet(FABLE01_KEY, payload, 26 * 3600).catch(() => {});
 }
 
+// OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
+const OPTIMAL2026_KEY = "optimal2026_v1";
+async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars) {
+  const top = (topO26 ?? []).slice(0, 10);
+  if (top.length === 0) return;
+  let nameMap = new Map();
+  try {
+    const uni = await buildUniverseResponse({ includeFullAssets: true });
+    nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.companyName ?? a.providerSymbol]));
+  } catch { /* fallback al símbolo */ }
+  const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const regime = detectOptimal2026Regime(spyBars ?? []);
+  const allocated = allocateOptimal2026(top, regime);
+  const items = allocated.map((c, i) => {
+    const price = c.ft?.close;
+    const prev = c.ft?.prevClose;
+    const stops = assignOptimal2026Stops(c);
+    return {
+      rank: i + 1,
+      symbol: c.sym,
+      name: nameMap.get(c.sym) ?? c.sym.split(".")[0],
+      score: r2n(c.score),
+      allocationPct: c.allocationPct ?? 0,
+      price: r2n(price),
+      pctDay: (Number.isFinite(price) && Number.isFinite(prev) && prev > 0) ? r2n((price / prev - 1) * 100) : null,
+      riskAdjMom: r2n(c.ft?.riskAdjMom),
+      ret252: r2n(c.ft?.ret252 != null ? c.ft.ret252 * 100 : null),
+      rs252: r2n(c.ft?.rs252 != null ? c.ft.rs252 * 100 : null),
+      vol63: r2n(c.ft?.vol63 != null ? c.ft.vol63 * 100 : null),
+      r2_252: r2n(c.ft?.r2_252),
+      align: c.ft?.align ?? null,
+      stopPct: stops.stopPct,
+      stopPrice: stops.stopPrice,
+      stopBand: stops.band,
+    };
+  });
+  const payload = {
+    ok: true, items, universeCount, activeMarkets,
+    regime: regime.regime,
+    deployPct: regime.deployPct,
+    regimeReason: regime.regimeReason,
+    badge: OPTIMAL2026_CALIBRATION.badge,
+    oos: OPTIMAL2026_CALIBRATION.oos,
+    scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
+  };
+  await kvSet(OPTIMAL2026_KEY, payload, 26 * 3600).catch(() => {});
+}
+
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
-async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topFab = [], topF01 = []) {
+async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universeCount, topRank = [], topFab = [], topF01 = [], topO26 = []) {
   await persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCount).catch(() => {});
   const todayUtc = (scanStartedAtUtc ?? "").slice(0, 10);
   // intraday = algún mercado abierto durante el run (manual/dispatch). El cron nocturno corre
@@ -311,6 +367,8 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   const { spyBars, spyBullish } = await resolveSpyContext(activeMarkets ?? [], todayUtc);
   // FABLE01 — persiste con el régimen SPY (risk-on/off) para el colchón de caja del overlay blindado.
   await persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish).catch(() => {});
+  // OPTIMAL2026 — dual momentum risk-parity, persiste en su propia clave (independiente).
+  await persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars).catch(() => {});
   const history = (await kvGet(HISTORY_KEY).catch(() => null)) ?? [];
   const adNetSeries = Array.isArray(history) ? history.map((h) => h.adNet).filter((v) => Number.isFinite(v)) : [];
   const weights = await loadWeights();
@@ -380,15 +438,15 @@ async function handleStart(req, res) {
   const todayUtc = scanStartedAtUtc.slice(0, 10);
   const { spyBars } = await resolveSpyContext(activeMarkets, todayUtc);
 
-  const { agg, candidates, fable5, fable01 } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
+  const { agg, candidates, fable5, fable01, optimal2026 } = await processBatch(eligible.slice(0, BATCH_SIZE), spyBars, { openMarkets: activeMarkets, todayUtc });
   const isFinal = batchesTotal <= 1;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, fable5, fable01);
+    const payload = await finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, tickers.length, candidates, fable5, fable01, optimal2026);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topFab: fable5, topF01: fable01 });
+  const token = encodeToken({ scanStartedAtUtc, activeMarkets, tickers, batchesTotal, batchesCompleted: 1, nextBatchIndex: 1, agg, topRank: candidates, topFab: fable5, topF01: fable01, topO26: optimal2026 });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal, batchesCompleted: 1, coveragePercent: Math.round(100 / batchesTotal),
@@ -420,20 +478,21 @@ async function handleContinue(req, res) {
   const todayUtc = (st.scanStartedAtUtc ?? "").slice(0, 10);
   const { spyBars } = await resolveSpyContext(st.activeMarkets ?? [], todayUtc);
 
-  const { agg: batchAgg, candidates: batchCands, fable5: batchFab, fable01: batchF01 } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
+  const { agg: batchAgg, candidates: batchCands, fable5: batchFab, fable01: batchF01, optimal2026: batchO26 } = await processBatch(eligible, spyBars, { openMarkets: st.activeMarkets ?? [], todayUtc });
   const merged = mergeAggregators(st.agg, batchAgg);
   const mergedRank = mergeTopRank(st.topRank ?? [], batchCands);
   const mergedFab = mergeFable5(st.topFab ?? [], batchFab);
   const mergedF01 = mergeFable01(st.topF01 ?? [], batchF01);
+  const mergedO26 = mergeOptimal2026(st.topO26 ?? [], batchO26);
   const newCompleted = st.batchesCompleted + 1;
   const isFinal = newCompleted >= st.batchesTotal;
 
   if (isFinal) {
-    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedFab, mergedF01);
+    const payload = await finalizeAndPersist(merged, st.scanStartedAtUtc, st.activeMarkets, st.tickers.length, mergedRank, mergedFab, mergedF01, mergedO26);
     return sendJson(res, 200, { ...payload, mode: "BREADTH_SCAN", status: "FINAL", isFinal: true });
   }
 
-  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topFab: mergedFab, topF01: mergedF01 });
+  const token = encodeToken({ ...st, batchesCompleted: newCompleted, nextBatchIndex: st.nextBatchIndex + 1, agg: merged, topRank: mergedRank, topFab: mergedFab, topF01: mergedF01, topO26: mergedO26 });
   return sendJson(res, 206, {
     ok: false, mode: "BREADTH_SCAN", status: "SCANNING", isFinal: false,
     batchesTotal: st.batchesTotal, batchesCompleted: newCompleted,

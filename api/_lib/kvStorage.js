@@ -95,6 +95,33 @@ export async function loadBenchmarkBars() {
   }
 }
 
+// ─── Optimal2026 persistence ──────────────────────────────────────────────────
+const KV_OPTIMAL2026_KEY = "optimal2026_v1";
+
+export async function saveOptimal2026Snapshot(snapshot) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(KV_OPTIMAL2026_KEY, snapshot, { ex: KV_TTL_SECONDS });
+    return true;
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function loadOptimal2026Snapshot() {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    const data = await redis.get(KV_OPTIMAL2026_KEY);
+    return data ?? null;
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
+    return null;
+  }
+}
+
 // ─── Generic KV helpers (monetary cycle, EPS cache, etc.) ───────────────────
 
 export async function kvGet(key) {
