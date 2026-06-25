@@ -54,6 +54,12 @@ export function ScanSummaryBar({ systemStatus }: ScanSummaryBarProps) {
   const lastScan = systemStatus.lastScan?.local ?? "—";
   const scope = u.resultScope;
 
+  const universeSubLabel =
+    systemStatus.marketMode === "BOTH_OPEN" ? "US + EU" :
+    systemStatus.marketMode === "US_OPEN"   ? "solo US" :
+    systemStatus.marketMode === "EU_OPEN"   ? "solo EU" :
+    "último cierre";
+
   return (
     <div style={{
       display: "flex", alignItems: "center", flexWrap: "wrap",
@@ -66,8 +72,9 @@ export function ScanSummaryBar({ systemStatus }: ScanSummaryBarProps) {
       <Metric
         label="Universo"
         value={u.universeDiscovered > 0 ? u.universeDiscovered.toLocaleString() : "—"}
-        sub="tickers"
+        sub={universeSubLabel}
         color="#94a3b8"
+        subColor={systemStatus.marketMode === "CLOSED" ? "#64748b" : "#10b981"}
       />
       <Divider />
       {/* Cobertura */}

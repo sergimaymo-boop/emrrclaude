@@ -123,11 +123,11 @@ async function handleStart(request, response) {
   }
 
   const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
-  if (activeMarkets.length === 0) {
-    return sendJson(response, 409, { ok: false, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), status: 'MARKETS_CLOSED', resultScope: 'MARKETS_CLOSED', isGlobalTop8Final: false, coveragePercent: 0, activeMarkets, error: 'ALL_MARKETS_CLOSED', blockedReasons: ['ALL_MARKETS_CLOSED'], assets: [], message: 'Todos los mercados están cerrados — no se ejecuta un scan fresco.' }, 'SCAN_SNAPSHOT_START');
-  }
-
-  const allOperable = filterActiveOperableAssets(universe.assets ?? [], scanStartedAtUtc);
+  // isLastCloseMode: ambos mercados cerrados → analiza universo completo con último precio de cierre.
+  const isLastCloseMode = activeMarkets.length === 0;
+  const allOperable = isLastCloseMode
+    ? (universe.assets ?? []).filter(a => a?.operabilityStatus === 'OPERABLE')
+    : filterActiveOperableAssets(universe.assets ?? [], scanStartedAtUtc);
   if (allOperable.length === 0) return sendJson(response, 409, { ok: false, scanStartedAtUtc, status: 'DATA_UNAVAILABLE', error: 'NO_OPERABLE_ASSETS', activeMarkets, assets: [] }, 'SCAN_SNAPSHOT_START');
 
   const batchesTotal = Math.ceil(allOperable.length / batchSize);
@@ -176,10 +176,11 @@ async function handleStart(request, response) {
   }
 
   const compactAccumulated = top8.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
-  const snapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex: 1, universeCount: allOperable.length, actualProviderCalls: providerCalls, accProviderOk: providerOkBatch, accProviderFail: providerFailBatch, accumulatedTop8: compactAccumulated })).toString('base64url');
+  const snapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, batchSize, batchesTotal, batchesCompleted, nextBatchIndex: 1, universeCount: allOperable.length, actualProviderCalls: providerCalls, accProviderOk: providerOkBatch, accProviderFail: providerFailBatch, accumulatedTop8: compactAccumulated })).toString('base64url');
   const statusCode = isGlobalTop8Final ? 200 : batchesCompleted > 0 ? 206 : 409;
+  const marketMode = isLastCloseMode ? 'LAST_CLOSE' : 'LIVE';
 
-  return sendJson(response, statusCode, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : 1, coveragePercent, estimatedProviderCalls: batchSize * 2 + 1, actualProviderCalls: providerCalls, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summary, eligibilityDiagnostics }] }, message: isGlobalTop8Final ? 'Global TOP 8 final — 100% coverage.' : `SCAN FULL batch 1/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_START');
+  return sendJson(response, statusCode, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', marketMode, status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : 1, coveragePercent, estimatedProviderCalls: batchSize * 2 + 1, actualProviderCalls: providerCalls, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summary, eligibilityDiagnostics }] }, message: isGlobalTop8Final ? 'Global TOP 8 final — 100% coverage.' : `SCAN FULL batch 1/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_START');
 }
 
 // ─── continue ─────────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ async function handleContinue(request, response) {
   try { state = JSON.parse(Buffer.from(body.snapshotToken, 'base64url').toString('utf8')); }
   catch { return sendJson(response, 400, { ok: false, error: 'INVALID_SNAPSHOT_TOKEN' }, 'SCAN_SNAPSHOT_CONTINUE'); }
 
-  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, universeCount, actualProviderCalls: prevCalls, accProviderOk: prevOk = 0, accProviderFail: prevFail = 0, accumulatedTop8: prevAccumulated } = state;
+  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, universeCount, actualProviderCalls: prevCalls, accProviderOk: prevOk = 0, accProviderFail: prevFail = 0, accumulatedTop8: prevAccumulated } = state;
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) return sendJson(response, 400, { ok: false, error: 'SCAN_ALREADY_COMPLETE' }, 'SCAN_SNAPSHOT_CONTINUE');
 
@@ -201,7 +202,8 @@ async function handleContinue(request, response) {
   const sameActiveMarkets = Array.isArray(activeMarkets)
     ? activeMarkets.length === activeMarketsNow.length && activeMarkets.every(m => activeMarketsNow.includes(m))
     : true;
-  if (!sameActiveMarkets || activeMarketsNow.length === 0) {
+  // En LAST_CLOSE mode (mercados cerrados al inicio) se permite continuar aunque siguen cerrados.
+  if (!isLastCloseMode && (!sameActiveMarkets || activeMarketsNow.length === 0)) {
     return sendJson(response, 409, { ok: false, error: 'ACTIVE_MARKET_STATE_CHANGED', scanId, scanStartedAtUtc, activeMarkets: activeMarketsNow, message: 'El estado de los mercados activos cambió durante el scan — se aborta.' }, 'SCAN_SNAPSHOT_CONTINUE');
   }
 
@@ -217,7 +219,7 @@ async function handleContinue(request, response) {
         }
       }
     }
-    allOperable = filterActiveOperableAssets(fullOperable, scanStartedAtUtc);
+    allOperable = isLastCloseMode ? fullOperable : filterActiveOperableAssets(fullOperable, scanStartedAtUtc);
   } catch(e) {
     return sendJson(response, 500, { ok: false, error: 'STATIC_UNIVERSE_FAILED', message: e.message }, 'SCAN_SNAPSHOT_CONTINUE');
   }
@@ -271,9 +273,10 @@ async function handleContinue(request, response) {
   }
 
   const compactAccumulated = combined.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
-  const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1, universeCount: allOperable.length, actualProviderCalls: totalCalls, accProviderOk: totalOk, accProviderFail: totalFail, accumulatedTop8: compactAccumulated })).toString('base64url');
+  const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, isLastCloseMode, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1, universeCount: allOperable.length, actualProviderCalls: totalCalls, accProviderOk: totalOk, accProviderFail: totalFail, accumulatedTop8: compactAccumulated })).toString('base64url');
+  const marketModeContinue = isLastCloseMode ? 'LAST_CLOSE' : 'LIVE';
 
-  return sendJson(response, isGlobalTop8Final ? 200 : 206, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1, coveragePercent: newCoverage, actualProviderCalls: totalCalls, dataIntegrityScore, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken: newSnapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] }, message: isGlobalTop8Final ? 'Global TOP 8 final.' : `Batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_CONTINUE');
+  return sendJson(response, isGlobalTop8Final ? 200 : 206, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', marketMode: marketModeContinue, status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1, coveragePercent: newCoverage, actualProviderCalls: totalCalls, dataIntegrityScore, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken: newSnapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] }, message: isGlobalTop8Final ? 'Global TOP 8 final.' : `Batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_CONTINUE');
 }
 
 // ─── last ─────────────────────────────────────────────────────────────────────
