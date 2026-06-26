@@ -115,7 +115,10 @@ function buildUnavailableAsset(asset, reason, dataQuality = "NOT_AVAILABLE") {
 }
 
 function buildQuoteAsset(asset, quote, cacheStatus) {
+  // Usar changePercent del proveedor si lo da directamente (Finnhub dp, Yahoo regularMarketChangePercent);
+  // recalcular desde prevClose como fallback; null si no hay ninguno (e.g. Stooq sin prevClose).
   const changePercent =
+    quote.changePercent != null ? quote.changePercent :
     quote.previousClose && quote.previousClose > 0 ? ((quote.price - quote.previousClose) / quote.previousClose) * 100 : null;
 
   return {
@@ -207,6 +210,7 @@ async function getVisibleQuote(asset) {
       providerSymbol: asset.providerSymbolEodhd,
       price: result.price,
       previousClose: result.previousClose,
+      changePercent: result.changePercent ?? null, // preservar % directo del proveedor (Finnhub dp, Yahoo)
       timestampUtc: new Date().toISOString(),
       dataQuality: result.previousClose ? "CLEAN" : "GOOD",
     };

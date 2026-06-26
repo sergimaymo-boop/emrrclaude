@@ -15,6 +15,7 @@ export interface Optimal2026Item {
   allocationPct: number;
   price: number | null;
   pctDay: number | null;
+  priceRefreshedAt?: string | null; // ISO timestamp cuando se enriqueció el precio en vivo
   riskAdjMom: number | null;  // señal primaria: (retLong − retSkip) / vol63
   retLong: number | null;     // retorno momentum largo 9m %
   rsLong: number | null;      // fuerza relativa vs SPY (ventana larga) %
@@ -78,8 +79,11 @@ export async function enrichOptimal2026WithLiveQuotes(
   if (!Array.isArray(items) || items.length === 0) return items;
   const map = await fetchLiveQuoteMap(items.map((it) => it.symbol));
   if (map.size === 0) return items;
+  const now = new Date().toISOString();
   return items.map((it) => {
     const q = map.get(liveTickerOf(it.symbol));
-    return q ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay } : it;
+    return q
+      ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay, priceRefreshedAt: now }
+      : it;
   });
 }

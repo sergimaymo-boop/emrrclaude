@@ -240,8 +240,25 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     try {
       const res = await fetchOptimal2026();
       if (res.items && res.items.length) {
-        const items = await enrichOptimal2026WithLiveQuotes(res.items);
-        setOptimal2026({ ...res, items });
+        const enriched = await enrichOptimal2026WithLiveQuotes(res.items);
+        // Si el enriquecimiento no actualizó ningún precio (mapa vacío = proveedores fallaron),
+        // conservar los precios en vivo que ya hay en estado en lugar de regresionar a los
+        // cierres del scan (que pueden ser de ayer). Solo se sobreescribe si el enriquecimiento
+        // devolvió al menos un precio distinto al cierre cacheado en KV.
+        setOptimal2026(prev => {
+          const prevMap = new Map((prev.items ?? []).map(it => [it.symbol, it]));
+          const items = enriched.map(item => {
+            const prevItem = prevMap.get(item.symbol);
+            // Si este item NO fue enriquecido con precio en vivo (sin priceRefreshedAt) pero
+            // el estado previo sí lo tenía, conservar ese precio para evitar regresión
+            // al cierre del scan cuando el enriquecimiento falla temporalmente.
+            if (!item.priceRefreshedAt && prevItem?.priceRefreshedAt && prevItem.price != null) {
+              return { ...item, price: prevItem.price, pctDay: prevItem.pctDay, priceRefreshedAt: prevItem.priceRefreshedAt };
+            }
+            return item;
+          });
+          return { ...res, items };
+        });
       } else {
         setOptimal2026(res);
       }
