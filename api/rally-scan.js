@@ -114,7 +114,18 @@ async function handleContinue(req, res) {
     return sendJson(res, 400, { ok: false, error: 'SCAN_ALREADY_COMPLETE' }, 'RALLY_SCAN_CONTINUE');
   }
 
-  const eligibleAssets = eligibleTickers.map(ticker => ({ providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0], market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe', exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR' }));
+  // Re-derivar el universo real (determinista) y mapear cada ticker guardado a su asset COMPLETO,
+  // preservando el orden exacto capturado en el token de start. Antes se reconstruía la metadata
+  // desde el sufijo del ticker (.US→USA/USD, resto→Europe/EUR), lo que CORROMPÍA región/exchange/
+  // currency respecto al batch inicial (p.ej. .L=Londres/GBX y .SW=Suiza/CHF caían a Europe/EUR).
+  // La reconstrucción por sufijo se conserva solo como fallback ante deriva rara del universo.
+  const universe = await buildUniverseResponse({ includeFullAssets: true });
+  const assetBySymbol = new Map((universe.assets ?? []).map(a => [a.providerSymbol, a]));
+  const eligibleAssets = eligibleTickers.map(ticker => assetBySymbol.get(ticker) ?? ({
+    providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0],
+    market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe',
+    exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR',
+  }));
   const spyBars = await fetchSpyBars();
   const { candidates, providerCalls: newCalls } = await runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
 

@@ -26,7 +26,7 @@ import {
 } from "../_lib/marketPulse.js";
 import { fetchUsMarketNewsDigest } from "../_lib/newsDigest.js";
 import { sendTelegramMessage } from "../_lib/telegram.js";
-import { kvGet, kvSet } from "../_lib/kvStorage.js";
+import { kvGet, kvSet, kvSetNx, kvDel } from "../_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 // Clave diaria de deduplicación: dos triggers (cron Vercel + GitHub Actions) cubren
@@ -146,10 +146,16 @@ export default async function handler(request, response) {
   // la salta (para pruebas manuales).
   const force = request.query?.force === "true";
   const todayKey = `${SENT_KEY_PREFIX}${new Date().toISOString().slice(0, 10)}`;
+  // ACQUIRE ATÓMICO (NX) ANTES de fetch+envío: cierra la ventana de carrera del antiguo
+  // read-then-write. Si dos disparadores (cron Vercel + GitHub Actions) entran a la vez, solo UNO
+  // adquiere la clave del día y envía; el otro recibe false y se salta. Si el envío luego falla,
+  // se BORRA la clave (más abajo) para que una oleada posterior reintente. ?force=true no adquiere
+  // ni borra (pruebas/auditoría manual nunca bloquean ni liberan el disparo real del día).
   if (!force) {
-    const alreadySent = await kvGet(todayKey).catch(() => null);
-    if (alreadySent) {
-      return sendJson(response, 200, { ok: true, skipped: "ALREADY_SENT_TODAY", sentAtUtc: alreadySent });
+    const acquired = await kvSetNx(todayKey, new Date().toISOString(), 26 * 3600);
+    if (!acquired) {
+      const sentAt = await kvGet(todayKey).catch(() => null);
+      return sendJson(response, 200, { ok: true, skipped: "ALREADY_SENT_TODAY", sentAtUtc: sentAt });
     }
   }
 
@@ -173,7 +179,7 @@ export default async function handler(request, response) {
     withTimeout(cascadeQuote("VVIX.INDX",  cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
     withTimeout(cascadeQuote("US10Y.GBOND",cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
     withTimeout(cascadeQuote("LQD.US",     cascadeEnv), CALL_TIMEOUT_MS, QUOTE_FALLBACK),
-    withTimeout(fetchUsMarketNewsDigest(env),           CALL_TIMEOUT_MS, NEWS_FALLBACK),
+    withTimeout(fetchUsMarketNewsDigest({ FINNHUB_API_KEY: cascadeEnv.FINNHUB_API_KEY }), CALL_TIMEOUT_MS, NEWS_FALLBACK),
   ]);
 
   const indicatorInputs = {
@@ -212,12 +218,16 @@ export default async function handler(request, response) {
 
   const sendResult = await sendTelegramMessage(message, env);
 
-  // Marca el día como enviado SOLO si el envío fue exitoso (TTL 26h) — así si falla,
-  // el otro disparador puede reintentar; si tiene éxito, no se duplica.
-  // IMPORTANTE: las llamadas con ?force=true (pruebas/auditoría) NO marcan el día, para
-  // que una prueba manual nunca bloquee el disparo automático real de ese día.
-  if (sendResult.ok && !force) {
-    await kvSet(todayKey, generatedAtUtc, 26 * 3600).catch(() => {});
+  // La clave del día ya se adquirió atómicamente arriba (NX). Aquí solo se confirma o se libera:
+  //  · Éxito → refrescar la clave con el timestamp real de generación (TTL 26h); no se duplica.
+  //  · Fallo → BORRAR la clave para que una oleada posterior (14:30/16:00) pueda reintentar.
+  // ?force=true (pruebas/auditoría) ni adquirió ni libera: nunca bloquea ni resetea el disparo real.
+  if (!force) {
+    if (sendResult.ok) {
+      await kvSet(todayKey, generatedAtUtc, 26 * 3600).catch(() => {});
+    } else {
+      await kvDel(todayKey).catch(() => {});
+    }
   }
 
   // Guardar diagnóstico del último intento (éxito O fallo) para poder inspeccionarlo.

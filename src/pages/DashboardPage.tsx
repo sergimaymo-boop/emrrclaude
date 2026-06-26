@@ -220,6 +220,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   useEffect(() => { optimal2026Ref.current = optimal2026; }, [optimal2026]);
   const marketBreadthRef = useRef<MarketBreadthResult>(marketBreadth);
   useEffect(() => { marketBreadthRef.current = marketBreadth; }, [marketBreadth]);
+  // Ref espejo de flowsState para que el intervalo de auto-refresco (deps []) lea SIEMPRE
+  // el estado actual, no el capturado al montar (evita relanzar runFlows durante un scan).
+  const flowsStateRef = useRef<IntraDayFlowsState>(flowsState);
+  useEffect(() => { flowsStateRef.current = flowsState; }, [flowsState]);
   // Carga FABLE01 (items del scan cacheado) + enriquece sus precios en VIVO (US+EU) antes de mostrar.
   async function loadFable01() {
     try {
@@ -989,7 +993,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   useEffect(() => {
     runFlows();
     const interval = setInterval(() => {
-      if (flowsState.status !== "SCANNING") runFlows();
+      if (flowsStateRef.current.status !== "SCANNING") runFlows();
     }, 5 * 60 * 1000); // 5 min
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

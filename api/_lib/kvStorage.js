@@ -146,3 +146,33 @@ export async function kvSet(key, value, exSeconds) {
     return false;
   }
 }
+
+/**
+ * Acquire ATÓMICO (SET NX): escribe la clave SOLO si no existe. Devuelve true si la adquirió
+ * (el caller puede continuar), false si ya existía (otro proceso la tiene). Cierra la ventana de
+ * carrera del patrón read-then-write. Si no hay KV o hay error → true (fail-open: ante un fallo de
+ * infraestructura es preferible continuar/entregar que bloquear silenciosamente).
+ */
+export async function kvSetNx(key, value, exSeconds) {
+  try {
+    const redis = getRedis();
+    if (!redis) return true;
+    const res = await redis.set(key, value, { nx: true, ex: exSeconds });
+    return res === "OK";
+  } catch (e) {
+    console.error("[kvStorage] setnx failed:", e?.message ?? e);
+    return true;
+  }
+}
+
+export async function kvDel(key) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.del(key);
+    return true;
+  } catch (e) {
+    console.error("[kvStorage] del failed:", e?.message ?? e);
+    return false;
+  }
+}

@@ -4,7 +4,18 @@ export type AssetMarketDisplayStatus = MarketHoursStatus | "LAST";
 
 export type DataMode = "REAL" | "LAST_CLOSE" | "ERROR" | "DATA_UNAVAILABLE" | "SCANNING" | "PARTIAL_DATA" | "LAST_SESSION";
 
-export type DataProvider = "EODHD" | "Finnhub" | "none";
+// Refleja los proveedores REALES de la cascada de cotización (api/_lib/providerCascade.js):
+// Finnhub → Yahoo → Stooq → FMP → TwelveData, más FRED (macro) y EODHD (histórico controlado).
+// Mantener sincronizado con los literales `provider:` que devuelve la cascada.
+export type DataProvider =
+  | "EODHD"
+  | "Finnhub"
+  | "Yahoo"
+  | "Stooq"
+  | "FMP"
+  | "TwelveData"
+  | "FRED"
+  | "none";
 
 export type DataCacheStatus = "BYPASS" | "MISS" | "HIT" | "STALE" | "ERROR" | "NOT_AVAILABLE";
 

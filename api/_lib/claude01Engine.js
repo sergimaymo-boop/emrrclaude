@@ -223,8 +223,11 @@ export async function fetchEarningsCalendar(symbols, finnhubKey, daysAhead = 12)
     for (const entry of calendar) {
       const sym = entry.symbol;
       if (!sym || !tickerSet.has(sym)) continue;
-      const earningsDate = new Date(entry.date);
-      const daysAway = Math.round((earningsDate - now) / 86_400_000);
+      // Comparar SOLO fecha (ambos a medianoche UTC) para no perder earnings del MISMO día:
+      // new Date("YYYY-MM-DD") es medianoche UTC; restarle `now` (instante actual) daba diferencias
+      // fraccionarias negativas → Math.round → -1 → se descartaban los earnings de hoy. Como `from`
+      // y entry.date son ambos YYYY-MM-DD (medianoche UTC), la diferencia es múltiplo exacto de 1 día.
+      const daysAway = Math.round((Date.parse(entry.date) - Date.parse(from)) / 86_400_000);
       if (daysAway < 0 || daysAway > daysAhead) continue;
       // Si ya hay uno más cercano, mantenerlo
       if (!result[sym] || daysAway < result[sym].daysAway) {
@@ -249,7 +252,12 @@ export function buildClaude01Items(fable01Items, spyBars, indicators, earningsMa
   const items = fable01Items.map(item => {
     const pb = item._pullback ?? null; // ya calculado en el endpoint con fetchYahooHistory
     const baseTicker = toFinnhubTicker(item.symbol);
-    const earningsInfo = earningsMap[baseTicker] ?? null;
+    // El calendario gratuito de Finnhub es US-only: un símbolo base (p.ej. "SAP") denota la
+    // cotización ESTADOUNIDENSE. Solo adjuntar el catalizador a la cotización US (.US o sin sufijo);
+    // para listings no-US (.XETRA/.PA/.L/.AS/.MI/.SW…) NO adjuntar — sería cross-atribución desde un
+    // valor US distinto con misma base (p.ej. SAP.XETRA recibiría los earnings de SAP US).
+    const isUsListing = item.symbol.endsWith(".US") || !item.symbol.includes(".");
+    const earningsInfo = isUsListing ? (earningsMap[baseTicker] ?? null) : null;
 
     const kellySize = pb?.isOpportunity
       ? calcKellySize(regimeResult.regime, Boolean(earningsInfo), pb.pullbackPct, pb.rsi14)

@@ -312,7 +312,7 @@ export default async function handler(req, res) {
     ok: true,
     mode: "PRICE_ENRICHMENT_ONLY",
     realApiCallsEnabled: realApiCallsEnabled(),
-    maxAssets: 8,
+    maxAssets: MAX_ASSETS,
     selectedTickers: selectedAssets.map((asset) => asset.ticker),
     scanId: typeof body.scanId === "string" ? body.scanId : null,
     acceptsExternalSymbols: false,

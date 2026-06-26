@@ -53,7 +53,7 @@ export function classifyOperabilityFromMetadata(row) {
   const exchange = firstString(row.Exchange, row.exchange);
   const currency = firstString(row.Currency, row.currency);
   const isin = firstString(row.Isin, row.ISIN, row.isin);
-  const combined = upper(`${code} ${name} ${type}`);
+  const normalizedType = upper(type);
 
   if (!code || !name || !currency) {
     return {
@@ -68,7 +68,11 @@ export function classifyOperabilityFromMetadata(row) {
     };
   }
 
-  const excludedKeyword = EXCLUDED_INSTRUMENT_KEYWORDS.find((keyword) => combined.includes(keyword));
+  // Matching SOLO contra el campo TYPE del instrumento (no contra code/name): los keywords cortos
+  // (UNIT, TRUST, FUND, RIGHT, BOND, NOTE…) aparecen dentro de nombres de acciones comunes legítimas
+  // (UNITedHealth, Northern TRUST, RIGHTmove…) y las descartaban por error de cada scan. El tipo lo
+  // rellena el universo estático de forma fiable ("COMMON STOCK"); ALLOWED_UNIVERSE_TYPES ya lo exige.
+  const excludedKeyword = EXCLUDED_INSTRUMENT_KEYWORDS.find((keyword) => normalizedType.includes(keyword));
   if (excludedKeyword) {
     return {
       status: "NOT_OPERABLE",
@@ -82,7 +86,6 @@ export function classifyOperabilityFromMetadata(row) {
     };
   }
 
-  const normalizedType = upper(type);
   const looksLikeCommonStock =
     normalizedType === "" ||
     normalizedType.includes("COMMON") ||

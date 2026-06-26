@@ -22,7 +22,7 @@ import { fetchEodhdSpread } from './_lib/spreadDataProvider.js';
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from './_lib/candidateEvaluationEngine.js';
 import { saveLastScanSnapshot, loadLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from './_lib/kvStorage.js';
 import { raceBenchmarkHistory } from './_lib/providerCascade.js';
-import { filterActiveOperableAssets, getActiveMarketsAt } from './_lib/scanSnapshot.js';
+import { filterActiveOperableAssets, getActiveMarketsAt, parseSnapshotBatchSize } from './_lib/scanSnapshot.js';
 
 const APP_NAME = 'EMRR 2.0 / Tendencias';
 const DEFAULT_BATCH_SIZE = 50;
@@ -114,7 +114,10 @@ async function handleStart(request, response) {
   if (queryKeys.length > 0) return sendJson(response, 400, { ok: false, error: 'QUERY_NOT_ALLOWED' }, 'SCAN_SNAPSHOT_START');
 
   const body = await readJsonBody(request);
-  const batchSize = Math.min(body.batchSize ?? DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE);
+  // Validación robusta: cualquier batchSize del body (0, negativo, NaN, no-entero, >MAX) se
+  // sanea a [MIN_BATCH_SIZE, MAX_BATCH_SIZE] vía la función canónica del lib. Evita
+  // batchesTotal = Infinity/NaN/negativo, slices negativos y corrupción del token de continuación.
+  const batchSize = body.batchSize === undefined ? DEFAULT_BATCH_SIZE : parseSnapshotBatchSize(body.batchSize);
   const scanStartedAtUtc = new Date().toISOString();
 
   const universe = await buildUniverseResponse({ includeFullAssets: true });
