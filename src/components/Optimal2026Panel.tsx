@@ -166,10 +166,12 @@ function ItemRow({
   item,
   deployPct,
   isLive,
+  isPricesStale,
 }: {
   item: Optimal2026ItemWithSignal;
   deployPct: number | undefined;
   isLive: boolean;
+  isPricesStale?: boolean;
 }) {
   const market = item.symbol.includes(".US") ? "US" : item.symbol.includes(".") ? "EU" : "US";
   const ticker = item.symbol.split(".")[0];
@@ -226,10 +228,13 @@ function ItemRow({
 
         {/* Intraday signals — solo si está invertido */}
         {isInvested && (
-          <>
+          <span style={{ opacity: isPricesStale ? 0.35 : 1, position: "relative" }} title={isPricesStale ? "⚠ Precios no actualizados — señal no fiable" : undefined}>
             <PullbackGauge risk={item.pullbackRisk} level={item.riskLevel} />
-            <ActionBadge action={item.action} />
-          </>
+            <ActionBadge action={isPricesStale ? "HOLD" : item.action} />
+            {isPricesStale && (
+              <span style={{ position: "absolute", top: -4, right: -4, fontSize: 9, color: RED }}>⚠</span>
+            )}
+          </span>
         )}
 
         {/* % day */}
@@ -255,7 +260,7 @@ function ItemRow({
       <AllocationBar pct={item.allocationPct} />
 
       {/* ── Line 2: action detail + metrics ── */}
-      {isInvested && item.action !== "HOLD" && (
+      {isInvested && item.action !== "HOLD" && !isPricesStale && (
         <div style={{
           marginTop: 4, padding: "3px 8px",
           background: `${actionColor(item.action)}10`,
@@ -310,9 +315,11 @@ function ItemRow({
 function PortfolioRow({
   pos,
   matchedItem,
+  isPricesStale,
 }: {
   pos: IBKPosition;
   matchedItem: Optimal2026ItemWithSignal | undefined;
+  isPricesStale?: boolean;
 }) {
   const pnlPct = pos.avgCost && pos.currentPrice ? ((pos.currentPrice / pos.avgCost) - 1) * 100 : null;
   const inStrategy = !!matchedItem;
@@ -350,17 +357,18 @@ function PortfolioRow({
 
       {/* In strategy badge */}
       {inStrategy ? (
-        <>
-          <ActionBadge action={matchedItem.action} />
+        <span style={{ display: "flex", alignItems: "center", gap: 6, opacity: isPricesStale ? 0.4 : 1 }} title={isPricesStale ? "⚠ Señal no fiable — precios no en tiempo real" : undefined}>
+          <ActionBadge action={isPricesStale ? "HOLD" : matchedItem.action} />
           <span style={{ fontSize: 9, color: "#94a3b8" }}>
-            Stop: <span style={{ color: RED, fontWeight: 700 }}>
-              {matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct}%
+            Stop: <span style={{ color: isPricesStale ? GRAY : RED, fontWeight: 700 }}>
+              {!isPricesStale && matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct}%
             </span>
-            {matchedItem.adjustedStopPrice != null && matchedItem.action !== "HOLD" && (
+            {!isPricesStale && matchedItem.adjustedStopPrice != null && matchedItem.action !== "HOLD" && (
               <span style={{ color: GRAY }}> @ {matchedItem.adjustedStopPrice.toFixed(2)}</span>
             )}
+            {isPricesStale && <span style={{ color: RED, marginLeft: 4 }}>⚠</span>}
           </span>
-        </>
+        </span>
       ) : (
         <span style={{ fontSize: 8, color: "#475569", background: "rgba(255,255,255,0.04)", borderRadius: 3, padding: "2px 6px" }}>
           Fuera del ranking
@@ -374,10 +382,12 @@ function PortfolioSection({
   portfolio,
   items,
   onClear,
+  isPricesStale,
 }: {
   portfolio: IBKPortfolio;
   items: Optimal2026ItemWithSignal[];
   onClear: () => void;
+  isPricesStale?: boolean;
 }) {
   const totalValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
   const totalPnL = portfolio.positions.reduce((s, p) => s + (p.unrealizedPnL ?? 0), 0);
@@ -425,7 +435,7 @@ function PortfolioSection({
       {/* Portfolio rows */}
       {portfolio.positions.map((pos) => {
         const matched = items.find(it => it.symbol.split(".")[0].toUpperCase() === pos.symbol.toUpperCase());
-        return <PortfolioRow key={pos.symbol} pos={pos} matchedItem={matched} />;
+        return <PortfolioRow key={pos.symbol} pos={pos} matchedItem={matched} isPricesStale={isPricesStale} />;
       })}
     </div>
   );
@@ -486,18 +496,16 @@ function AutoScanCountdown({ onAutoScan }: { onAutoScan: () => void }) {
 
 // ── Market mode badge ─────────────────────────────────────────────────────────
 
-function MarketModeBadge() {
+function MarketModeBadge({ isPricesStale }: { isPricesStale?: boolean }) {
   const mkt = getRegionalMarketStates();
   const isLive = mkt.marketHours === "OPEN";
+  const color = isPricesStale ? RED : isLive ? GREEN : GRAY;
+  const bg = isPricesStale ? "rgba(248,113,113,0.12)" : isLive ? "rgba(16,185,129,0.1)" : "rgba(100,116,139,0.1)";
+  const border = isPricesStale ? "rgba(248,113,113,0.4)" : isLive ? "rgba(16,185,129,0.25)" : "rgba(100,116,139,0.2)";
+  const label = isPricesStale ? "⚠ PRECIO OBSOLETO" : isLive ? "● EN VIVO" : "◉ ÚLTIMO CIERRE";
   return (
-    <span style={{
-      fontSize: 8, fontWeight: 700,
-      color: isLive ? GREEN : GRAY,
-      background: isLive ? "rgba(16,185,129,0.1)" : "rgba(100,116,139,0.1)",
-      border: `1px solid ${isLive ? "rgba(16,185,129,0.25)" : "rgba(100,116,139,0.2)"}`,
-      borderRadius: 3, padding: "1px 5px",
-    }}>
-      {isLive ? "● EN VIVO" : "◉ ÚLTIMO CIERRE"}
+    <span style={{ fontSize: 8, fontWeight: 700, color, background: bg, border: `1px solid ${border}`, borderRadius: 3, padding: "1px 5px" }}>
+      {label}
     </span>
   );
 }
@@ -611,6 +619,50 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
   );
 }
 
+// ── Stale data alarm ─────────────────────────────────────────────────────────
+// Se muestra cuando el mercado está ABIERTO pero los precios no se han actualizado
+// en los últimos 5 min (>3 ciclos de enriquecimiento fallidos). En ese caso los
+// análisis intraday (HOLD/TIGHTEN/ROTATE/EXIT) no son fiables y se bloquean.
+
+function StaleDataAlarm() {
+  return (
+    <div style={{
+      padding: "10px 14px",
+      background: "rgba(248,113,113,0.12)",
+      borderTop: "none",
+      borderBottom: "3px solid #f87171",
+      borderLeft: "4px solid #f87171",
+      borderRight: "none",
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🚨</span>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#f87171", letterSpacing: "0.03em" }}>
+            ALERTA — MERCADO ABIERTO: PRECIOS NO EN TIEMPO REAL
+          </div>
+          <div style={{ fontSize: 9, color: "#fca5a5", marginTop: 3, lineHeight: 1.6 }}>
+            Los precios llevan <strong style={{ color: "#f87171" }}>más de 5 minutos sin actualizarse</strong>.
+            Las señales intraday (HOLD / TIGHTEN / ROTATE / EXIT), trailing stops ajustados y
+            recomendaciones de cartera IBK están basadas en precios obsoletos y{" "}
+            <strong style={{ color: "#f87171" }}>NO SON FIABLES</strong>.
+            Comprueba la conexión o pulsa "⟳ Scan O26" para recargar.
+          </div>
+        </div>
+        <span style={{
+          marginLeft: "auto", flexShrink: 0,
+          fontSize: 8, fontWeight: 800, color: "#f87171",
+          background: "rgba(248,113,113,0.15)",
+          border: "1px solid rgba(248,113,113,0.4)",
+          borderRadius: 4, padding: "3px 7px",
+          animation: "pulse 1.5s infinite",
+        }}>
+          ⛔ NO FIABLE
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Scan button + progress bar ────────────────────────────────────────────────
 
 function ScanProgressBar({ progress }: { progress: number }) {
@@ -646,6 +698,13 @@ interface Optimal2026PanelProps {
 
 export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Optimal2026PanelProps) {
   const [portfolio, setPortfolio] = useState<IBKPortfolio | null>(() => loadPortfolioFromStorage());
+  // Fuerza re-render cada 60s para re-evaluar staleness aunque no lleguen nuevos datos
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(n => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const isScanning = scanProgress !== null && scanProgress !== undefined;
 
   const handlePortfolioLoad = useCallback((p: IBKPortfolio) => setPortfolio(p), []);
@@ -662,6 +721,17 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
   const items = enrichWithIntradaySignals(rawItems);
   const mkt = getRegionalMarketStates();
   const isLive = mkt.marketHours === "OPEN";
+
+  // ── Staleness: mercado abierto pero precio sin actualizar >5min ───────────────
+  // Si el proveedor de precios falla >3 ciclos (3×90s=270s) los análisis intraday
+  // no son fiables → alarma roja + bloquear señales de acción.
+  const latestRefreshMs = rawItems.reduce((max, it) => {
+    if (!it.priceRefreshedAt) return max;
+    const t = new Date(it.priceRefreshedAt).getTime();
+    return t > max ? t : max;
+  }, 0);
+  const STALE_MS = 5 * 60 * 1000; // 5 min = ~3 ciclos de enriquecimiento
+  const isPricesStale = isLive && (latestRefreshMs === 0 || Date.now() - latestRefreshMs > STALE_MS);
 
   const badge = data.badge;
   const oos = data.oos;
@@ -703,7 +773,7 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
             <span style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600 }}>
               Dual Momentum · Top 2 · Régimen SPY/EMA200 · Semi-activo
             </span>
-            <MarketModeBadge />
+            <MarketModeBadge isPricesStale={isPricesStale} />
           </div>
           {timestamp && (
             <div style={{ fontSize: 8, color: GRAY, marginTop: 2 }}>
@@ -763,6 +833,9 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
       {/* ── Barra de progreso del scan manual ── */}
       {isScanning && <ScanProgressBar progress={scanProgress ?? 0} />}
 
+      {/* ── Alarma roja: mercado abierto + precios obsoletos ── */}
+      {isPricesStale && <StaleDataAlarm />}
+
       {/* ── Regime banner ── */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between",
@@ -796,12 +869,12 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
       )}
 
       {items.map((item) => (
-        <ItemRow key={item.symbol} item={item} deployPct={deployPct} isLive={isLive} />
+        <ItemRow key={item.symbol} item={item} deployPct={deployPct} isLive={isLive} isPricesStale={isPricesStale} />
       ))}
 
       {/* ── Portfolio IBK ── */}
       {portfolio && portfolio.positions.length > 0 ? (
-        <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} />
+        <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} isPricesStale={isPricesStale} />
       ) : (
         <PortfolioUpload onLoad={handlePortfolioLoad} />
       )}
