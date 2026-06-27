@@ -218,6 +218,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [optimal2026, setOptimal2026] = useState<Optimal2026Result>(initialOptimal2026());
   const optimal2026Ref = useRef<Optimal2026Result>(optimal2026);
   useEffect(() => { optimal2026Ref.current = optimal2026; }, [optimal2026]);
+  const [o26ScanProgress, setO26ScanProgress] = useState<number | null>(null);
   const marketBreadthRef = useRef<MarketBreadthResult>(marketBreadth);
   useEffect(() => { marketBreadthRef.current = marketBreadth; }, [marketBreadth]);
   // Ref espejo de flowsState para que el intervalo de auto-refresco (deps []) lea SIEMPRE
@@ -962,15 +963,29 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       const breadth = await runBreadthScan((coverage) => { setFable01Progress(coverage); });
       setMarketBreadth(breadth);
       enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
-      // El mismo loop del scan calcula y persiste FABLE01 → refrescar su panel (con precios en vivo).
+      // El mismo loop del scan calcula y persiste FABLE01 + Optimal2026 → refrescar ambos paneles.
       loadFable01();
+      loadOptimal2026();
     } catch { /* los paneles conservan su último estado cacheado */ }
     finally { setFable01Progress(null); }
 
     setScanPhase("done");
-    showToast("✓ Análisis completo — Amplitud + Señal Óptima actualizadas", "success");
+    showToast("✓ Análisis completo — Amplitud + FABLE01 + Optimal2026 actualizados", "success");
     setTimeout(() => setScanPhase("idle"), 4000);
   }
+
+  // ─── Optimal2026 scan dedicado (botón manual en el panel) ─────────────────
+  // Reutiliza runBreadthScan (que ya computa y persiste Optimal2026 como side-effect)
+  // con barra de progreso propia en el panel. No interfiere con handleScanAll.
+  const handleOptimal2026Scan = useCallback(async () => {
+    if (o26ScanProgress !== null) return; // ya escaneando
+    setO26ScanProgress(0);
+    try {
+      await runBreadthScan((coverage) => setO26ScanProgress(coverage));
+      await loadOptimal2026();
+    } catch { /* panel conserva último estado */ }
+    finally { setO26ScanProgress(null); }
+  }, [o26ScanProgress, loadOptimal2026]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Intraday Flows handler ───────────────────────────────────────────────
 
@@ -1136,7 +1151,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ScanSummaryBar systemStatus={systemStatus} />
       {/* ── OPTIMAL2026 — PRIMER módulo: Dual Momentum Risk-Parity (máxima rentabilidad) ── */}
       <ErrorBoundary inline label="Optimal2026">
-        <Optimal2026Panel data={optimal2026} onAutoScan={loadOptimal2026} />
+        <Optimal2026Panel
+          data={optimal2026}
+          onAutoScan={loadOptimal2026}
+          onScan={handleOptimal2026Scan}
+          scanProgress={o26ScanProgress}
+        />
       </ErrorBoundary>
       {/* ── CLAUDE01 — segundo módulo: Momentum Catalítico Adaptativo ── */}
       <ErrorBoundary inline label="Claude01">

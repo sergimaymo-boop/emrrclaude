@@ -611,15 +611,42 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
   );
 }
 
+// ── Scan button + progress bar ────────────────────────────────────────────────
+
+function ScanProgressBar({ progress }: { progress: number }) {
+  return (
+    <div style={{ padding: "6px 14px", borderBottom: `1px solid ${ACCENT_BORDER}`, background: "rgba(245,158,11,0.05)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 9, color: ACCENT, fontWeight: 700 }}>
+          ⟳ Escaneando universo Optimal2026…
+        </span>
+        <span style={{ fontSize: 9, color: ACCENT, fontWeight: 800, marginLeft: "auto" }}>{progress}%</span>
+      </div>
+      <div style={{ height: 4, background: "rgba(255,255,255,0.07)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{
+          height: "100%",
+          width: `${progress}%`,
+          background: `linear-gradient(90deg, ${ACCENT}, #fbbf24)`,
+          borderRadius: 2,
+          transition: "width 0.3s ease",
+        }} />
+      </div>
+    </div>
+  );
+}
+
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
 interface Optimal2026PanelProps {
   data: Optimal2026Result;
   onAutoScan?: () => void;
+  onScan?: () => Promise<void>;
+  scanProgress?: number | null;
 }
 
-export function Optimal2026Panel({ data, onAutoScan }: Optimal2026PanelProps) {
+export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Optimal2026PanelProps) {
   const [portfolio, setPortfolio] = useState<IBKPortfolio | null>(() => loadPortfolioFromStorage());
+  const isScanning = scanProgress !== null && scanProgress !== undefined;
 
   const handlePortfolioLoad = useCallback((p: IBKPortfolio) => setPortfolio(p), []);
   const handlePortfolioClear = useCallback(() => {
@@ -688,6 +715,24 @@ export function Optimal2026Panel({ data, onAutoScan }: Optimal2026PanelProps) {
           )}
         </div>
 
+        {/* Botón scan manual */}
+        <button
+          onClick={() => { if (!isScanning) onScan?.(); }}
+          disabled={isScanning}
+          title="Escanear universo Optimal2026 ahora (con barra de progreso)"
+          style={{
+            fontSize: 10, fontWeight: 800,
+            color: isScanning ? GRAY : ACCENT,
+            background: isScanning ? "rgba(100,116,139,0.08)" : ACCENT_GLOW,
+            border: `1px solid ${isScanning ? "rgba(100,116,139,0.2)" : ACCENT_BORDER}`,
+            borderRadius: 5, padding: "4px 10px",
+            cursor: isScanning ? "not-allowed" : "pointer",
+            opacity: isScanning ? 0.7 : 1,
+          }}
+        >
+          {isScanning ? `⟳ ${scanProgress ?? 0}%` : "⟳ Scan O26"}
+        </button>
+
         {/* 15:00 countdown */}
         <AutoScanCountdown onAutoScan={handleAutoScan} />
 
@@ -714,6 +759,9 @@ export function Optimal2026Panel({ data, onAutoScan }: Optimal2026PanelProps) {
           </div>
         )}
       </div>
+
+      {/* ── Barra de progreso del scan manual ── */}
+      {isScanning && <ScanProgressBar progress={scanProgress ?? 0} />}
 
       {/* ── Regime banner ── */}
       <div style={{
