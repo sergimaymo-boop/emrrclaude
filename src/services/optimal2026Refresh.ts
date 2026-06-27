@@ -2,6 +2,7 @@
  * Optimal2026 — frontend service
  * Fetches the last computed snapshot from /api/optimal2026 (KV cache).
  * Live price enrichment: updates price / pctDay from real-time providers.
+ * Portfolio IBK: parse/save/load cartera Interactive Brokers (localStorage).
  * Aislado: un fallo aquí NUNCA afecta a otros módulos (devuelve estado/seguro).
  */
 
@@ -50,6 +51,156 @@ export interface Optimal2026Result {
   cachedAtUtc?: string;
   error?: string;
   message?: string;
+}
+
+// ── IBK Portfolio ─────────────────────────────────────────────────────────────
+
+export interface IBKPosition {
+  symbol: string;       // ticker sin sufijo (e.g., "NVDA", "ASML")
+  quantity: number;     // número de acciones
+  avgCost: number | null;      // precio medio de compra
+  currentPrice: number | null; // precio al exportar (puede actualizarse con vivo)
+  marketValue: number | null;  // valor de mercado
+  unrealizedPnL: number | null;
+  currency: string;     // "USD" | "EUR" | etc.
+}
+
+export interface IBKPortfolio {
+  positions: IBKPosition[];
+  loadedAt: string;     // ISO timestamp de la carga
+  source: "IBK_CSV" | "MANUAL";
+}
+
+const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
+
+export function savePortfolioToStorage(portfolio: IBKPortfolio): void {
+  try { localStorage.setItem(IBK_STORAGE_KEY, JSON.stringify(portfolio)); } catch { /* ignore quota errors */ }
+}
+
+export function loadPortfolioFromStorage(): IBKPortfolio | null {
+  try {
+    const raw = localStorage.getItem(IBK_STORAGE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as IBKPortfolio;
+    if (!Array.isArray(p.positions) || p.positions.length === 0) return null;
+    return p;
+  } catch { return null; }
+}
+
+export function clearPortfolioFromStorage(): void {
+  try { localStorage.removeItem(IBK_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * Parsea un CSV exportado de Interactive Brokers.
+ * Soporta 2 formatos:
+ *   1. Activity Statement IBK: líneas "Positions,Data,...,Stocks,USD,NVDA,100,..."
+ *   2. CSV simple: columnas Symbol/Ticker, Quantity/Qty, etc.
+ */
+export function parseIBKPortfolio(csvText: string): IBKPosition[] {
+  const text = csvText.trim();
+  if (!text) return [];
+
+  // Formato 1: Activity Statement IBK
+  if (text.includes("Open Positions") || /^Positions,(?:Data|Header)/m.test(text)) {
+    return parseActivityStatement(text);
+  }
+
+  // Formato 2: CSV simple (Portfolio report o copy-paste desde IB TWS/Portal)
+  return parseSimpleCSV(text);
+}
+
+function parseActivityStatement(csv: string): IBKPosition[] {
+  const positions: IBKPosition[] = [];
+  for (const rawLine of csv.split("\n")) {
+    const line = rawLine.trim();
+    // Acepta "Positions,Data,..." y "Open Positions,Data,..."
+    if (!/(?:Open )?Positions,Data,/i.test(line)) continue;
+    // Limpia comillas y split
+    const cols = line.split(",").map(c => c.replace(/^"|"$/g, "").trim());
+    // IBK Activity Statement columns (0-indexed after stripping section header):
+    // Section, RecordType, DataDiscriminator, AssetCategory, Currency, Symbol, Quantity,
+    // Mult, CostPrice, CostBasis, ClosePrice, Value, UnrealizedPnL, %
+    // Variable offset depending on whether section is "Open Positions" (2 tokens) or "Positions" (1 token)
+    const offset = cols[0].toLowerCase() === "open positions" ? 1 : 0; // not actually offset by prefix
+    // Find Symbol col heuristically (after currency col which is 3-letter ISO)
+    const assetCatIdx = cols.findIndex(c => /stocks|etf|equity/i.test(c));
+    if (assetCatIdx < 0) continue;
+    const curIdx = assetCatIdx + 1;
+    const symIdx = curIdx + 1;
+    const qtyIdx = symIdx + 1;
+    const costIdx = qtyIdx + 2;   // skip Mult
+    const closeIdx = costIdx + 2;  // skip CostBasis
+    const valIdx = closeIdx + 1;
+    const pnlIdx = valIdx + 1;
+    if (cols.length <= pnlIdx) continue;
+
+    const symbol = cols[symIdx];
+    const quantity = parseFloat(cols[qtyIdx]);
+    const avgCost = parseFloat(cols[costIdx]);
+    const currentPrice = parseFloat(cols[closeIdx]);
+    const marketValue = parseFloat(cols[valIdx]);
+    const unrealizedPnL = parseFloat(cols[pnlIdx]);
+    const currency = cols[curIdx] ?? "USD";
+
+    if (!symbol || !isFinite(quantity) || quantity === 0) continue;
+    positions.push({
+      symbol,
+      quantity,
+      avgCost: isFinite(avgCost) ? avgCost : null,
+      currentPrice: isFinite(currentPrice) ? currentPrice : null,
+      marketValue: isFinite(marketValue) ? marketValue : null,
+      unrealizedPnL: isFinite(unrealizedPnL) ? unrealizedPnL : null,
+      currency,
+    });
+  }
+  return positions;
+}
+
+function parseSimpleCSV(csv: string): IBKPosition[] {
+  const lines = csv.split("\n").map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const cleanHeader = lines[0].replace(/^"|"$/g, "").split(",").map(h =>
+    h.replace(/^"|"$/g, "").trim().toLowerCase()
+  );
+
+  const idx = (candidates: string[]) =>
+    cleanHeader.findIndex(h => candidates.some(c => h.includes(c)));
+
+  const symIdx = idx(["symbol", "ticker", "instrumento"]);
+  const qtyIdx = idx(["qty", "quantity", "shares", "acciones", "cantidad"]);
+  const costIdx = idx(["avg cost", "average cost", "cost price", "coste", "precio medio"]);
+  const priceIdx = idx(["last price", "close price", "price", "precio"]);
+  const valIdx = idx(["market value", "valor"]);
+  const pnlIdx = idx(["unrealized", "p/l", "pnl", "beneficio"]);
+  const curIdx = idx(["currency", "ccy", "moneda"]);
+
+  if (symIdx < 0) return [];
+
+  const positions: IBKPosition[] = [];
+  for (const rawLine of lines.slice(1)) {
+    const cols = rawLine.split(",").map(c => c.replace(/^"|"$/g, "").replace(/[$,]/g, "").trim());
+    const symbol = cols[symIdx];
+    if (!symbol || /total|subtotal/i.test(symbol)) continue;
+    const quantity = qtyIdx >= 0 ? parseFloat(cols[qtyIdx]) : 0;
+    if (!isFinite(quantity) || quantity === 0) continue;
+    const avgCost = costIdx >= 0 ? parseFloat(cols[costIdx]) : null;
+    const currentPrice = priceIdx >= 0 ? parseFloat(cols[priceIdx]) : null;
+    const marketValue = valIdx >= 0 ? parseFloat(cols[valIdx]) : null;
+    const unrealizedPnL = pnlIdx >= 0 ? parseFloat(cols[pnlIdx]) : null;
+    const currency = curIdx >= 0 ? cols[curIdx] : "USD";
+    positions.push({
+      symbol,
+      quantity,
+      avgCost: avgCost != null && isFinite(avgCost) ? avgCost : null,
+      currentPrice: currentPrice != null && isFinite(currentPrice) ? currentPrice : null,
+      marketValue: marketValue != null && isFinite(marketValue) ? marketValue : null,
+      unrealizedPnL: unrealizedPnL != null && isFinite(unrealizedPnL) ? unrealizedPnL : null,
+      currency,
+    });
+  }
+  return positions;
 }
 
 export function initialOptimal2026(): Optimal2026Result {

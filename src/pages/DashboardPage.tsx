@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionButtons } from "../components/ActionButtons";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FearGreedPanel } from "../components/FearGreedPanel";
@@ -236,15 +236,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }
     } catch { /* conserva el estado actual */ }
   }
-  async function loadOptimal2026() {
+  const loadOptimal2026 = useCallback(async () => {
     try {
       const res = await fetchOptimal2026();
       if (res.items && res.items.length) {
         const enriched = await enrichOptimal2026WithLiveQuotes(res.items);
-        // Si el enriquecimiento no actualizó ningún precio (mapa vacío = proveedores fallaron),
-        // conservar los precios en vivo que ya hay en estado en lugar de regresionar a los
-        // cierres del scan (que pueden ser de ayer). Solo se sobreescribe si el enriquecimiento
-        // devolvió al menos un precio distinto al cierre cacheado en KV.
         setOptimal2026(prev => {
           const prevMap = new Map((prev.items ?? []).map(it => [it.symbol, it]));
           const items = enriched.map(item => {
@@ -263,7 +259,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setOptimal2026(res);
       }
     } catch { /* conserva el estado actual */ }
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Amplitud — veredicto cacheado + precios en VIVO de la watchlist (el veredicto/ranking no cambia).
   async function loadMarketBreadth() {
@@ -1140,7 +1136,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ScanSummaryBar systemStatus={systemStatus} />
       {/* ── OPTIMAL2026 — PRIMER módulo: Dual Momentum Risk-Parity (máxima rentabilidad) ── */}
       <ErrorBoundary inline label="Optimal2026">
-        <Optimal2026Panel data={optimal2026} />
+        <Optimal2026Panel data={optimal2026} onAutoScan={loadOptimal2026} />
       </ErrorBoundary>
       {/* ── CLAUDE01 — segundo módulo: Momentum Catalítico Adaptativo ── */}
       <ErrorBoundary inline label="Claude01">

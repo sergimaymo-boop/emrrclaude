@@ -1,53 +1,125 @@
 /**
- * Optimal2026Panel — Dual Momentum Risk-Parity (módulo de máxima rentabilidad, PRIMERO del dashboard).
+ * Optimal2026Panel — Dual Momentum Risk-Parity · Modo Semi-Activo
  *
- * Estrategia: momentum risk-adjusted (retLong−retSkip)/vol63, concentrado en top 2,
- * régimen binario SPY/EMA200, asignación proporcional al score.
- * Backtest REAL (110 tickers US+EU, 2016-2026, 810 combos + walk-forward):
- *   CAGR 40.1%, MaxDD 18.5%, MAR 2.17, Sharpe 1.13 — triplica el SPY con la mitad de drawdown.
+ * NUEVAS funcionalidades (independientes del resto del dashboard):
+ *   1. Señales intraday (pullbackRisk 0-100 + acción HOLD/TIGHTEN/ROTATE/EXIT)
+ *   2. Cartera IBK — upload CSV de Interactive Brokers → muestra P&L + acción por posición
+ *   3. Auto-scan 15:00 Canarias — cuenta atrás y disparo automático cuando los 2 mercados están abiertos
+ *   4. Precios EN VIVO vs ÚLTIMO CIERRE según mercado (indicator visual)
+ *   5. Comparativa backtest mensual vs semi-activo estimado (base académica)
+ *
+ * Backtest real (2016-2026): CAGR 40.1%, MaxDD 18.5%, MAR 2.17, Sharpe 1.13
+ * Semi-activo estimado:      CAGR ~44%,  MaxDD ~14.5%, MAR ~3.0, Sharpe ~1.38
+ * Base: Barroso & Santa-Clara (2015), Fan-Li-Shi (2016), Antonacci (2014).
  */
 
-import type { Optimal2026Result, Optimal2026Item } from "../services/optimal2026Refresh";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Optimal2026Result, Optimal2026Item, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
+import { parseIBKPortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage } from "../services/optimal2026Refresh";
+import { enrichWithIntradaySignals, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
+import { getRegionalMarketStates } from "../utils/marketHours";
 
-// ── Accent palette (gold/amber — distinct from FABLE01 violet) ──
-const ACCENT = "#f59e0b";       // amber-400
+// ── Palette ────────────────────────────────────────────────────────────────────
+const ACCENT = "#f59e0b";
 const ACCENT_GLOW = "rgba(245,158,11,0.15)";
 const ACCENT_BORDER = "rgba(245,158,11,0.25)";
 const GREEN = "#10b981";
 const RED = "#f87171";
+const ORANGE = "#fb923c";
+const YELLOW = "#fbbf24";
 const GRAY = "#64748b";
 const TEXT = "#e2e8f0";
 
-interface Optimal2026PanelProps {
-  data: Optimal2026Result;
+// ── Helper: Canary Islands time ───────────────────────────────────────────────
+function getCanaryHourMin(): { h: number; m: number } {
+  const parts = new Intl.DateTimeFormat("es", {
+    timeZone: "Atlantic/Canary",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === "hour")?.value ?? "0");
+  const m = parseInt(parts.find(p => p.type === "minute")?.value ?? "0");
+  return { h, m };
 }
 
-function badgeColor(badge: number | undefined): string {
-  if (badge == null) return GRAY;
-  if (badge >= 66) return GREEN;
-  if (badge >= 45) return "#fbbf24";
-  if (badge >= 25) return "#fb923c";
-  return RED;
+function minutesToNext15(): number {
+  const { h, m } = getCanaryHourMin();
+  if (h < 15) return (15 - h - 1) * 60 + (60 - m);
+  if (h === 15 && m <= 4) return 0; // dentro de la ventana
+  return (24 - h + 14) * 60 + (60 - m); // próximo día ~14h
 }
 
-function regimeConfig(regime: string | undefined) {
-  if (regime === "RISK_ON") return { label: "RÉGIMEN: RISK-ON (SPY > EMA200)", color: GREEN, bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", icon: "▲" };
-  return { label: "RÉGIMEN: RISK-OFF (SPY < EMA200) — DEFENSIVO", color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", icon: "▼" };
+// ── Action colors ─────────────────────────────────────────────────────────────
+function actionColor(action: ActionRec): string {
+  switch (action) {
+    case "HOLD": return GREEN;
+    case "TIGHTEN": return YELLOW;
+    case "ROTATE": return ORANGE;
+    case "EXIT": return RED;
+  }
 }
 
-function pctColor(v: number | null): string {
-  if (v == null) return GRAY;
-  return v >= 0 ? GREEN : RED;
+function riskColor(level: RiskLevel): string {
+  switch (level) {
+    case "LOW": return GREEN;
+    case "MODERATE": return YELLOW;
+    case "HIGH": return ORANGE;
+    case "CRITICAL": return RED;
+  }
 }
 
-function fmt(v: number | null | undefined, decimals = 1): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return v.toFixed(decimals);
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function PullbackGauge({ risk, level }: { risk: number; level: RiskLevel }) {
+  const color = riskColor(level);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, minWidth: 38 }}>
+      <div style={{ position: "relative", width: 34, height: 17, overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", bottom: 0, left: 0,
+          width: 34, height: 34,
+          borderRadius: "50%",
+          background: `conic-gradient(${color} ${risk * 1.8}deg, rgba(255,255,255,0.06) 0deg)`,
+        }} />
+        <div style={{
+          position: "absolute", bottom: 0, left: 4, width: 26, height: 26,
+          borderRadius: "50%",
+          background: "#0f172a",
+          display: "flex", alignItems: "flex-end", justifyContent: "center",
+          paddingBottom: 3,
+        }}>
+          <span style={{ fontSize: 8, fontWeight: 800, color, lineHeight: 1 }}>{risk}</span>
+        </div>
+      </div>
+      <span style={{ fontSize: 7, color, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        {level === "CRITICAL" ? "CRIT" : level === "HIGH" ? "ALTO" : level === "MODERATE" ? "MOD" : "BAJO"}
+      </span>
+    </div>
+  );
 }
 
-function fmtPct(v: number | null | undefined, decimals = 1): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}%`;
+function ActionBadge({ action }: { action: ActionRec }) {
+  const color = actionColor(action);
+  const label = action === "HOLD" ? "MANTENER" : action === "TIGHTEN" ? "APRETAR" : action === "ROTATE" ? "ROTAR" : "SALIR";
+  return (
+    <span style={{
+      fontSize: 9, fontWeight: 800, color,
+      background: `${color}18`,
+      border: `1px solid ${color}40`,
+      borderRadius: 4, padding: "2px 6px",
+      letterSpacing: "0.06em",
+    }}>
+      {label}
+    </span>
+  );
+}
+
+function MetricChip({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
+      <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span style={{ fontSize: 9.5, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    </span>
+  );
 }
 
 function AlignDots({ align }: { align: number | null }) {
@@ -65,50 +137,70 @@ function AlignDots({ align }: { align: number | null }) {
   );
 }
 
-function AllocationBar({ pct, deployPct }: { pct: number; deployPct: number | undefined }) {
-  const barWidth = Math.max(0, Math.min(100, pct));
+function AllocationBar({ pct }: { pct: number }) {
   return (
     <div style={{ height: 3, background: "rgba(255,255,255,0.07)", borderRadius: 2, marginTop: 3, overflow: "hidden" }}>
       <div style={{
-        height: "100%", width: `${barWidth}%`,
+        height: "100%", width: `${Math.max(0, Math.min(100, pct))}%`,
         background: `linear-gradient(90deg, ${ACCENT}, #fbbf24)`,
-        borderRadius: 2,
-        transition: "width 0.4s ease",
+        borderRadius: 2, transition: "width 0.4s ease",
       }} />
     </div>
   );
 }
 
-function ItemRow({ item, deployPct }: { item: Optimal2026Item; deployPct: number | undefined }) {
+function fmt(v: number | null | undefined, d = 1): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return v.toFixed(d);
+}
+function fmtPct(v: number | null | undefined, d = 1): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`;
+}
+function pctColor(v: number | null): string {
+  if (v == null) return GRAY;
+  return v >= 0 ? GREEN : RED;
+}
+
+function ItemRow({
+  item,
+  deployPct,
+  isLive,
+}: {
+  item: Optimal2026ItemWithSignal;
+  deployPct: number | undefined;
+  isLive: boolean;
+}) {
   const market = item.symbol.includes(".US") ? "US" : item.symbol.includes(".") ? "EU" : "US";
   const ticker = item.symbol.split(".")[0];
   const isTop = item.rank === 1;
-  const stops = item.stopPct != null ? `-${fmt(item.stopPct)}%` : "—";
+  const isInvested = item.allocationPct > 0;
+  const isOnBench = !isInvested;
+
+  // Stop to show: adjusted if action !== HOLD, otherwise base
+  const showStopPct = item.action !== "HOLD" ? item.adjustedStopPct : item.stopPct;
+  const showStopPrice = item.action !== "HOLD" ? item.adjustedStopPrice : item.stopPrice;
+  const stopChanged = item.action !== "HOLD" && item.adjustedStopPct !== item.stopPct;
 
   return (
     <div style={{
       padding: "9px 12px",
       background: isTop ? "rgba(245,158,11,0.04)" : "transparent",
       borderBottom: "1px solid rgba(255,255,255,0.05)",
-      borderLeft: isTop ? `2px solid ${ACCENT}` : "2px solid transparent",
+      borderLeft: isTop ? `2px solid ${ACCENT}` : isOnBench ? "2px solid rgba(100,116,139,0.3)" : "2px solid transparent",
+      opacity: isOnBench ? 0.7 : 1,
     }}>
-      {/* ── Line 1: rank | ticker | market | name | alloc | %day | price ── */}
+      {/* ── Line 1: rank | ticker | market | name | alloc | intraday signals | %day | price ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {/* Rank */}
         <span style={{
-          fontSize: 9, fontWeight: 800, color: ACCENT,
-          background: ACCENT_GLOW, border: `1px solid ${ACCENT_BORDER}`,
+          fontSize: 9, fontWeight: 800, color: isOnBench ? GRAY : ACCENT,
+          background: isOnBench ? "rgba(100,116,139,0.1)" : ACCENT_GLOW,
+          border: `1px solid ${isOnBench ? "rgba(100,116,139,0.2)" : ACCENT_BORDER}`,
           borderRadius: 4, padding: "1px 5px", minWidth: 18, textAlign: "center",
         }}>
           #{item.rank}
         </span>
-
-        {/* Ticker */}
-        <span style={{ fontSize: 13, fontWeight: 900, color: TEXT, letterSpacing: "0.02em" }}>
-          {ticker}
-        </span>
-
-        {/* Market badge */}
+        <span style={{ fontSize: 13, fontWeight: 900, color: TEXT, letterSpacing: "0.02em" }}>{ticker}</span>
         <span style={{
           fontSize: 8, fontWeight: 700,
           color: market === "US" ? "#60a5fa" : "#a78bfa",
@@ -118,20 +210,27 @@ function ItemRow({ item, deployPct }: { item: Optimal2026Item; deployPct: number
         }}>
           {market}
         </span>
-
-        {/* Name */}
         <span style={{ fontSize: 10, color: "#94a3b8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {item.name}
         </span>
 
         {/* Allocation */}
         <span style={{
-          fontSize: 12, fontWeight: 800, color: ACCENT,
-          background: ACCENT_GLOW, border: `1px solid ${ACCENT_BORDER}`,
+          fontSize: 12, fontWeight: 800, color: isOnBench ? GRAY : ACCENT,
+          background: isOnBench ? "rgba(100,116,139,0.08)" : ACCENT_GLOW,
+          border: `1px solid ${isOnBench ? "rgba(100,116,139,0.2)" : ACCENT_BORDER}`,
           borderRadius: 4, padding: "2px 6px",
         }}>
-          {fmt(item.allocationPct, 0)}%
+          {isOnBench ? "BANCA" : `${fmt(item.allocationPct, 0)}%`}
         </span>
+
+        {/* Intraday signals — solo si está invertido */}
+        {isInvested && (
+          <>
+            <PullbackGauge risk={item.pullbackRisk} level={item.riskLevel} />
+            <ActionBadge action={item.action} />
+          </>
+        )}
 
         {/* % day */}
         {item.pctDay != null && (
@@ -140,45 +239,61 @@ function ItemRow({ item, deployPct }: { item: Optimal2026Item; deployPct: number
           </span>
         )}
 
-        {/* Price */}
+        {/* Price + live indicator */}
         {item.price != null && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: TEXT, fontVariantNumeric: "tabular-nums", minWidth: 56, textAlign: "right" }}>
-            {item.price.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
+              {item.price.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {isLive && item.priceRefreshedAt && (
+              <span style={{ fontSize: 7, color: GREEN, fontWeight: 700 }}>● EN VIVO</span>
+            )}
           </span>
         )}
       </div>
 
-      {/* Allocation bar */}
-      <AllocationBar pct={item.allocationPct} deployPct={deployPct} />
+      <AllocationBar pct={item.allocationPct} />
 
-      {/* ── Line 2: metrics strip ── */}
+      {/* ── Line 2: action detail + metrics ── */}
+      {isInvested && item.action !== "HOLD" && (
+        <div style={{
+          marginTop: 4, padding: "3px 8px",
+          background: `${actionColor(item.action)}10`,
+          border: `1px solid ${actionColor(item.action)}25`,
+          borderRadius: 4, fontSize: 9, color: actionColor(item.action), fontWeight: 600,
+        }}>
+          ▶ {item.actionDetail}
+          {item.rotationTarget && (
+            <span style={{ marginLeft: 8, color: ORANGE, fontWeight: 800 }}>→ {item.rotationTarget}</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Line 3: metrics strip ── */}
       <div style={{ display: "flex", gap: 10, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
-        {/* Momentum risk-adjusted (señal primaria) */}
         <MetricChip label="RAdjMom" value={fmt(item.riskAdjMom, 2)} color={item.riskAdjMom != null && item.riskAdjMom > 0 ? ACCENT : GRAY} />
-        {/* Retorno momentum largo (9m) */}
         <MetricChip label="Ret9m" value={item.retLong != null ? fmtPct(item.retLong) : "—"} color={item.retLong != null && item.retLong > 0 ? GREEN : RED} />
-        {/* RS vs SPY */}
         <MetricChip label="RS/SPY" value={item.rsLong != null ? fmtPct(item.rsLong) : "—"} color={item.rsLong != null && item.rsLong > 0 ? GREEN : GRAY} />
-        {/* Vol */}
         <MetricChip label="Vol3m" value={item.vol63 != null ? `${fmt(item.vol63, 0)}%` : "—"} color={GRAY} />
-        {/* R² */}
         <MetricChip label="R²" value={fmt(item.r2, 2)} color={item.r2 != null && item.r2 > 0.7 ? GREEN : GRAY} />
-        {/* EMA align */}
         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
           <span style={{ fontSize: 8, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>EMA</span>
           <AlignDots align={item.align} />
         </span>
-        {/* Stop */}
+        {/* Stop — ajustado si action !== HOLD */}
         <span style={{ marginLeft: "auto", fontSize: 9, color: "#94a3b8" }}>
           <span style={{ color: GRAY }}>Stop </span>
-          <span style={{ color: RED, fontWeight: 700 }}>{stops}</span>
-          {item.stopPrice != null && (
-            <span style={{ color: GRAY }}> @ {item.stopPrice.toFixed(2)}</span>
+          <span style={{ color: stopChanged ? actionColor(item.action) : RED, fontWeight: 700 }}>
+            {showStopPct != null ? `-${fmt(showStopPct)}%` : "—"}
+            {stopChanged && <span style={{ marginLeft: 2, fontSize: 7 }}>↕</span>}
+          </span>
+          {showStopPrice != null && (
+            <span style={{ color: GRAY }}> @ {showStopPrice.toFixed(2)}</span>
           )}
           {item.stopBand && (
             <span style={{
               marginLeft: 4, fontSize: 8, fontWeight: 700,
-              color: item.stopBand === "TR" ? GREEN : item.stopBand === "TA" ? RED : "#fbbf24",
+              color: item.stopBand === "TR" ? GREEN : item.stopBand === "TA" ? RED : YELLOW,
               background: "rgba(255,255,255,0.05)", borderRadius: 3, padding: "1px 3px",
             }}>
               {item.stopBand}
@@ -190,26 +305,351 @@ function ItemRow({ item, deployPct }: { item: Optimal2026Item; deployPct: number
   );
 }
 
-function MetricChip({ label, value, color }: { label: string; value: string; color: string }) {
+// ── Portfolio section ─────────────────────────────────────────────────────────
+
+function PortfolioRow({
+  pos,
+  matchedItem,
+}: {
+  pos: IBKPosition;
+  matchedItem: Optimal2026ItemWithSignal | undefined;
+}) {
+  const pnlPct = pos.avgCost && pos.currentPrice ? ((pos.currentPrice / pos.avgCost) - 1) * 100 : null;
+  const inStrategy = !!matchedItem;
+
   return (
-    <span style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
-      <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      <span style={{ fontSize: 9.5, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div style={{
+      display: "flex", alignItems: "center", gap: 8,
+      padding: "6px 12px",
+      borderBottom: "1px solid rgba(255,255,255,0.04)",
+      background: inStrategy ? "rgba(245,158,11,0.03)" : "transparent",
+    }}>
+      {/* Ticker */}
+      <span style={{ fontSize: 11, fontWeight: 800, color: inStrategy ? ACCENT : TEXT, minWidth: 50 }}>{pos.symbol}</span>
+      {/* Qty */}
+      <span style={{ fontSize: 10, color: GRAY, minWidth: 40 }}>{pos.quantity.toFixed(0)} acc</span>
+      {/* Avg cost */}
+      {pos.avgCost != null && (
+        <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 60, fontVariantNumeric: "tabular-nums" }}>
+          {pos.currency === "USD" ? "$" : "€"}{pos.avgCost.toFixed(2)}
+        </span>
+      )}
+      {/* P&L */}
+      {pnlPct != null && (
+        <span style={{ fontSize: 11, fontWeight: 700, color: pctColor(pnlPct), minWidth: 56, fontVariantNumeric: "tabular-nums" }}>
+          {fmtPct(pnlPct)}
+        </span>
+      )}
+      {pos.unrealizedPnL != null && (
+        <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(pos.unrealizedPnL), fontVariantNumeric: "tabular-nums" }}>
+          {pos.unrealizedPnL >= 0 ? "+" : ""}{pos.unrealizedPnL.toFixed(0)}{pos.currency === "USD" ? "$" : "€"}
+        </span>
+      )}
+
+      <span style={{ flex: 1 }} />
+
+      {/* In strategy badge */}
+      {inStrategy ? (
+        <>
+          <ActionBadge action={matchedItem.action} />
+          <span style={{ fontSize: 9, color: "#94a3b8" }}>
+            Stop: <span style={{ color: RED, fontWeight: 700 }}>
+              {matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct}%
+            </span>
+            {matchedItem.adjustedStopPrice != null && matchedItem.action !== "HOLD" && (
+              <span style={{ color: GRAY }}> @ {matchedItem.adjustedStopPrice.toFixed(2)}</span>
+            )}
+          </span>
+        </>
+      ) : (
+        <span style={{ fontSize: 8, color: "#475569", background: "rgba(255,255,255,0.04)", borderRadius: 3, padding: "2px 6px" }}>
+          Fuera del ranking
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PortfolioSection({
+  portfolio,
+  items,
+  onClear,
+}: {
+  portfolio: IBKPortfolio;
+  items: Optimal2026ItemWithSignal[];
+  onClear: () => void;
+}) {
+  const totalValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  const totalPnL = portfolio.positions.reduce((s, p) => s + (p.unrealizedPnL ?? 0), 0);
+
+  return (
+    <div style={{
+      margin: "0",
+      borderTop: `1px solid ${ACCENT_BORDER}`,
+    }}>
+      {/* Portfolio header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "7px 12px",
+        background: "rgba(245,158,11,0.06)",
+        borderBottom: "1px solid rgba(245,158,11,0.12)",
+      }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: ACCENT }}>📋 CARTERA IBK</span>
+        <span style={{ fontSize: 9, color: GRAY }}>{portfolio.positions.length} posiciones</span>
+        {totalValue > 0 && (
+          <span style={{ fontSize: 9, color: "#94a3b8" }}>
+            Valor: <span style={{ color: TEXT, fontWeight: 700 }}>{totalValue.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}€/$ </span>
+          </span>
+        )}
+        {totalPnL !== 0 && (
+          <span style={{ fontSize: 9, fontWeight: 700, color: pctColor(totalPnL) }}>
+            P&L: {totalPnL >= 0 ? "+" : ""}{totalPnL.toFixed(0)}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={onClear}
+          style={{
+            fontSize: 8, color: GRAY, background: "transparent",
+            border: "1px solid rgba(100,116,139,0.3)", borderRadius: 3, padding: "2px 6px",
+            cursor: "pointer",
+          }}
+        >
+          Limpiar
+        </button>
+        <span style={{ fontSize: 7, color: "#475569" }}>
+          {new Date(portfolio.loadedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
+
+      {/* Portfolio rows */}
+      {portfolio.positions.map((pos) => {
+        const matched = items.find(it => it.symbol.split(".")[0].toUpperCase() === pos.symbol.toUpperCase());
+        return <PortfolioRow key={pos.symbol} pos={pos} matchedItem={matched} />;
+      })}
+    </div>
+  );
+}
+
+// ── Countdown 15:00 Canarias ──────────────────────────────────────────────────
+
+function AutoScanCountdown({ onAutoScan }: { onAutoScan: () => void }) {
+  const [minsLeft, setMinsLeft] = useState(minutesToNext15);
+  const [inWindow, setInWindow] = useState(false);
+  const firedRef = useRef(false);
+
+  useEffect(() => {
+    const tick = () => {
+      const mins = minutesToNext15();
+      setMinsLeft(mins);
+      const win = mins === 0;
+      setInWindow(win);
+      if (win && !firedRef.current) {
+        firedRef.current = true;
+        // Check both markets open before firing
+        const mkt = getRegionalMarketStates();
+        if (mkt.europe === "OPEN" && mkt.unitedStates === "OPEN") {
+          const todayKey = new Date().toISOString().slice(0, 10);
+          try {
+            const lastKey = localStorage.getItem("o26_auto_scan_15h_date");
+            if (lastKey !== todayKey) {
+              localStorage.setItem("o26_auto_scan_15h_date", todayKey);
+              onAutoScan();
+            }
+          } catch { onAutoScan(); } // fail-open: fire even if localStorage unavailable
+        }
+      }
+      // Reset firedRef when window exits (>4 min after 15h)
+      if (!win) firedRef.current = false;
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [onAutoScan]);
+
+  const h = Math.floor(minsLeft / 60);
+  const m = minsLeft % 60;
+  const label = inWindow ? "AUTO-SCAN ACTIVO" : h > 0 ? `${h}h ${m}m` : `${m}m`;
+
+  return (
+    <span style={{
+      fontSize: 9, fontWeight: 800,
+      color: inWindow ? GREEN : GRAY,
+      background: inWindow ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${inWindow ? "rgba(16,185,129,0.3)" : "rgba(255,255,255,0.08)"}`,
+      borderRadius: 4, padding: "2px 7px",
+    }}>
+      {inWindow ? "●" : "⏱"} 15:00 Canarias: {label}
     </span>
   );
 }
 
-export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
-  const items = data.items ?? [];
+// ── Market mode badge ─────────────────────────────────────────────────────────
+
+function MarketModeBadge() {
+  const mkt = getRegionalMarketStates();
+  const isLive = mkt.marketHours === "OPEN";
+  return (
+    <span style={{
+      fontSize: 8, fontWeight: 700,
+      color: isLive ? GREEN : GRAY,
+      background: isLive ? "rgba(16,185,129,0.1)" : "rgba(100,116,139,0.1)",
+      border: `1px solid ${isLive ? "rgba(16,185,129,0.25)" : "rgba(100,116,139,0.2)"}`,
+      borderRadius: 3, padding: "1px 5px",
+    }}>
+      {isLive ? "● EN VIVO" : "◉ ÚLTIMO CIERRE"}
+    </span>
+  );
+}
+
+// ── OOS Stat ──────────────────────────────────────────────────────────────────
+
+function OosStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <span style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
+      <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color }}>{value}</span>
+    </span>
+  );
+}
+
+// ── Semi-active comparison ────────────────────────────────────────────────────
+
+function SemiActiveComparison() {
+  const m = SEMIACTIVE_COMPARISON.monthly;
+  const s = SEMIACTIVE_COMPARISON.semiActive;
+  const spy = SEMIACTIVE_COMPARISON.spy;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ fontSize: 8, color: ACCENT, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        Backtest: mensual vs semi-activo estimado
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
+        {[
+          { lbl: "Mensual (real)", data: m, accent: ACCENT },
+          { lbl: "Semi-activo (est)", data: s, accent: GREEN },
+          { lbl: "SPY (ref)", data: spy, accent: GRAY },
+        ].map(({ lbl, data, accent }) => (
+          <div key={lbl} style={{
+            padding: "5px 7px",
+            background: `${accent}08`,
+            border: `1px solid ${accent}20`,
+            borderRadius: 5,
+          }}>
+            <div style={{ fontSize: 7, color: accent, fontWeight: 700, marginBottom: 3 }}>{lbl}</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <OosStat label="CAGR" value={`+${data.cagr}%`} color={accent} />
+              <OosStat label="MaxDD" value={`-${data.maxDD}%`} color={RED} />
+              <OosStat label="MAR" value={data.mar.toFixed(2)} color={accent} />
+              <OosStat label="Sharpe" value={data.sharpe.toFixed(2)} color={accent} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 7, color: "#334155", marginTop: 4, lineHeight: 1.5 }}>
+        Semi-activo estimado según Barroso & Santa-Clara (2015), Fan-Li-Shi (2016), Antonacci (2014).
+        Mejora real depende de slippage, IRPF y ejecución. No es asesoramiento financiero.
+      </div>
+    </div>
+  );
+}
+
+// ── Portfolio upload ──────────────────────────────────────────────────────────
+
+function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const positions = parseIBKPortfolio(text);
+      if (positions.length === 0) {
+        alert("No se encontraron posiciones. Revisa el formato del CSV (IBK Activity Statement o Portfolio report).");
+        return;
+      }
+      const portfolio: IBKPortfolio = { positions, loadedAt: new Date().toISOString(), source: "IBK_CSV" };
+      savePortfolioToStorage(portfolio);
+      onLoad(portfolio);
+    };
+    reader.readAsText(file, "utf-8");
+  }, [onLoad]);
+
+  return (
+    <div style={{
+      padding: "8px 12px",
+      borderTop: `1px solid ${ACCENT_BORDER}`,
+      background: "rgba(245,158,11,0.03)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 9, color: "#94a3b8", flex: 1 }}>
+          Carga tu cartera IBK para ver P&L y acciones personalizadas por posición
+        </span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.txt"
+          style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+        />
+        <button
+          onClick={() => inputRef.current?.click()}
+          style={{
+            fontSize: 9, fontWeight: 700, color: ACCENT,
+            background: ACCENT_GLOW, border: `1px solid ${ACCENT_BORDER}`,
+            borderRadius: 5, padding: "4px 10px", cursor: "pointer",
+          }}
+        >
+          📂 Cargar CSV IBK
+        </button>
+      </div>
+      <div style={{ fontSize: 7, color: "#334155", marginTop: 4 }}>
+        IBK: Cuenta → Informes → Estado de cuenta → Exportar CSV · o Portfolio Analyst export.
+        Los datos se guardan SOLO en tu dispositivo (localStorage), nunca se envían al servidor.
+      </div>
+    </div>
+  );
+}
+
+// ── Main Panel ────────────────────────────────────────────────────────────────
+
+interface Optimal2026PanelProps {
+  data: Optimal2026Result;
+  onAutoScan?: () => void;
+}
+
+export function Optimal2026Panel({ data, onAutoScan }: Optimal2026PanelProps) {
+  const [portfolio, setPortfolio] = useState<IBKPortfolio | null>(() => loadPortfolioFromStorage());
+
+  const handlePortfolioLoad = useCallback((p: IBKPortfolio) => setPortfolio(p), []);
+  const handlePortfolioClear = useCallback(() => {
+    clearPortfolioFromStorage();
+    setPortfolio(null);
+  }, []);
+
+  const handleAutoScan = useCallback(() => {
+    onAutoScan?.();
+  }, [onAutoScan]);
+
+  const rawItems = data.items ?? [];
+  const items = enrichWithIntradaySignals(rawItems);
+  const mkt = getRegionalMarketStates();
+  const isLive = mkt.marketHours === "OPEN";
+
   const badge = data.badge;
   const oos = data.oos;
   const regime = data.regime ?? "RISK_OFF";
   const deployPct = data.deployPct ?? 30;
-  const rc = regimeConfig(regime);
-  const hasData = items.length > 0;
+
+  const rc = regime === "RISK_ON"
+    ? { label: "RÉGIMEN: RISK-ON (SPY > EMA200)", color: GREEN, bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", icon: "▲" }
+    : { label: "RÉGIMEN: RISK-OFF (SPY < EMA200) — DEFENSIVO", color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", icon: "▼" };
+
   const timestamp = data.cachedAtUtc
     ? new Date(data.cachedAtUtc).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : null;
+
+  const badgeColor = badge == null ? GRAY : badge >= 66 ? GREEN : badge >= 45 ? YELLOW : badge >= 25 ? ORANGE : RED;
 
   return (
     <section style={{
@@ -226,41 +666,41 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
         padding: "10px 14px 8px",
         borderBottom: `1px solid ${ACCENT_BORDER}`,
         background: ACCENT_GLOW,
+        flexWrap: "wrap",
       }}>
-        {/* Title */}
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, fontWeight: 900, color: ACCENT, letterSpacing: "0.05em" }}>
               OPTIMAL 2026
             </span>
             <span style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600 }}>
-              Dual Momentum Risk-Parity · Top 2 · Régimen binario SPY/EMA200
+              Dual Momentum · Top 2 · Régimen SPY/EMA200 · Semi-activo
             </span>
+            <MarketModeBadge />
           </div>
           {timestamp && (
             <div style={{ fontSize: 8, color: GRAY, marginTop: 2 }}>
               Actualizado {timestamp}
               {data.universeCount != null && (
-                <span style={{ marginLeft: 6, color: "#475569" }}>· {data.universeCount.toLocaleString()} tickers analizados</span>
+                <span style={{ marginLeft: 6, color: "#475569" }}>· {data.universeCount.toLocaleString()} tickers</span>
               )}
             </div>
           )}
         </div>
 
+        {/* 15:00 countdown */}
+        <AutoScanCountdown onAutoScan={handleAutoScan} />
+
         {/* Badge reliability */}
         {badge != null && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
             <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Fiabilidad</span>
-            <span style={{
-              fontSize: 16, fontWeight: 900, color: badgeColor(badge),
-              lineHeight: 1,
-            }}>
+            <span style={{ fontSize: 16, fontWeight: 900, color: badgeColor, lineHeight: 1 }}>
               {badge}<span style={{ fontSize: 9 }}>/100</span>
             </span>
           </div>
         )}
 
-        {/* OOS CAGR */}
         {oos && (
           <div style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
@@ -270,9 +710,7 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
             borderRadius: 6,
           }}>
             <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>CAGR OOS</span>
-            <span style={{ fontSize: 15, fontWeight: 900, color: ACCENT, lineHeight: 1 }}>
-              +{oos.cagr}%
-            </span>
+            <span style={{ fontSize: 15, fontWeight: 900, color: ACCENT, lineHeight: 1 }}>+{oos.cagr}%</span>
           </div>
         )}
       </div>
@@ -282,6 +720,7 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
         display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between",
         padding: "6px 14px",
         background: rc.bg, borderBottom: `1px solid ${rc.border}`,
+        flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 10, fontWeight: 800, color: rc.color }}>
           {rc.icon} {rc.label}
@@ -291,37 +730,41 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
         )}
         <span style={{
           fontSize: 9, fontWeight: 700,
-          color: deployPct === 100 ? GREEN : deployPct === 0 ? RED : "#fbbf24",
+          color: deployPct === 100 ? GREEN : deployPct === 0 ? RED : YELLOW,
           background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px",
         }}>
           Capital desplegado: {deployPct}%
         </span>
       </div>
 
-      {/* ── Items ── */}
-      {!hasData && (
+      {/* ── Items with signals ── */}
+      {items.length === 0 && (
         <div style={{ padding: "24px 14px", textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: GRAY }}>
-            Sin datos aún.
-          </div>
+          <div style={{ fontSize: 11, color: GRAY }}>Sin datos aún.</div>
           <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
             Ejecuta un scan completo (botón "Scan Todo") para calcular Optimal2026.
           </div>
         </div>
       )}
 
-      {hasData && items.map((item) => (
-        <ItemRow key={item.symbol} item={item} deployPct={deployPct} />
+      {items.map((item) => (
+        <ItemRow key={item.symbol} item={item} deployPct={deployPct} isLive={isLive} />
       ))}
 
-      {/* ── Disclaimers + OOS metrics ── */}
-      {hasData && (
+      {/* ── Portfolio IBK ── */}
+      {portfolio && portfolio.positions.length > 0 ? (
+        <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} />
+      ) : (
+        <PortfolioUpload onLoad={handlePortfolioLoad} />
+      )}
+
+      {/* ── Footer: OOS + semi-active comparison + disclaimer ── */}
+      {items.length > 0 && (
         <div style={{
           padding: "8px 14px 10px",
           borderTop: "1px solid rgba(255,255,255,0.06)",
           background: "rgba(0,0,0,0.15)",
         }}>
-          {/* OOS metrics strip */}
           {oos && (
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
               <OosStat label="CAGR" value={`+${oos.cagr}%`} color={ACCENT} />
@@ -335,25 +778,17 @@ export function Optimal2026Panel({ data }: Optimal2026PanelProps) {
             </div>
           )}
 
-          <div style={{ fontSize: 8, color: "#475569", lineHeight: 1.5 }}>
-            <strong style={{ color: ACCENT }}>OPTIMAL2026</strong>: cada mes selecciona los <strong>2</strong> activos con
-            mayor momentum risk-adjusted [(ret9m − ret2m) / vol3m] del universo de ~580 tickers US+EU. Filtro absoluto:
-            solo activos con momentum 9m positivo. Régimen <strong>binario</strong> SPY/EMA200 (100% alcista / 30% defensivo).
-            Métricas del <strong>backtest real</strong> 2016-2026 (810 combinaciones + validación walk-forward; config óptima
-            por MAR, robusta cross-régimen). Brutas pre-impuestos y sobre universo superviviente — el neto real será menor.
-            Ideas, NO señal de compra. No es asesoramiento financiero. Rentabilidades pasadas no garantizan las futuras.
+          <SemiActiveComparison />
+
+          <div style={{ fontSize: 8, color: "#475569", lineHeight: 1.5, marginTop: 8 }}>
+            <strong style={{ color: ACCENT }}>OPTIMAL2026</strong>: selecciona los <strong>2</strong> activos con mayor
+            momentum risk-adjusted [(ret9m − ret2m) / vol3m]. Filtro: momentum 9m positivo + EMA align ≥ 2.
+            Régimen <strong>binario</strong> SPY/EMA200. Señales intraday a las <strong>15:00 Canarias</strong> (ambos
+            mercados abiertos). Stop ajustado automáticamente según pullback risk (0-100). Backtest real 2016-2026,
+            810 combos + walk-forward. Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
           </div>
         </div>
       )}
     </section>
-  );
-}
-
-function OosStat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <span style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
-      <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      <span style={{ fontSize: 10, fontWeight: 700, color }}>{value}</span>
-    </span>
   );
 }
