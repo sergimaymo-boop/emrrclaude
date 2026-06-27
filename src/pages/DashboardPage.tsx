@@ -977,15 +977,17 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // ─── Optimal2026 scan dedicado (botón manual en el panel) ─────────────────
   // Reutiliza runBreadthScan (que ya computa y persiste Optimal2026 como side-effect)
   // con barra de progreso propia en el panel. No interfiere con handleScanAll.
+  const o26ScanActiveRef = useRef(false);
   const handleOptimal2026Scan = useCallback(async () => {
-    if (o26ScanProgress !== null) return; // ya escaneando
+    if (o26ScanActiveRef.current) return; // guard via ref, no crea re-renders por deps
+    o26ScanActiveRef.current = true;
     setO26ScanProgress(0);
     try {
       await runBreadthScan((coverage) => setO26ScanProgress(coverage));
       await loadOptimal2026();
     } catch { /* panel conserva último estado */ }
-    finally { setO26ScanProgress(null); }
-  }, [o26ScanProgress, loadOptimal2026]); // eslint-disable-line react-hooks/exhaustive-deps
+    finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
+  }, [loadOptimal2026]);
 
   // ─── Intraday Flows handler ───────────────────────────────────────────────
 
@@ -1084,7 +1086,20 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       const o26 = optimal2026Ref.current;
       if (o26.items && o26.items.length) {
         enrichOptimal2026WithLiveQuotes(o26.items)
-          .then((items) => setOptimal2026((prev) => ({ ...prev, items }))).catch(() => {});
+          .then((enriched) => setOptimal2026((prev) => {
+            // Merging inteligente: si el enriquecimiento no devolvió priceRefreshedAt
+            // (proveedor falló) conservar el precio en vivo anterior para no regresar
+            // al cierre del scan y no perder el badge "EN VIVO".
+            const prevMap = new Map((prev.items ?? []).map(it => [it.symbol, it]));
+            const items = enriched.map(item => {
+              const prevItem = prevMap.get(item.symbol);
+              if (!item.priceRefreshedAt && prevItem?.priceRefreshedAt && prevItem.price != null) {
+                return { ...item, price: prevItem.price, pctDay: prevItem.pctDay, priceRefreshedAt: prevItem.priceRefreshedAt };
+              }
+              return item;
+            });
+            return { ...prev, items };
+          })).catch(() => {});
       }
       const br = marketBreadthRef.current;
       if (br.topTickers && br.topTickers.length) {
