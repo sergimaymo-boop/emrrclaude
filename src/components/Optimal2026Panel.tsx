@@ -596,7 +596,6 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,.txt"
           style={{ display: "none" }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
         />
