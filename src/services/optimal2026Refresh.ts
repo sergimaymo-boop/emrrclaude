@@ -69,6 +69,7 @@ export interface IBKPortfolio {
   positions: IBKPosition[];
   loadedAt: string;     // ISO timestamp de la carga
   source: "IBK_CSV" | "IBK_PHOTO" | "MANUAL"; // IBK_PHOTO = OCR (números aproximados, verificar)
+  cashBalance?: number | null; // efectivo disponible (lo introduce el usuario) → permite calcular pesos reales y alineación con SUPREME
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";

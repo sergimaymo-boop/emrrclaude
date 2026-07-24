@@ -335,7 +335,7 @@ function PortfolioRow({
       {/* Ticker */}
       <span style={{ fontSize: 11, fontWeight: 800, color: inStrategy ? ACCENT : TEXT, minWidth: 50 }}>{pos.symbol}</span>
       {/* Qty */}
-      <span style={{ fontSize: 10, color: GRAY, minWidth: 40 }}>{pos.quantity.toFixed(0)} acc</span>
+      <span style={{ fontSize: 10, color: GRAY, minWidth: 40 }}>{pos.quantity % 1 === 0 ? pos.quantity.toFixed(0) : pos.quantity.toFixed(2)} acc</span>
       {/* Avg cost */}
       {pos.avgCost != null && (
         <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 60, fontVariantNumeric: "tabular-nums" }}>
@@ -379,16 +379,150 @@ function PortfolioRow({
   );
 }
 
+// ── Alineación con SUPREME ────────────────────────────────────────────────────
+// Compara la cartera cargada con el objetivo del sistema (deployPct ya escalado
+// por vol-target + reparto del top-2). Necesita el efectivo (input del usuario,
+// persistido en localStorage) para calcular pesos reales sobre la cuenta total.
+
+function AlignmentSummary({
+  portfolio,
+  items,
+  deployPct,
+  onUpdate,
+}: {
+  portfolio: IBKPortfolio;
+  items: Optimal2026ItemWithSignal[];
+  deployPct: number;
+  onUpdate: (p: IBKPortfolio) => void;
+}) {
+  const [cashInput, setCashInput] = useState<string>(portfolio.cashBalance != null ? String(portfolio.cashBalance) : "");
+  const posValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  const cash = portfolio.cashBalance;
+  const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  const saveCash = () => {
+    const v = parseFloat(cashInput.replace(",", "."));
+    onUpdate({ ...portfolio, cashBalance: isFinite(v) && v >= 0 ? v : null });
+  };
+
+  if (cash == null || posValue <= 0) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid rgba(245,158,11,0.1)", background: "rgba(245,158,11,0.02)" }}>
+        <span style={{ fontSize: 9, color: "#94a3b8", flex: 1 }}>
+          💡 Introduce tu <strong style={{ color: TEXT }}>efectivo disponible</strong> para ver la alineación de tu cartera con SUPREME (pesos reales vs objetivo)
+        </span>
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="ej. 16900"
+          value={cashInput}
+          onChange={(e) => setCashInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") saveCash(); }}
+          style={{
+            width: 90, fontSize: 10, padding: "3px 6px",
+            background: "rgba(255,255,255,0.05)", color: TEXT,
+            border: `1px solid ${ACCENT_BORDER}`, borderRadius: 4,
+          }}
+        />
+        <button onClick={saveCash} style={{ fontSize: 9, fontWeight: 700, color: ACCENT, background: ACCENT_GLOW, border: `1px solid ${ACCENT_BORDER}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>
+          OK
+        </button>
+      </div>
+    );
+  }
+
+  const total = posValue + cash;
+  const investedPct = (posValue / total) * 100;
+  const sysPicks = items.filter(it => it.allocationPct > 0);
+  const heldSyms = new Set(portfolio.positions.map(p => p.symbol.toUpperCase()));
+  const overlap = sysPicks.filter(it => heldSyms.has(it.symbol.split(".")[0].toUpperCase()));
+
+  return (
+    <div style={{ padding: "7px 12px", borderBottom: "1px solid rgba(245,158,11,0.1)", background: "rgba(245,158,11,0.02)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
+        <span style={{ fontSize: 9, fontWeight: 800, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em" }}>⚖ Alineación con SUPREME</span>
+        <span style={{ fontSize: 9, color: GRAY }}>
+          Cuenta ≈ <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
+        </span>
+        <span style={{
+          fontSize: 8, fontWeight: 700, borderRadius: 3, padding: "1px 5px",
+          color: overlap.length === sysPicks.length && sysPicks.length > 0 ? GREEN : overlap.length > 0 ? YELLOW : RED,
+          background: "rgba(255,255,255,0.04)",
+        }}>
+          Coincidencia top-{sysPicks.length || 2}: {overlap.length}/{sysPicks.length || 2}
+        </span>
+        <span style={{ flex: 1 }} />
+        <button
+          onClick={() => onUpdate({ ...portfolio, cashBalance: null })}
+          title="Cambiar el efectivo"
+          style={{ fontSize: 8, color: GRAY, background: "transparent", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 3, padding: "1px 5px", cursor: "pointer" }}
+        >
+          ✎ {fmtMoney(cash)}
+        </button>
+      </div>
+
+      {/* Barras: invertido actual vs objetivo del sistema */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 8, color: GRAY, width: 52, flexShrink: 0 }}>Invertido</span>
+          <div style={{ flex: 1, height: 8, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min(100, investedPct)}%`, background: "#94a3b8", borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, color: TEXT, width: 40, textAlign: "right" }}>{investedPct.toFixed(1)}%</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 8, color: GRAY, width: 52, flexShrink: 0 }}>Sistema</span>
+          <div style={{ flex: 1, height: 8, background: "rgba(255,255,255,0.05)", borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min(100, deployPct)}%`, background: ACCENT, borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 9, fontWeight: 700, color: ACCENT, width: 40, textAlign: "right" }}>{deployPct}%</span>
+        </div>
+      </div>
+
+      {/* Objetivo por valor del sistema vs lo que tienes */}
+      {sysPicks.length > 0 && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5 }}>
+          {sysPicks.map(it => {
+            const base = it.symbol.split(".")[0].toUpperCase();
+            const held = portfolio.positions.find(p => p.symbol.toUpperCase() === base);
+            const heldVal = held?.marketValue ?? 0;
+            const targetVal = total * it.allocationPct / 100;
+            const gap = targetVal - heldVal;
+            return (
+              <span key={it.symbol} style={{ fontSize: 8.5, color: "#94a3b8" }}>
+                <strong style={{ color: held ? GREEN : YELLOW }}>{base}</strong>
+                {" "}objetivo {fmtMoney(targetVal)} ({it.allocationPct}%) · tienes {fmtMoney(heldVal)}
+                {Math.abs(gap) > total * 0.01 && (
+                  <span style={{ color: gap > 0 ? YELLOW : ORANGE, fontWeight: 700 }}>
+                    {" "}({gap > 0 ? "faltan" : "sobran"} {fmtMoney(Math.abs(gap))})
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ fontSize: 7, color: "#334155", marginTop: 3 }}>
+        Importes ≈ sin conversión EUR/USD. Objetivo = cuenta × asignación del sistema (régimen + vol-target del último scan). Ideas, no asesoramiento.
+      </div>
+    </div>
+  );
+}
+
 function PortfolioSection({
   portfolio,
   items,
   onClear,
   isPricesStale,
+  deployPct,
+  onUpdate,
 }: {
   portfolio: IBKPortfolio;
   items: Optimal2026ItemWithSignal[];
   onClear: () => void;
   isPricesStale?: boolean;
+  deployPct: number;
+  onUpdate: (p: IBKPortfolio) => void;
 }) {
   const isPhoto = portfolio.source === "IBK_PHOTO";
   // Con origen FOTO los números del OCR son aproximados: solo mostrar totales si TODAS
@@ -450,6 +584,9 @@ function PortfolioSection({
           {new Date(portfolio.loadedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
+
+      {/* Alineación con el sistema */}
+      <AlignmentSummary portfolio={portfolio} items={items} deployPct={deployPct} onUpdate={onUpdate} />
 
       {/* Portfolio rows */}
       {portfolio.positions.map((pos) => {
@@ -745,6 +882,10 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
   const isScanning = scanProgress !== null && scanProgress !== undefined;
 
   const handlePortfolioLoad = useCallback((p: IBKPortfolio) => setPortfolio(p), []);
+  const handlePortfolioUpdate = useCallback((p: IBKPortfolio) => {
+    savePortfolioToStorage(p);
+    setPortfolio(p);
+  }, []);
   const handlePortfolioClear = useCallback(() => {
     clearPortfolioFromStorage();
     setPortfolio(null);
@@ -911,7 +1052,7 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
 
       {/* ── Portfolio IBK ── */}
       {portfolio && portfolio.positions.length > 0 ? (
-        <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} isPricesStale={isPricesStale} />
+        <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} isPricesStale={isPricesStale} deployPct={deployPct} onUpdate={handlePortfolioUpdate} />
       ) : (
         <PortfolioUpload onLoad={handlePortfolioLoad} />
       )}
