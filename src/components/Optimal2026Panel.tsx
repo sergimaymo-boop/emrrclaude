@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { Optimal2026Result, Optimal2026Item, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
-import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage } from "../services/optimal2026Refresh";
+import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage, loadPortfolioHistory } from "../services/optimal2026Refresh";
 import { enrichWithIntradaySignals, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 
@@ -389,11 +389,13 @@ function AlignmentSummary({
   items,
   deployPct,
   onUpdate,
+  isPricesStale,
 }: {
   portfolio: IBKPortfolio;
   items: Optimal2026ItemWithSignal[];
   deployPct: number;
   onUpdate: (p: IBKPortfolio) => void;
+  isPricesStale?: boolean;
 }) {
   const [cashInput, setCashInput] = useState<string>(portfolio.cashBalance != null ? String(portfolio.cashBalance) : "");
   const posValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
@@ -502,8 +504,92 @@ function AlignmentSummary({
           })}
         </div>
       )}
+      {/* ── Plan de acción sistemático (mandato 25-jul: entradas/salidas/balanceo en cada foto) ── */}
+      <SystemActionPlan portfolio={portfolio} items={items} total={total} isPricesStale={isPricesStale} />
+
       <div style={{ fontSize: 7, color: "#334155", marginTop: 3 }}>
         Importes ≈ sin conversión EUR/USD. Objetivo = cuenta × asignación del sistema (régimen + vol-target del último scan). Ideas, no asesoramiento.
+      </div>
+    </div>
+  );
+}
+
+// ── Plan de acción sistemático ────────────────────────────────────────────────
+// Traducción de la alineación a MOVIMIENTOS concretos con importes, priorizando
+// el efectivo antes que ventas forzadas. Con precios obsoletos se oculta (norma).
+
+function SystemActionPlan({
+  portfolio,
+  items,
+  total,
+  isPricesStale,
+}: {
+  portfolio: IBKPortfolio;
+  items: Optimal2026ItemWithSignal[];
+  total: number;
+  isPricesStale?: boolean;
+}) {
+  const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  if (isPricesStale) {
+    return (
+      <div style={{ fontSize: 8, color: RED, marginTop: 5 }}>
+        ⚠ Plan de acción oculto — precios no en tiempo real (no fiable).
+      </div>
+    );
+  }
+  const sysPicks = items.filter(it => it.allocationPct > 0);
+  const rankedSyms = new Set(items.map(it => it.symbol.split(".")[0].toUpperCase()));
+  const plan: { icon: string; color: string; text: string }[] = [];
+
+  // 1) Entradas / ampliaciones hacia el objetivo del sistema (desde efectivo)
+  for (const it of sysPicks) {
+    const base = it.symbol.split(".")[0].toUpperCase();
+    const held = portfolio.positions.find(p => p.symbol.toUpperCase() === base);
+    const gap = total * it.allocationPct / 100 - (held?.marketValue ?? 0);
+    if (gap > total * 0.01) {
+      plan.push({
+        icon: held ? "▲" : "＋", color: GREEN,
+        text: `${held ? "Ampliar" : "Entrar en"} ${base} ~${fmtMoney(gap)} (hasta el ${it.allocationPct}% objetivo) · stop ${it.action !== "HOLD" && it.adjustedStopPct != null ? it.adjustedStopPct : it.stopPct ?? "—"}%`,
+      });
+    } else if (gap < -total * 0.01) {
+      plan.push({ icon: "▼", color: ORANGE, text: `Reducir ${base} ~${fmtMoney(Math.abs(gap))} (sobre el objetivo del sistema)` });
+    }
+  }
+
+  // 2) Posiciones fuera del sistema: mantener SOLO con trailing puesto
+  const outside = portfolio.positions.filter(p => !rankedSyms.has(p.symbol.toUpperCase()));
+  if (outside.length > 0) {
+    plan.push({
+      icon: "🛡", color: YELLOW,
+      text: `${outside.map(p => p.symbol).join(", ")}: fuera del sistema — mantener solo con trailing stop activo; el sistema no ampliaría aquí`,
+    });
+  }
+
+  // 3) Aprendizaje: evolución del P&L entre fotos consecutivas
+  const hist = loadPortfolioHistory();
+  if (hist.length >= 2) {
+    const prev = hist[hist.length - 2], curr = hist[hist.length - 1];
+    if (prev.totalPnL != null && curr.totalPnL != null) {
+      const d = curr.totalPnL - prev.totalPnL;
+      plan.push({
+        icon: "📈", color: d >= 0 ? GREEN : RED,
+        text: `Desde la foto anterior (${new Date(prev.at).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit" })}): P&L ${d >= 0 ? "+" : ""}${d.toFixed(0)} · ${hist.length} fotos registradas (histórico de aprendizaje)`,
+      });
+    }
+  }
+
+  if (plan.length === 0) return null;
+  return (
+    <div style={{ marginTop: 6, padding: "5px 8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(245,158,11,0.12)", borderRadius: 5 }}>
+      <div style={{ fontSize: 8, fontWeight: 800, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>
+        📋 Plan sistemático
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {plan.map((p, i) => (
+          <div key={i} style={{ fontSize: 8.5, color: "#94a3b8", lineHeight: 1.5 }}>
+            <span style={{ color: p.color, fontWeight: 800 }}>{p.icon}</span> {p.text}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -586,7 +672,7 @@ function PortfolioSection({
       </div>
 
       {/* Alineación con el sistema */}
-      <AlignmentSummary portfolio={portfolio} items={items} deployPct={deployPct} onUpdate={onUpdate} />
+      <AlignmentSummary portfolio={portfolio} items={items} deployPct={deployPct} onUpdate={onUpdate} isPricesStale={isPricesStale} />
 
       {/* Portfolio rows */}
       {portfolio.positions.map((pos) => {

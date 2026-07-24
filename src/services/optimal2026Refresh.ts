@@ -73,9 +73,56 @@ export interface IBKPortfolio {
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
+const IBK_HISTORY_KEY = "optimal2026_ibk_history_v1";
+const IBK_HISTORY_MAX = 40;
+
+// ── Histórico de snapshots de cartera (base del aprendizaje) ──────────────────
+// Cada carga de cartera se registra; comparar snapshots consecutivos permite
+// medir la evolución del P&L y aprender de las decisiones (mandato 25-jul-2026).
+
+export interface IBKSnapshot {
+  at: string;                       // ISO timestamp
+  totalPnL: number | null;          // suma de unrealized P&L conocidos
+  totalValue: number | null;        // valor de posiciones conocido
+  symbols: string[];                // tickers en cartera (para detectar entradas/salidas)
+}
+
+export function loadPortfolioHistory(): IBKSnapshot[] {
+  try {
+    const raw = localStorage.getItem(IBK_HISTORY_KEY);
+    const h = raw ? (JSON.parse(raw) as IBKSnapshot[]) : [];
+    return Array.isArray(h) ? h : [];
+  } catch { return []; }
+}
+
+function appendPortfolioHistory(portfolio: IBKPortfolio): void {
+  try {
+    const pnls = portfolio.positions.map(p => p.unrealizedPnL).filter((v): v is number => v != null);
+    const vals = portfolio.positions.map(p => p.marketValue).filter((v): v is number => v != null);
+    const snap: IBKSnapshot = {
+      at: portfolio.loadedAt,
+      totalPnL: pnls.length ? Math.round(pnls.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+      totalValue: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100 : null,
+      symbols: portfolio.positions.map(p => p.symbol.toUpperCase()).sort(),
+    };
+    const h = loadPortfolioHistory();
+    // No duplicar si la última carga es de hace <10 min con los mismos símbolos (re-guardados de efectivo)
+    const last = h[h.length - 1];
+    const sameSyms = last && last.symbols.join(",") === snap.symbols.join(",");
+    if (last && sameSyms && Date.now() - new Date(last.at).getTime() < 10 * 60 * 1000) {
+      h[h.length - 1] = snap;
+    } else {
+      h.push(snap);
+    }
+    localStorage.setItem(IBK_HISTORY_KEY, JSON.stringify(h.slice(-IBK_HISTORY_MAX)));
+  } catch { /* ignore quota */ }
+}
 
 export function savePortfolioToStorage(portfolio: IBKPortfolio): void {
-  try { localStorage.setItem(IBK_STORAGE_KEY, JSON.stringify(portfolio)); } catch { /* ignore quota errors */ }
+  try {
+    localStorage.setItem(IBK_STORAGE_KEY, JSON.stringify(portfolio));
+    appendPortfolioHistory(portfolio);
+  } catch { /* ignore quota errors */ }
 }
 
 export function loadPortfolioFromStorage(): IBKPortfolio | null {
