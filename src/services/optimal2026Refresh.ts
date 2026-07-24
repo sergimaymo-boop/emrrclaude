@@ -68,7 +68,7 @@ export interface IBKPosition {
 export interface IBKPortfolio {
   positions: IBKPosition[];
   loadedAt: string;     // ISO timestamp de la carga
-  source: "IBK_CSV" | "MANUAL";
+  source: "IBK_CSV" | "IBK_PHOTO" | "MANUAL"; // IBK_PHOTO = OCR (números aproximados, verificar)
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
@@ -221,16 +221,33 @@ const OCR_NOT_TICKERS = new Set([
   "USD", "EUR", "GBP", "CHF", "PNL", "MKT", "VALUE", "QTY", "POS", "TOTAL",
   "CASH", "NET", "IBKR", "ACCT", "AVG", "COST", "LAST", "PRICE", "DIA", "HOY",
   "STK", "OPT", "FUT", "ETF", "ALL", "LONG", "SHORT", "SYMBOL",
+  // Sufijos/palabras de RAZÓN SOCIAL — la app de IBK muestra el nombre de la empresa
+  // debajo del ticker y el OCR los confundía con un segundo ticker (bug 25-jul: "S.p.A."
+  // de Mediobanca → posición fantasma "SPA"; "PALO" de Palo Alto; "POSTE"; "HUMANA").
+  "SPA", "INC", "CORP", "LTD", "PLC", "GROUP", "GRP", "HOLDING", "HOLDINGS",
+  "CLASS", "SHS", "ADR", "NV", "SE", "AG", "SA", "AB", "ASA", "OYJ", "CO",
+  "TECH", "TECHNOLOGIES", "TECHNOLOGY", "NETWORKS", "SYSTEMS", "THE", "AND",
 ]);
 
 /**
  * Parser heurístico para texto OCR de capturas de la app/web de IBK.
- * Busca líneas con un ticker (2-6 mayúsculas) seguido de números:
- * cantidad, coste medio, precio actual, valor de mercado.
+ *
+ * Formatos que reconoce (verificado 25-jul-2026 con la cartera real de Sergi):
+ *   • App IBK móvil, pestaña Posiciones: "PST BVME 26.31 30 -27.60 -3.06%"
+ *     → columnas: Último (precio, DECIMAL) · Posición (acciones, ENTERO) · PyG · %
+ *   • Listado simple: "AAPL 100 150.25" → cantidad (ENTERO) · precio (DECIMAL)
+ *
+ * La ambigüedad cantidad/precio se resuelve por tipo: entre los dos primeros números,
+ * el ENTERO es la cantidad y el DECIMAL el precio (la app IBK pinta precio primero).
+ *
+ * Se descartan las líneas de NOMBRE DE EMPRESA que la app pinta bajo cada ticker
+ * ("POSTE ITALIANE SPA 26.30-26.31"): su pareja de números es el rango del día
+ * (dos decimales casi iguales) → regla del rango.
  */
 export function parseOCRPortfolio(text: string): IBKPosition[] {
   const positions: IBKPosition[] = [];
   const seen = new Set<string>();
+  const isInt = (n: number) => Number.isInteger(n);
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -243,23 +260,59 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
     if (seen.has(symbol)) continue;
     const nums = tokens
       .slice(symIdx + 1)
+      // "26.30-26.31" (rango del día) llega como UN token con guión → separarlo en dos
+      // números para que la regla del rango pueda reconocer la línea del nombre.
+      .flatMap((t) => {
+        const range = t.match(/^([\d.,]+)-([\d.,]+)%?$/);
+        return range ? [range[1], range[2]] : [t];
+      })
       .map(parseOcrNumber)
       .filter((n) => isFinite(n));
     if (nums.length === 0) continue;
-    const quantity = nums[0];
+
+    let quantity: number, currentPrice: number | null = null, unrealizedPnL: number | null = null;
+    const [a, b] = [nums[0], nums[1]];
+
+    if (b != null && !isInt(a) && isInt(b) && a > 0 && b > 0) {
+      // Layout app IBK: precio (decimal) · posición (entero) · PyG · %
+      currentPrice = a;
+      quantity = b;
+      if (nums.length > 2 && Math.abs(nums[2]) < a * b * 2) unrealizedPnL = nums[2];
+    } else if (b != null && !isInt(a) && !isInt(b) && a > 0 && b > 0
+               && Math.abs(a - b) / Math.max(a, b) < 0.02) {
+      // Dos decimales casi iguales = rango del día en la línea del NOMBRE de empresa → descartar
+      continue;
+    } else {
+      // Layout simple: cantidad · coste/precio
+      quantity = a;
+      if (b != null && b > 0) currentPrice = b;
+    }
+
     if (!isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) continue;
     seen.add(symbol);
     positions.push({
       symbol,
       quantity,
-      avgCost: nums.length > 1 && nums[1] > 0 ? nums[1] : null,
-      currentPrice: nums.length > 2 && nums[2] > 0 ? nums[2] : null,
-      marketValue: nums.length > 3 && nums[3] > 0 ? nums[3] : null,
-      unrealizedPnL: null,
+      avgCost: null, // la app IBK no muestra coste medio en esta vista — no inventarlo
+      currentPrice,
+      marketValue: currentPrice != null ? Math.round(currentPrice * quantity * 100) / 100 : null,
+      unrealizedPnL,
       currency: "USD",
     });
   }
-  return positions;
+  // Seguridad extra: si dos filas consecutivas comparten cantidad exacta (ticker + nombre
+  // con la misma cifra al lado), la segunda es la línea del nombre → fusionar en la primera.
+  const deduped: IBKPosition[] = [];
+  for (const p of positions) {
+    const prev = deduped[deduped.length - 1];
+    if (prev && prev.quantity === p.quantity) {
+      if (prev.currentPrice == null && p.currentPrice != null) prev.currentPrice = p.currentPrice;
+      if (prev.unrealizedPnL == null && p.unrealizedPnL != null) prev.unrealizedPnL = p.unrealizedPnL;
+      continue;
+    }
+    deduped.push(p);
+  }
+  return deduped;
 }
 
 /**

@@ -390,7 +390,13 @@ function PortfolioSection({
   onClear: () => void;
   isPricesStale?: boolean;
 }) {
-  const totalValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  const isPhoto = portfolio.source === "IBK_PHOTO";
+  // Con origen FOTO los números del OCR son aproximados: solo mostrar totales si TODAS
+  // las posiciones traen marketValue plausible (si no, el "Valor total" sería basura).
+  const allHaveValue = portfolio.positions.every(p => p.marketValue != null && p.marketValue >= 10);
+  const totalValue = (!isPhoto || allHaveValue)
+    ? portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0)
+    : 0;
   const totalPnL = portfolio.positions.reduce((s, p) => s + (p.unrealizedPnL ?? 0), 0);
 
   return (
@@ -407,6 +413,18 @@ function PortfolioSection({
       }}>
         <span style={{ fontSize: 10, fontWeight: 800, color: ACCENT }}>📋 CARTERA IBK</span>
         <span style={{ fontSize: 9, color: GRAY }}>{portfolio.positions.length} posiciones</span>
+        {isPhoto && (
+          <span
+            title="Cargada por FOTO con OCR: tickers y cantidades suelen leerse bien, pero precios y P&L pueden venir mal de la imagen. Para datos exactos usa el CSV de IBK."
+            style={{
+              fontSize: 8, fontWeight: 700, color: YELLOW,
+              background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)",
+              borderRadius: 3, padding: "1px 5px",
+            }}
+          >
+            📷 OCR — verifica los datos
+          </span>
+        )}
         {totalValue > 0 && (
           <span style={{ fontSize: 9, color: "#94a3b8" }}>
             Valor: <span style={{ color: TEXT, fontWeight: 700 }}>{totalValue.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}€/$ </span>
@@ -584,7 +602,7 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     if (isImage) {
       setOcrPct(0);
       parseImagePortfolio(file, (pct) => setOcrPct(pct))
-        .then((positions) => finishLoad(positions, "IBK_CSV"))
+        .then((positions) => finishLoad(positions, "IBK_PHOTO"))
         .catch(() => alert("No se pudo leer la foto. Si es HEIC, haz mejor una captura de pantalla (PNG) de las posiciones en la app de IBK e inténtalo de nuevo."))
         .finally(() => setOcrPct(null));
       return;
