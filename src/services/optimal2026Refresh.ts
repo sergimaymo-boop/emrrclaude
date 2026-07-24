@@ -203,6 +203,85 @@ function parseSimpleCSV(csv: string): IBKPosition[] {
   return positions;
 }
 
+// ── OCR: cartera desde FOTO (captura de pantalla de la app IBK) ───────────────
+
+function parseOcrNumber(token: string): number {
+  let t = token.replace(/[$€£+%]/g, "").trim();
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) {
+    // Formato europeo: 1.234,56
+    t = t.replace(/\./g, "").replace(",", ".");
+  } else {
+    // Formato US: 1,234.56
+    t = t.replace(/,/g, "");
+  }
+  return parseFloat(t);
+}
+
+const OCR_NOT_TICKERS = new Set([
+  "USD", "EUR", "GBP", "CHF", "PNL", "MKT", "VALUE", "QTY", "POS", "TOTAL",
+  "CASH", "NET", "IBKR", "ACCT", "AVG", "COST", "LAST", "PRICE", "DIA", "HOY",
+  "STK", "OPT", "FUT", "ETF", "ALL", "LONG", "SHORT", "SYMBOL",
+]);
+
+/**
+ * Parser heurístico para texto OCR de capturas de la app/web de IBK.
+ * Busca líneas con un ticker (2-6 mayúsculas) seguido de números:
+ * cantidad, coste medio, precio actual, valor de mercado.
+ */
+export function parseOCRPortfolio(text: string): IBKPosition[] {
+  const positions: IBKPosition[] = [];
+  const seen = new Set<string>();
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const tokens = line.split(/\s+/);
+    const symIdx = tokens.findIndex(
+      (t) => /^[A-Z]{2,6}$/.test(t) && !OCR_NOT_TICKERS.has(t),
+    );
+    if (symIdx < 0) continue;
+    const symbol = tokens[symIdx];
+    if (seen.has(symbol)) continue;
+    const nums = tokens
+      .slice(symIdx + 1)
+      .map(parseOcrNumber)
+      .filter((n) => isFinite(n));
+    if (nums.length === 0) continue;
+    const quantity = nums[0];
+    if (!isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) continue;
+    seen.add(symbol);
+    positions.push({
+      symbol,
+      quantity,
+      avgCost: nums.length > 1 && nums[1] > 0 ? nums[1] : null,
+      currentPrice: nums.length > 2 && nums[2] > 0 ? nums[2] : null,
+      marketValue: nums.length > 3 && nums[3] > 0 ? nums[3] : null,
+      unrealizedPnL: null,
+      currency: "USD",
+    });
+  }
+  return positions;
+}
+
+/**
+ * Lee una FOTO (captura de pantalla del carrete del iPhone, Archivos, etc.)
+ * con OCR (tesseract.js, lazy-loaded — no infla el bundle principal) y
+ * extrae las posiciones. Todo en el dispositivo, nada se sube al servidor.
+ */
+export async function parseImagePortfolio(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<IBKPosition[]> {
+  const Tesseract = await import("tesseract.js");
+  const result = await Tesseract.recognize(file, "eng", {
+    logger: (m: { status: string; progress: number }) => {
+      if (m.status === "recognizing text" && onProgress) {
+        onProgress(Math.round(m.progress * 100));
+      }
+    },
+  });
+  return parseOCRPortfolio(result.data.text);
+}
+
 export function initialOptimal2026(): Optimal2026Result {
   return { ok: true, items: [] };
 }

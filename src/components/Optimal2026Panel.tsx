@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { Optimal2026Result, Optimal2026Item, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
-import { parseIBKPortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage } from "../services/optimal2026Refresh";
+import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage } from "../services/optimal2026Refresh";
 import { enrichWithIntradaySignals, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 
@@ -566,22 +566,37 @@ function SemiActiveComparison() {
 
 function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [ocrPct, setOcrPct] = useState<number | null>(null); // null = sin OCR en curso
+
+  const finishLoad = useCallback((positions: IBKPosition[], source: IBKPortfolio["source"]) => {
+    if (positions.length === 0) {
+      alert("No se encontraron posiciones.\n\n• Foto: usa una captura de pantalla nítida de la lista de posiciones de IBK.\n• CSV: exporta desde IBK → Informes → Estado de cuenta.");
+      return;
+    }
+    const portfolio: IBKPortfolio = { positions, loadedAt: new Date().toISOString(), source };
+    savePortfolioToStorage(portfolio);
+    onLoad(portfolio);
+  }, [onLoad]);
 
   const handleFile = useCallback((file: File) => {
+    const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|heic|heif|webp)$/i.test(file.name);
+    if (isImage) {
+      setOcrPct(0);
+      parseImagePortfolio(file, (pct) => setOcrPct(pct))
+        .then((positions) => finishLoad(positions, "IBK_CSV"))
+        .catch(() => alert("No se pudo leer la foto. Si es HEIC, haz mejor una captura de pantalla (PNG) de las posiciones en la app de IBK e inténtalo de nuevo."))
+        .finally(() => setOcrPct(null));
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
-      const positions = parseIBKPortfolio(text);
-      if (positions.length === 0) {
-        alert("No se encontraron posiciones. Revisa el formato del CSV (IBK Activity Statement o Portfolio report).");
-        return;
-      }
-      const portfolio: IBKPortfolio = { positions, loadedAt: new Date().toISOString(), source: "IBK_CSV" };
-      savePortfolioToStorage(portfolio);
-      onLoad(portfolio);
+      finishLoad(parseIBKPortfolio(text), "IBK_CSV");
     };
     reader.readAsText(file, "utf-8");
-  }, [onLoad]);
+  }, [finishLoad]);
+
+  const busy = ocrPct !== null;
 
   return (
     <div style={{
@@ -591,28 +606,32 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 9, color: "#94a3b8", flex: 1 }}>
-          Carga tu cartera IBK para ver P&L y acciones personalizadas por posición
+          Carga tu cartera IBK (CSV o foto/captura) para ver P&L y acciones por posición
         </span>
         <input
           ref={inputRef}
           type="file"
+          accept="image/*,.csv,.txt,text/csv,text/plain"
           style={{ display: "none" }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
         />
         <button
-          onClick={() => inputRef.current?.click()}
+          onClick={() => { if (!busy) inputRef.current?.click(); }}
+          disabled={busy}
           style={{
-            fontSize: 9, fontWeight: 700, color: ACCENT,
-            background: ACCENT_GLOW, border: `1px solid ${ACCENT_BORDER}`,
-            borderRadius: 5, padding: "4px 10px", cursor: "pointer",
+            fontSize: 9, fontWeight: 700, color: busy ? GRAY : ACCENT,
+            background: busy ? "rgba(100,116,139,0.08)" : ACCENT_GLOW,
+            border: `1px solid ${busy ? "rgba(100,116,139,0.2)" : ACCENT_BORDER}`,
+            borderRadius: 5, padding: "4px 10px", cursor: busy ? "wait" : "pointer",
           }}
         >
-          📂 Cargar CSV IBK
+          {busy ? `🔍 Leyendo foto… ${ocrPct}%` : "📂 Cargar CSV / 📷 Foto"}
         </button>
       </div>
       <div style={{ fontSize: 7, color: "#334155", marginTop: 4 }}>
-        IBK: Cuenta → Informes → Estado de cuenta → Exportar CSV · o Portfolio Analyst export.
-        Los datos se guardan SOLO en tu dispositivo (localStorage), nunca se envían al servidor.
+        📷 Foto: captura de pantalla de tus posiciones en la app IBK (desde carrete, Archivos o cámara).
+        CSV: IBK → Informes → Estado de cuenta → Exportar. Todo se procesa y guarda SOLO en tu
+        dispositivo (localStorage + OCR local), nunca se envía al servidor.
       </div>
     </div>
   );
