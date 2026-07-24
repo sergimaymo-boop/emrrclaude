@@ -1,12 +1,12 @@
 import type { SystemStatus } from "../types";
 
-// Scan phase shown inside the button
+// Scan phase shown inside the button (consolidación 24-jul-2026: fase rally eliminada)
 export type ScanPhase =
   | "idle"
-  | "flows"    // step 1/4
-  | "rally"    // step 2/4
-  | "full"     // step 3/4
-  | "breadth"  // step 4/4 — market breadth verdict
+  | "flows"    // paso 1/3
+  | "rally"    // legado — ya no se dispara, se mantiene por compatibilidad de tipo
+  | "full"     // paso 2/3 — integridad de universo + indicadores maestros
+  | "breadth"  // paso 3/3 — amplitud + OPTIMAL SUPREME
   | "done";
 
 interface StickyMiniHeaderProps {
@@ -49,12 +49,12 @@ function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED
 
 // Button phase config
 const PHASE_CONFIG: Record<ScanPhase, { label: string; sub: string; progress: number }> = {
-  idle:    { label: "SCAN  EMRR",  sub: "Amplitud  ·  Flujos  ·  Líderes  ·  TOP 8", progress: 0 },
-  flows:   { label: "Flujos…",     sub: "Paso 1 / 4  —  Rotación sectorial",  progress: 12 },
-  rally:   { label: "Líderes…",    sub: "Paso 2 / 4  —  Rally Leaders",        progress: 34 },
-  full:    { label: "TOP 8…",      sub: "Paso 3 / 4  —  Análisis completo",    progress: 56 },
-  breadth: { label: "Amplitud…",   sub: "Paso 4 / 4  —  Veredicto de mercado", progress: 82 },
-  done:    { label: "✓  Listo",    sub: "Señal Óptima + Amplitud actualizadas", progress: 100 },
+  idle:    { label: "SCAN  EMRR",  sub: "Flujos  ·  Universo  ·  Amplitud  ·  ⚡ SUPREME", progress: 0 },
+  flows:   { label: "Flujos…",     sub: "Paso 1 / 3  —  Rotación sectorial",   progress: 15 },
+  rally:   { label: "Escaneando…", sub: "Fase legado",                          progress: 30 },
+  full:    { label: "Universo…",   sub: "Paso 2 / 3  —  Integridad + indicadores", progress: 50 },
+  breadth: { label: "⚡ SUPREME…", sub: "Paso 3 / 3  —  Amplitud + Optimal Supreme", progress: 82 },
+  done:    { label: "✓  Listo",    sub: "OPTIMAL SUPREME + Amplitud actualizados", progress: 100 },
 };
 
 export function StickyMiniHeader({

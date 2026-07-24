@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionButtons } from "../components/ActionButtons";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { FearGreedPanel } from "../components/FearGreedPanel";
 import { StickyMiniHeader } from "../components/StickyMiniHeader";
 import { SystemStatusCards } from "../components/SystemStatusCards";
 import { TechnicalHeader } from "../components/TechnicalHeader";
 import { Toast } from "../components/Toast";
-import { Top8Grid } from "../components/Top8Grid";
 import {
   initialSystemStatus,
   unavailableFearGreed,
@@ -35,20 +33,6 @@ import { getRegionalMarketStates } from "../utils/marketHours";
 import { shareFullExport } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 import {
-  type MarketRegime,
-  type RallyState,
-  continueRallyScan,
-  fetchLastRallyScan,
-  fetchMarketRegime,
-  initialRallyState,
-  startRallyScan,
-} from "../services/rallyRefresh";
-import {
-  type MonetaryCycleResult,
-  fetchMonetaryCycle,
-  initialMonetaryCycle,
-} from "../services/monetaryCycleRefresh";
-import {
   type MarketBreadthResult,
   fetchMarketBreadth,
   initialMarketBreadth,
@@ -58,14 +42,10 @@ import {
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
 import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
-import { type Fable01Result, fetchFable01, initialFable01, enrichFable01WithLiveQuotes } from "../services/fable01Refresh";
-import { Fable01Panel } from "../components/Fable01Panel";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
-import { OptimalSignalPanel } from "../components/OptimalSignalPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
-import { Claude01Panel } from "../components/Claude01Panel";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
 import {
   type Optimal2026Result,
@@ -203,18 +183,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   });
   const [toast, setToast] = useState<ToastState | null>(null);
   const [exportText, setExportText] = useState("");
-  const [rallyState, setRallyState] = useState<RallyState>(initialRallyState());
-  const [marketRegime, setMarketRegime] = useState<MarketRegime>("UNKNOWN");
-  const rallyAbortRef = useRef(false);
+  // Consolidación 24-jul-2026: estados de rally/marketRegime/monetaryCycle/fable01 eliminados —
+  // solo alimentaban a los módulos desactivados (Señal Óptima, FABLE01, CLAUDE01, TOP8 UI).
   const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
   const [scanPhase, setScanPhase] = useState<ScanPhase>("idle");
-  const [monetaryCycle, setMonetaryCycle] = useState<MonetaryCycleResult>(initialMonetaryCycle());
   const [marketBreadth, setMarketBreadth] = useState<MarketBreadthResult>(initialMarketBreadth());
   const [marketRisk, setMarketRisk] = useState<MarketRisk>(initialMarketRisk());
-  const [fable01, setFable01] = useState<Fable01Result>(initialFable01());
-  const [fable01Progress, setFable01Progress] = useState<number | null>(null);
-  const fable01Ref = useRef<Fable01Result>(fable01);
-  useEffect(() => { fable01Ref.current = fable01; }, [fable01]);
   const [optimal2026, setOptimal2026] = useState<Optimal2026Result>(initialOptimal2026());
   const optimal2026Ref = useRef<Optimal2026Result>(optimal2026);
   useEffect(() => { optimal2026Ref.current = optimal2026; }, [optimal2026]);
@@ -225,18 +199,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // el estado actual, no el capturado al montar (evita relanzar runFlows durante un scan).
   const flowsStateRef = useRef<IntraDayFlowsState>(flowsState);
   useEffect(() => { flowsStateRef.current = flowsState; }, [flowsState]);
-  // Carga FABLE01 (items del scan cacheado) + enriquece sus precios en VIVO (US+EU) antes de mostrar.
-  async function loadFable01() {
-    try {
-      const res = await fetchFable01();
-      if (res.items && res.items.length) {
-        const items = await enrichFable01WithLiveQuotes(res.items);
-        setFable01({ ...res, items });
-      } else {
-        setFable01(res);
-      }
-    } catch { /* conserva el estado actual */ }
-  }
   const loadOptimal2026 = useCallback(async () => {
     try {
       const res = await fetchOptimal2026();
@@ -292,9 +254,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   const scanActiveRef = useRef(false);
   useEffect(() => { scanActiveRef.current = scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done"); }, [scanState.isScanning, scanPhase]);
 
-  // Cleanup: abort any in-progress rally scan on unmount to prevent
-  // state updates on an unmounted component (audit fix).
-  useEffect(() => () => { rallyAbortRef.current = true; }, []);
 
   // AUDIT FIX (DATA_UNAVAILABLE en el Top 8): el scan rankea por score con
   // datos históricos pero NO guarda el precio en vivo — el precio y el % desde
@@ -847,28 +806,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
-  async function handleCopyTop8() {
-    // Exporta los 28 tickers de los 3 motores (TOP 8 + Rally + Watchlist de amplitud) con TODOS
-    // sus datos y temporalidades, vía la hoja de compartir de iOS (email/WhatsApp/AirDrop/Notas/Archivos).
-    const result = await shareFullExport(
-      top8, rallyState.top10 ?? [], marketBreadth.topTickers ?? [],
-      marketBreadth, marketRisk, (text) => setExportText(text),
-    );
-    if (result === "shared") showToast("Compartido correctamente", "success");
-    else if (result === "copied") showToast("Copiado al portapapeles (28 tickers)", "success");
-    else showToast("Listo para copiar manualmente", "info");
-  }
-
-  // ─── SCAN ALL — FLOWS en paralelo con RALLY+FULL ────────────────────────
-  //
-  // Secuencia óptima:
-  //   FLOWS  ──────── (~4s)   ← independiente, arranca con RALLY
-  //   RALLY  ──────────────── (~3min) ← en paralelo con FULL
-  //   FULL   ──────────────────────── (~4min) ← en paralelo con RALLY
-  //
-  // RALLY y FULL comparten proveedores pero usan APIs distintas por batch
-  // y el cache Redis de SPY evita duplicar la llamada del benchmark.
-  // Tiempo total: ~4-5min (vs ~12min secuencial anterior)
+  // ─── SCAN ALL — FLOWS en paralelo con FULL, luego AMPLITUD (consolidado) ──
 
   async function runFlows() {
     setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
@@ -885,39 +823,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setFlowsState(prev => ({ ...prev, status: "ERROR" }));
       }
     } catch { setFlowsState(prev => ({ ...prev, status: "ERROR" })); }
-  }
-
-  async function runRally() {
-    rallyAbortRef.current = false;
-    try {
-      let r = await startRallyScan();
-      if (!r.ok) throw new Error(r.message ?? "Rally failed");
-      setRallyState(prev => ({
-        ...prev, status: "RALLY_SCANNING", isScanning: true,
-        scanId: r.scanId ?? null, rallyToken: r.rallyToken ?? null,
-        coveragePercent: r.coveragePercent ?? 0, batchesCompleted: r.batchesCompleted ?? 0,
-        // No sustituir top10 por [] al arrancar — mantener el último scan
-        // visible hasta que lleguen datos nuevos.
-        batchesTotal: r.batchesTotal ?? 0, top10: r.top10 ?? prev.top10,
-      }));
-      while (!r.isRallyFinal && r.rallyToken && !rallyAbortRef.current) {
-        r = await continueRallyScan(r.rallyToken);
-        setRallyState(prev => ({
-          ...prev, rallyToken: r.rallyToken ?? null,
-          coveragePercent: r.coveragePercent ?? prev.coveragePercent,
-          batchesCompleted: r.batchesCompleted ?? prev.batchesCompleted,
-          top10: r.top10 ?? prev.top10,
-        }));
-      }
-      // Si el bucle se cortó por desmontaje (abort), no actualizar estado de un componente ya ido.
-      if (rallyAbortRef.current) return;
-      setRallyState(prev => ({
-        ...prev, status: "RALLY_FINAL", isScanning: false, rallyToken: null,
-        top10: r.top10 ?? prev.top10,
-        coveragePercent: r.coveragePercent ?? prev.coveragePercent,
-        lastRun: new Date().toLocaleString(),
-      }));
-    } catch { if (!rallyAbortRef.current) setRallyState(prev => ({ ...prev, status: "RALLY_ERROR", isScanning: false })); }
   }
 
   async function runFull() {
@@ -937,40 +842,32 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
     setScanPhase("flows");
 
-    // FLOWS starts immediately; RALLY + FULL start in parallel after 1s
-    // (1s gives FLOWS time to fire its request before providers get hit by RALLY+FULL)
+    // FLOWS arranca primero; FULL tras 1s de margen (integridad universo + master indicators).
+    // La fase RALLY se eliminó en la consolidación: solo alimentaba a Señal Óptima (desactivada).
     const flowsPromise = runFlows();
     await new Promise(r => setTimeout(r, 1000)); // brief stagger
 
-    setScanPhase("rally"); // shows "rally" phase while both run
-    const rallyPromise = runRally();
-    const fullPromise = (async () => {
-      // Wait slightly so UI shows "rally" phase first, then transition to "full"
-      await new Promise(r => setTimeout(r, 500));
-      setScanPhase("full");
-      await runFull();
-    })();
+    setScanPhase("full");
+    const fullPromise = runFull();
 
-    // Wait for all three to complete
-    await Promise.allSettled([flowsPromise, rallyPromise, fullPromise]);
+    await Promise.allSettled([flowsPromise, fullPromise]);
 
-    // Paso 4/4 — Amplitud de mercado. Se ejecuta DESPUÉS (secuencial) para no saturar el
-    // proveedor de datos en paralelo con rally+top8. Run de cierre (close-based): si hay mercado
-    // abierto se marca intradía y NO contamina la serie histórica nocturna.
+    // Fase final — Amplitud de mercado (secuencial para no saturar proveedores). El mismo loop
+    // computa y persiste OPTIMAL SUPREME en el servidor. La barra de progreso se muestra en el
+    // propio panel SUPREME (o26ScanProgress). Run de cierre: si hay mercado abierto se marca
+    // intradía y NO contamina la serie histórica nocturna.
     setScanPhase("breadth");
     try {
-      setFable01Progress(0);
-      const breadth = await runBreadthScan((coverage) => { setFable01Progress(coverage); });
+      setO26ScanProgress(0);
+      const breadth = await runBreadthScan((coverage) => { setO26ScanProgress(coverage); });
       setMarketBreadth(breadth);
       enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
-      // El mismo loop del scan calcula y persiste FABLE01 + Optimal2026 → refrescar ambos paneles.
-      loadFable01();
       loadOptimal2026();
     } catch { /* los paneles conservan su último estado cacheado */ }
-    finally { setFable01Progress(null); }
+    finally { setO26ScanProgress(null); }
 
     setScanPhase("done");
-    showToast("✓ Análisis completo — Amplitud + FABLE01 + Optimal2026 actualizados", "success");
+    showToast("✓ Análisis completo — Amplitud + OPTIMAL SUPREME actualizados", "success");
     setTimeout(() => setScanPhase("idle"), 4000);
   }
 
@@ -1028,15 +925,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Ciclo monetario — fetch al montar y refrescar cada hora ────────────────
-  useEffect(() => {
-    fetchMonetaryCycle().then(setMonetaryCycle).catch(() => {});
-    const interval = setInterval(() => {
-      fetchMonetaryCycle().then(setMonetaryCycle).catch(() => {});
-    }, 60 * 60 * 1000); // 1 hora
-    return () => clearInterval(interval);
-  }, []);
-
   // ── Market Breadth — veredicto agregado de mercado (cacheado en servidor) ──
   // Solo GET al endpoint cacheado; el loop pesado lo recalcula el cron 1×/día.
   useEffect(() => {
@@ -1056,16 +944,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── FABLE01 — items del scan (cacheado; SCAN/cron recalcula) + precios en VIVO al cargar ──
-  useEffect(() => {
-    loadFable01();
-    const interval = setInterval(() => {
-      loadFable01();
-    }, 10 * 60 * 1000); // 10 min — los items cambian poco; el precio se refresca aparte (abajo)
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── OPTIMAL2026 — carga al montar; refresca cada 10 min (ídem FABLE01) ──
+  // ── OPTIMAL SUPREME — carga al montar; refresca cada 10 min ──
   useEffect(() => {
     loadOptimal2026();
     const interval = setInterval(() => {
@@ -1074,15 +953,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Precios EN VIVO cada 90s (como el Top 8) para FABLE01 + Optimal2026 + watchlist Amplitud ──
+  // ── Precios EN VIVO cada 90s para OPTIMAL SUPREME + watchlist Amplitud ──
   useEffect(() => {
     const interval = setInterval(() => {
       if (scanActiveRef.current) return;
-      const f01 = fable01Ref.current;
-      if (f01.items && f01.items.length) {
-        enrichFable01WithLiveQuotes(f01.items)
-          .then((items) => setFable01((prev) => ({ ...prev, items }))).catch(() => {});
-      }
       const o26 = optimal2026Ref.current;
       if (o26.items && o26.items.length) {
         enrichOptimal2026WithLiveQuotes(o26.items)
@@ -1110,48 +984,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }, []);
 
 
-  // Load last rally scan + market regime on mount
-  useEffect(() => {
-    // El panel SIEMPRE muestra el último Rally scan 100% completado guardado en
-    // servidor (petición del usuario: "que visualice siempre el último scan / que
-    // cargue bien todos los tickets"). Antes solo se cargaba si AMBOS mercados
-    // estaban cerrados, dejando el panel VACÍO durante el horario de mercado hasta
-    // que el usuario pulsaba SCAN RALLY — confuso (parecía "no carga").
-    //
-    // Para no confundir datos memorizados con datos en vivo: si el scan guardado
-    // se ejecutó con un conjunto de mercados activos distinto al actual, se marca
-    // como "sesión anterior" (el badge del panel ya lo refleja). Pulsar SCAN RALLY
-    // recalcula con datos frescos de los mercados abiertos ahora.
-    const rallyRegionalMarkets = getRegionalMarketStates();
-    const activeNow: string[] = [];
-    if (rallyRegionalMarkets.europe === "OPEN") activeNow.push("Europe");
-    if (rallyRegionalMarkets.unitedStates === "OPEN") activeNow.push("USA");
-
-    fetchLastRallyScan().then(snapshot => {
-      if (!snapshot || !snapshot.top10?.length) return;
-      const snapMarkets = Array.isArray(snapshot.activeMarkets) ? snapshot.activeMarkets : [];
-      // ¿El scan guardado cubre los mismos mercados que están abiertos ahora?
-      const sameSession =
-        activeNow.length > 0 &&
-        activeNow.length === snapMarkets.length &&
-        activeNow.every(m => snapMarkets.includes(m));
-      setRallyState(prev => ({
-        ...prev,
-        status: "RALLY_FINAL",
-        scanId: snapshot.scanId ?? null,
-        top10: snapshot.top10 ?? [],
-        coveragePercent: 100,
-        label: sameSession ? "Rally Leaders — último scan" : "Rally Leaders — sesión anterior",
-        lastRun: snapshot.scanCompletedAtUtc
-          ? new Date(snapshot.scanCompletedAtUtc).toLocaleString()
-          : new Date().toLocaleString(),
-      }));
-    }).catch(() => {});
-
-    // Market regime — internal SPY vs EMA200 analysis
-    fetchMarketRegime().then(setMarketRegime).catch(() => {});
-  }, []);
-
   return (
     <main className="dashboard-shell">
       <ErrorBoundary inline label="Cabecera">
@@ -1164,8 +996,11 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
       <ScanSummaryBar systemStatus={systemStatus} />
-      {/* ── OPTIMAL2026 — PRIMER módulo: Dual Momentum Risk-Parity (máxima rentabilidad) ── */}
-      <ErrorBoundary inline label="Optimal2026">
+      {/* ══ OPTIMAL SUPREME — el ÚNICO módulo de estrategia (consolidación 24-jul-2026) ══
+          Ganador de 73 variantes de backtest (10 años, 603 tickers). Los módulos CLAUDE01,
+          FABLE01, Señal Óptima y TOP8 quedan DESACTIVADOS (no borrados): la concentración
+          top-2 + trailing con rotación + VT30 los superó a todos en MAR. */}
+      <ErrorBoundary inline label="Optimal Supreme">
         <Optimal2026Panel
           data={optimal2026}
           onAutoScan={loadOptimal2026}
@@ -1173,17 +1008,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           scanProgress={o26ScanProgress}
         />
       </ErrorBoundary>
-      {/* ── CLAUDE01 — segundo módulo: Momentum Catalítico Adaptativo ── */}
-      <ErrorBoundary inline label="Claude01">
-        <Claude01Panel />
-      </ErrorBoundary>
-      {/* ── FEAR & GREED — SEGUNDO módulo ── */}
+      {/* ── FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
       <ErrorBoundary inline label="Fear & Greed">
         <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
-      </ErrorBoundary>
-      {/* ── FABLE01 — salud de tendencia + asignación de capital ── */}
-      <ErrorBoundary inline label="Fable01">
-        <Fable01Panel data={fable01} scanProgress={fable01Progress} />
       </ErrorBoundary>
       {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
       <ErrorBoundary inline label="Market Risk">
@@ -1193,46 +1020,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ErrorBoundary inline label="Market Breadth">
         <MarketBreadthPanel breadth={marketBreadth} />
       </ErrorBoundary>
-
-      {/* ── SEÑAL ÓPTIMA — detalle de los 5 filtros ────────────────────────── */}
-      <ErrorBoundary inline label="Señal Óptima">
-        <OptimalSignalPanel
-          marketRegime={marketRegime}
-          flowsState={flowsState}
-          rallyState={rallyState}
-          top8={top8}
-          monetaryCycle={monetaryCycle}
-        />
-      </ErrorBoundary>
-
-      {/* Signal History — Last 5 confluences detected */}
-
       <ErrorBoundary inline label="Cabecera técnica">
         <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
       </ErrorBoundary>
       <ErrorBoundary inline label="Flujos de Capital">
         <IntraDayFlowsPanel flowsState={flowsState} onRefresh={handleScanFlows} />
       </ErrorBoundary>
-
-      {/* ── TOP 8 — bloque unificado: botón de carga arriba, estado del scan y grid dentro ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        <ActionButtons
-          onScan={handleScan}
-          onContinueScan={handleContinueScan}
-          onCopy={handleCopyTop8}
-          isScanning={scanState.isScanning}
-          canContinueScan={Boolean(scanState.snapshotToken && scanState.coveragePercent !== 100)}
-          continueLabel={
-            scanState.nextBatchIndex && scanState.batchesTotal
-              ? `Continuar scan (batch ${scanState.nextBatchIndex}/${scanState.batchesTotal})`
-              : "Continuar scan"
-          }
-        />
-        <ErrorBoundary inline label="Top 8">
-          <Top8Grid assets={top8} />
-        </ErrorBoundary>
-      </div>
-
       <ErrorBoundary inline label="Estado del sistema">
         <SystemStatusCards systemStatus={systemStatus} />
       </ErrorBoundary>

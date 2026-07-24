@@ -530,12 +530,12 @@ function SemiActiveComparison() {
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ fontSize: 8, color: ACCENT, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        Backtest: mensual vs semi-activo estimado
+        Backtest real 10 años · 603 tickers · 73 variantes probadas
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
         {[
-          { lbl: "Mensual (real)", data: m, accent: ACCENT },
-          { lbl: "Semi-activo (est)", data: s, accent: GREEN },
+          { lbl: "Solo mensual", data: m, accent: GRAY },
+          { lbl: "⚡ SUPREME (real)", data: s, accent: GREEN },
           { lbl: "SPY (ref)", data: spy, accent: GRAY },
         ].map(({ lbl, data, accent }) => (
           <div key={lbl} style={{
@@ -555,8 +555,8 @@ function SemiActiveComparison() {
         ))}
       </div>
       <div style={{ fontSize: 7, color: "#334155", marginTop: 4, lineHeight: 1.5 }}>
-        Semi-activo estimado según Barroso & Santa-Clara (2015), Fan-Li-Shi (2016), Antonacci (2014).
-        Mejora real depende de slippage, IRPF y ejecución. No es asesoramiento financiero.
+        {SEMIACTIVE_COMPARISON.note} Mejora real depende de slippage, IRPF y ejecución.
+        No es asesoramiento financiero.
       </div>
     </div>
   );
@@ -786,10 +786,10 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
         <div style={{ flex: 1, minWidth: 180 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, fontWeight: 900, color: ACCENT, letterSpacing: "0.05em" }}>
-              OPTIMAL 2026
+              ⚡ OPTIMAL SUPREME
             </span>
             <span style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600 }}>
-              Dual Momentum · Top 2 · Régimen SPY/EMA200 · Semi-activo
+              Dual Momentum · Top 2 · Régimen + VT30 · Trailing bandas · Rotación
             </span>
             <MarketModeBadge isPricesStale={isPricesStale} />
           </div>
@@ -920,11 +920,14 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
           <SemiActiveComparison />
 
           <div style={{ fontSize: 8, color: "#475569", lineHeight: 1.5, marginTop: 8 }}>
-            <strong style={{ color: ACCENT }}>OPTIMAL2026</strong>: selecciona los <strong>2</strong> activos con mayor
-            momentum risk-adjusted [(ret9m − ret2m) / vol3m]. Filtro: momentum 9m positivo + EMA align ≥ 2.
-            Régimen <strong>binario</strong> SPY/EMA200. Señales intraday a las <strong>15:00 Canarias</strong> (ambos
-            mercados abiertos). Stop ajustado automáticamente según pullback risk (0-100). Backtest real 2016-2026,
-            810 combos + walk-forward. Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
+            <strong style={{ color: ACCENT }}>⚡ OPTIMAL SUPREME</strong> — módulo único consolidado: selecciona los{" "}
+            <strong>2</strong> activos con mayor momentum risk-adjusted [(ret9m − ret2m) / vol3m], filtro momentum 9m
+            positivo + EMA align ≥ 2. Régimen binario SPY/EMA200 (100%/30%) + <strong>vol-target 30%</strong> (ventana
+            10d) que recorta exposición si la volatilidad del top-2 se dispara. <strong>Trailing ATR por bandas</strong>{" "}
+            (TR 2.5× / TN 3.0× / TA 4.0×) con rotación inmediata al mejor candidato al saltar el stop. Señales intraday
+            a las <strong>15:00 Canarias</strong>. Validado con 73 variantes de backtest (10 años, 603 tickers): la
+            concentración top-2, el trailing con rotación y el VT30 GANAN; diversificar, crash-filters y VIX pierden.
+            Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
           </div>
         </div>
       )}

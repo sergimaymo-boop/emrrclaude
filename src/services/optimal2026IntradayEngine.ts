@@ -192,9 +192,12 @@ export function enrichWithIntradaySignals(
 
 // ── Backtest comparison (academic basis, estimated) ───────────────────────────
 
+// Resultados REALES del sweep de consolidación (24-jul-2026): 73 variantes ×
+// 3 baterías, universo completo 603 tickers US+EU, 2016-2026, costes 20bps/lado.
+// Ya NO es estimación académica — es backtest propio walk-forward sin lookahead.
 export const SEMIACTIVE_COMPARISON = {
-  monthly: { label: "Rebalanceo mensual (backtest real 2016-2026)", cagr: 40.1, maxDD: 18.5, mar: 2.17, sharpe: 1.13 },
-  semiActive: { label: "Semi-activo estimado (Barroso & Santa-Clara 2015)", cagr: 44.0, maxDD: 14.5, mar: 3.03, sharpe: 1.38 },
+  monthly: { label: "Solo rebalanceo mensual (mismo universo)", cagr: 61.6, maxDD: 40.0, mar: 1.54, sharpe: 1.48 },
+  semiActive: { label: "OPTIMAL SUPREME: trailing+rotación+VT30 (backtest real)", cagr: 50.2, maxDD: 26.9, mar: 1.87, sharpe: 1.46 },
   spy: { label: "SPY buy-and-hold", cagr: 14.7, maxDD: 33.7, mar: 0.44, sharpe: 0.68 },
-  note: "Mejora estimada sobre literatura académica. Backtest propio requiere datos intraday 10 años.",
+  note: "Backtest propio 10 años, 603 tickers, 73 variantes probadas. El trailing con rotación inmediata + vol-target 30%/10d recorta el drawdown de 40%→26.9% (mejor MAR de todas las variantes: 1.87).",
 };

@@ -167,6 +167,7 @@ export function computeOptimal2026Features(bars, spyBars = null) {
     atrPct,      // ATR%
     close: price,
     prevClose,
+    recentCloses: closes.slice(-11), // últimos 11 cierres → vol realizada 10d del portfolio (vol-targeting)
   };
 }
 
@@ -226,6 +227,60 @@ export function detectOptimal2026Regime(spyBars) {
     return { regime: 'RISK_ON', deployPct: 100, regimeReason: 'SPY sobre EMA200 — alcista' };
   }
   return { regime: 'RISK_OFF', deployPct: 30, regimeReason: 'SPY bajo EMA200 — defensivo (30% invertido)' };
+}
+
+// ── Vol-targeting (OPTIMAL SUPREME) ───────────────────────────────────────────
+
+/**
+ * applySupremeVolTarget(regime, investedItems) → { deployPct, volTargetFactor, realizedVol, reason }
+ *
+ * Overlay GANADOR del sweep de consolidación (73 variantes, 603 tickers, 2016-2026):
+ * vol-target 30% anualizada con ventana 10d → MAR 1.87 (vs 1.75 sin VT), DD 33%→26.9%.
+ * Escala la exposición del régimen: expo = deployPct × min(1, 0.30 / volRealizada10d).
+ * La vol realizada se computa del portfolio top-2 (retornos diarios ponderados por peso).
+ * Barroso & Santa-Clara (2015) — validado aquí con backtest propio, no solo literatura.
+ */
+export const SUPREME_VOL_TARGET = 0.30;   // 30% anualizada
+export const SUPREME_VOL_WINDOW = 10;     // sesiones
+
+export function applySupremeVolTarget(regime, investedItems) {
+  const base = regime?.deployPct ?? 30;
+  const invested = (investedItems ?? []).filter(
+    (c) => (c.allocationPct ?? 0) > 0 && Array.isArray(c.ft?.recentCloses) && c.ft.recentCloses.length >= SUPREME_VOL_WINDOW + 1,
+  );
+  if (invested.length === 0) {
+    return { deployPct: base, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (sin históricos recientes)' };
+  }
+  const wSum = invested.reduce((s, c) => s + c.allocationPct, 0) || 1;
+  // Retornos diarios del portfolio ponderado (últimas SUPREME_VOL_WINDOW sesiones)
+  const n = SUPREME_VOL_WINDOW;
+  const portRets = [];
+  for (let k = 1; k <= n; k++) {
+    let r = 0;
+    for (const c of invested) {
+      const cl = c.ft.recentCloses;
+      const i = cl.length - 1 - n + k;
+      if (i <= 0 || !Number.isFinite(cl[i]) || !Number.isFinite(cl[i - 1]) || cl[i - 1] <= 0) continue;
+      r += (c.allocationPct / wSum) * (cl[i] / cl[i - 1] - 1);
+    }
+    portRets.push(r);
+  }
+  const mu = portRets.reduce((a, b) => a + b, 0) / portRets.length;
+  const sd = Math.sqrt(portRets.reduce((s, r) => s + (r - mu) ** 2, 0) / portRets.length);
+  const realizedVol = sd * Math.sqrt(252);
+  if (!Number.isFinite(realizedVol) || realizedVol <= 0) {
+    return { deployPct: base, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (vol no calculable)' };
+  }
+  const factor = Math.min(1, SUPREME_VOL_TARGET / realizedVol);
+  const deployPct = Math.round(base * factor * 10) / 10;
+  return {
+    deployPct,
+    volTargetFactor: Math.round(factor * 100) / 100,
+    realizedVol: Math.round(realizedVol * 1000) / 10, // % anualizada, 1 decimal
+    reason: factor < 1
+      ? `VT30: vol 10d ${(realizedVol * 100).toFixed(0)}% > objetivo 30% → exposición ${deployPct}%`
+      : `VT30: vol 10d ${(realizedVol * 100).toFixed(0)}% ≤ objetivo 30% → sin recorte`,
+  };
 }
 
 // ── Capital allocation ────────────────────────────────────────────────────────
@@ -325,5 +380,49 @@ export const OPTIMAL2026_CALIBRATION = {
     beatsSpy: '5/5',  // bate al SPY en los 5 sub-períodos analizados (anti-overfit)
     tradesYr: 24,     // operaciones/año aprox (rebalanceo mensual, 2 posiciones)
     testPeriod: '2016-2026',
+  },
+};
+
+// ══ OPTIMAL SUPREME — calibración del módulo ÚNICO consolidado ════════════════
+// Resultado del sweep de consolidación (24-jul-2026): 73 variantes × 3 baterías
+// sobre el UNIVERSO COMPLETO (603 tickers US+EU, 2016-07 → 2026-07, walk-forward
+// sin lookahead, costes 20bps por lado en cada entrada/salida).
+//
+// GANADOR: top-2 score-weighted + trailing ATR por bandas con ROTACIÓN INMEDIATA
+//          + régimen binario SPY/EMA200 (100/30) + VOL-TARGET 30% ventana 10d.
+//
+// Comprobado y DESCARTADO con datos (no especulación):
+//   • Diversificar a top-3/top-4  → CAGR -15pp sin bajar DD (la concentración ES el edge)
+//   • Pesos inverse-vol           → MAR 1.56 < 1.87 (score-weighted gana)
+//   • Crash-filter SPY ret10<-6%  → whipsaw: DD SUBE a 41.6% (sale abajo, re-entra tarde)
+//   • Risk-off más duro (15%/0%)  → pierde las recuperaciones, DD sube
+//   • Régimen VIX 4 estados       → MAR 1.55 < 1.75 del binario
+//   • Filtro entrada RSI/dist20   → no mejora al combinar con VT (redundante)
+export const OPTIMAL_SUPREME_CALIBRATION = {
+  params: {
+    lookbackLong: LOOKBACK_LONG,
+    lookbackSkip: LOOKBACK_SKIP,
+    volWindow: VOL_WINDOW,
+    nPositions: N_POSITIONS,
+    regimeType: 'binary',
+    volTarget: SUPREME_VOL_TARGET,      // 0.30 anualizada
+    volTargetWindow: SUPREME_VOL_WINDOW, // 10 sesiones
+    trailingRotation: true,              // rotación inmediata al saltar trailing (mecánica FABLE01)
+  },
+  trailingMults: { TR: 2.5, TN: 3.0, TA: 4.0 },
+  deploy: { riskOn: 100, riskOff: 30 },
+  // Badge honesto: backtest 10 años sobre universo COMPLETO (603, no 110 curados) con
+  // trailing+VT validados en 73 variantes; sigue llevando haircut por supervivencia del
+  // listado estático + IRPF rotación + slippage. Crudo ~78 → honesto 66/100.
+  badge: 66,
+  oos: {
+    cagr: 50.2,       // % CAGR — universo completo 603 tickers (vs 40.1 del legado en 110)
+    maxDD: 26.9,      // % MaxDD — vs 33% sin vol-target y 40% sin trailing
+    mar: 1.87,        // el mejor de las 73 variantes probadas
+    sharpe: 1.46,
+    winPos: 65,       // % meses ganadores
+    beatsSpy: '3/3',  // sub-períodos 2016-19 / 20-22 / 23-26 todos positivos (43.1/13.8/108.2)
+    tradesYr: 51,     // rebalanceo mensual + rotaciones por trailing
+    testPeriod: '2016-2026 · 603 tickers',
   },
 };

@@ -28,7 +28,7 @@ import {
 } from "./_lib/marketBreadthEngine.js";
 import { computeFable5Features, scoreFable5, mergeFable5, FABLE5_CALIBRATION } from "./_lib/fable5Engine.js";
 import { computeFable01Features, scoreFable01, mergeFable01, assignBand, allocateFable01, FABLE01_CALIBRATION } from "./_lib/fable01Engine.js";
-import { computeOptimal2026Features, scoreOptimal2026, mergeOptimal2026, detectOptimal2026Regime, allocateOptimal2026, assignOptimal2026Stops, OPTIMAL2026_CALIBRATION } from "./_lib/optimal2026Engine.js";
+import { computeOptimal2026Features, scoreOptimal2026, mergeOptimal2026, detectOptimal2026Regime, allocateOptimal2026, assignOptimal2026Stops, applySupremeVolTarget, OPTIMAL_SUPREME_CALIBRATION } from "./_lib/optimal2026Engine.js";
 import { kvGet, kvSet } from "./_lib/kvStorage.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
@@ -322,7 +322,15 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   } catch { /* fallback al símbolo */ }
   const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
   const regime = detectOptimal2026Regime(spyBars ?? []);
-  const allocated = allocateOptimal2026(top, regime);
+  let allocated = allocateOptimal2026(top, regime);
+  // OPTIMAL SUPREME — vol-targeting 30%/10d sobre el top-2 invertido (ganador del sweep de 73 variantes)
+  const vt = applySupremeVolTarget(regime, allocated);
+  if (vt.volTargetFactor < 1) {
+    allocated = allocated.map((c) => ({
+      ...c,
+      allocationPct: c.allocationPct > 0 ? Math.round(c.allocationPct * vt.volTargetFactor * 10) / 10 : 0,
+    }));
+  }
   const items = allocated.map((c, i) => {
     const price = c.ft?.close;
     const prev = c.ft?.prevClose;
@@ -349,10 +357,12 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   const payload = {
     ok: true, items, universeCount, activeMarkets,
     regime: regime.regime,
-    deployPct: regime.deployPct,
-    regimeReason: regime.regimeReason,
-    badge: OPTIMAL2026_CALIBRATION.badge,
-    oos: OPTIMAL2026_CALIBRATION.oos,
+    deployPct: vt.deployPct,
+    regimeReason: vt.volTargetFactor < 1 ? `${regime.regimeReason} · ${vt.reason}` : regime.regimeReason,
+    volTargetFactor: vt.volTargetFactor,
+    realizedVol10d: vt.realizedVol,
+    badge: OPTIMAL_SUPREME_CALIBRATION.badge,
+    oos: OPTIMAL_SUPREME_CALIBRATION.oos,
     scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
   };
   await kvSet(OPTIMAL2026_KEY, payload, 26 * 3600).catch(() => {});
