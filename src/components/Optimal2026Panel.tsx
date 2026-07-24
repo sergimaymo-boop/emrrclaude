@@ -1,16 +1,17 @@
 /**
- * Optimal2026Panel — Dual Momentum Risk-Parity · Modo Semi-Activo
+ * Optimal2026Panel — ⚡ OPTIMAL SUPREME · módulo ÚNICO consolidado (24-jul-2026)
  *
- * NUEVAS funcionalidades (independientes del resto del dashboard):
+ * Funcionalidades (independientes del resto del dashboard):
  *   1. Señales intraday (pullbackRisk 0-100 + acción HOLD/TIGHTEN/ROTATE/EXIT)
- *   2. Cartera IBK — upload CSV de Interactive Brokers → muestra P&L + acción por posición
- *   3. Auto-scan 15:00 Canarias — cuenta atrás y disparo automático cuando los 2 mercados están abiertos
- *   4. Precios EN VIVO vs ÚLTIMO CIERRE según mercado (indicator visual)
- *   5. Comparativa backtest mensual vs semi-activo estimado (base académica)
+ *   2. Cartera IBK — CSV o FOTO (OCR local) → P&L + acción por posición
+ *   3. Auto-scan 15:00 Canarias + botón de scan manual con barra de progreso
+ *   4. Precios EN VIVO vs ÚLTIMO CIERRE + alarma roja si mercado abierto y precios obsoletos
+ *   5. Comparativa de backtest REAL (sweep propio de 73 variantes)
  *
- * Backtest real (2016-2026): CAGR 40.1%, MaxDD 18.5%, MAR 2.17, Sharpe 1.13
- * Semi-activo estimado:      CAGR ~44%,  MaxDD ~14.5%, MAR ~3.0, Sharpe ~1.38
- * Base: Barroso & Santa-Clara (2015), Fan-Li-Shi (2016), Antonacci (2014).
+ * Backtest real (2016-2026, 603 tickers, walk-forward, costes 20bps/lado):
+ *   SUPREME (trailing bandas + rotación + VT30/10d): CAGR 50.2%, MaxDD 26.9%, MAR 1.87, Sharpe 1.46
+ *   Solo mensual (mismo universo):                   CAGR 61.6%, MaxDD 40.0%, MAR 1.54
+ * Las cifras legadas (CAGR 40.1/DD 18.5/MAR 2.17) eran del universo curado de 110 tickers.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";

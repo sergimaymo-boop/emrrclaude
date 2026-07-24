@@ -825,14 +825,36 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     } catch { setFlowsState(prev => ({ ...prev, status: "ERROR" })); }
   }
 
-  async function runFull() {
+  // AUDIT FIX (HIGH): runFull SIN try/catch dejaba isScanning=true para siempre si
+  // startScanSnapshot rechazaba (red/API caída) — Promise.allSettled en handleScanAll
+  // tragaba el rechazo. Consecuencias: SCAN EMRR bloqueado hasta recargar, scanActiveRef
+  // congelaba los refrescos de precios de 90s y el toast anunciaba éxito falso.
+  // Devuelve true/false para condicionar el toast final.
+  async function runFull(): Promise<boolean> {
     clearSessionCacheForNewScan();
     const startedAt = createTimestampPair();
     setScanState(c => ({ ...c, label: "SCAN FULL running...", isScanning: true,
       lastRun: startedAt, lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT" }));
     setSystemStatus(c => updateSystemStatusForDataMode(refreshSystemMarketStatus(c), "SCANNING", c.lastRealDataUpdate));
-    await runAutoChainedScan(startedAt);
+    try {
+      await runAutoChainedScan(startedAt);
+      return true;
+    } catch (error) {
+      setScanState(c => ({ ...c, label: "Scan snapshot failed - manual retry available",
+        isScanning: false, scanExecutionMode: "ERROR" }));
+      setSystemStatus(c => updateSystemStatusForDataMode(refreshSystemMarketStatus(c), "ERROR", c.lastRealDataUpdate));
+      showToast(error instanceof Error ? error.message : "Scan FULL falló", "error");
+      return false;
+    }
   }
+
+  // Ref espejo de scanState para leer el estado REAL tras los awaits de handleScanAll
+  // (la closure captura el estado del render en que se creó el handler).
+  const scanStateRef = useRef(scanState);
+  useEffect(() => { scanStateRef.current = scanState; }, [scanState]);
+  // Mutex del scan de SUPREME/Amplitud — compartido entre el botón manual del panel
+  // y la fase breadth de SCAN EMRR para que nunca corran dos runBreadthScan a la vez.
+  const o26ScanActiveRef = useRef(false);
 
   async function handleScanAll() {
     // Guarda cruzada: no arrancar si ya hay un SCAN/CONTINUE individual en curso (audit fix concurrencia).
@@ -850,37 +872,77 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     setScanPhase("full");
     const fullPromise = runFull();
 
-    await Promise.allSettled([flowsPromise, fullPromise]);
+    const settled = await Promise.allSettled([flowsPromise, fullPromise]);
+    let fullOk = settled[1].status === "fulfilled" && settled[1].value === true;
+
+    // AUDIT FIX: si el auto-scan quedó PAUSADO a mitad (3 reintentos de batch fallidos, snapshot
+    // parcial), el botón "Continuar scan" ya no existe en la UI consolidada — reintentar aquí la
+    // continuación una vez, automáticamente. Estado real vía ref (no closure).
+    const st = scanStateRef.current;
+    if (st.snapshotToken && st.coveragePercent !== 100 && !st.isScanning) {
+      const startedAt = createTimestampPair();
+      setScanState(c => ({ ...c, label: "CONTINUE SCAN running...", isScanning: true,
+        lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT" }));
+      try {
+        await applySnapshotResult(continueScanSnapshot(st.snapshotToken), startedAt, {
+          keepScanning: false, suppressToast: true,
+        });
+        fullOk = true;
+      } catch {
+        setScanState(c => ({ ...c, isScanning: false, label: "Scan parcial — pulsa SCAN EMRR para reintentar" }));
+      }
+    }
 
     // Fase final — Amplitud de mercado (secuencial para no saturar proveedores). El mismo loop
     // computa y persiste OPTIMAL SUPREME en el servidor. La barra de progreso se muestra en el
     // propio panel SUPREME (o26ScanProgress). Run de cierre: si hay mercado abierto se marca
     // intradía y NO contamina la serie histórica nocturna.
     setScanPhase("breadth");
-    try {
-      setO26ScanProgress(0);
-      const breadth = await runBreadthScan((coverage) => { setO26ScanProgress(coverage); });
-      setMarketBreadth(breadth);
-      enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
+    let breadthOk = false;
+    if (o26ScanActiveRef.current) {
+      // AUDIT FIX (concurrencia): un scan manual de SUPREME ya está corriendo — NO lanzar otro
+      // runBreadthScan en paralelo (doble carga a proveedores + doble persistencia + barra de
+      // progreso entrelazada). Esperar a que acabe y refrescar de su resultado persistido.
+      while (o26ScanActiveRef.current) await new Promise(r => setTimeout(r, 1000));
+      loadMarketBreadth();
       loadOptimal2026();
-    } catch { /* los paneles conservan su último estado cacheado */ }
-    finally { setO26ScanProgress(null); }
+      breadthOk = true;
+    } else {
+      o26ScanActiveRef.current = true;
+      try {
+        setO26ScanProgress(0);
+        const breadth = await runBreadthScan((coverage) => { setO26ScanProgress(coverage); });
+        setMarketBreadth(breadth);
+        enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
+        loadOptimal2026();
+        breadthOk = true;
+      } catch { /* los paneles conservan su último estado cacheado */ }
+      finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
+    }
 
     setScanPhase("done");
-    showToast("✓ Análisis completo — Amplitud + OPTIMAL SUPREME actualizados", "success");
+    if (fullOk && breadthOk) {
+      showToast("✓ Análisis completo — Amplitud + OPTIMAL SUPREME actualizados", "success");
+    } else if (breadthOk) {
+      showToast("Análisis parcial — Amplitud/SUPREME OK, scan de universo con errores", "info");
+    } else {
+      showToast("Scan con errores — revisa conexión y reintenta", "error");
+    }
     setTimeout(() => setScanPhase("idle"), 4000);
   }
 
-  // ─── Optimal2026 scan dedicado (botón manual en el panel) ─────────────────
-  // Reutiliza runBreadthScan (que ya computa y persiste Optimal2026 como side-effect)
-  // con barra de progreso propia en el panel. No interfiere con handleScanAll.
-  const o26ScanActiveRef = useRef(false);
+  // ─── OPTIMAL SUPREME scan dedicado (botón manual en el panel) ─────────────
+  // Reutiliza runBreadthScan (que ya computa y persiste SUPREME como side-effect)
+  // con barra de progreso propia en el panel.
   const handleOptimal2026Scan = useCallback(async () => {
-    if (o26ScanActiveRef.current) return; // guard via ref, no crea re-renders por deps
+    // Guardas cruzadas (audit fix concurrencia): ni doble scan manual (o26ScanActiveRef)
+    // ni solapamiento con SCAN EMRR en curso (scanActiveRef cubre isScanning + scanPhase).
+    if (o26ScanActiveRef.current || scanActiveRef.current) return;
     o26ScanActiveRef.current = true;
     setO26ScanProgress(0);
     try {
-      await runBreadthScan((coverage) => setO26ScanProgress(coverage));
+      const breadth = await runBreadthScan((coverage) => setO26ScanProgress(coverage));
+      setMarketBreadth(breadth); // el scan manual también actualiza el panel de Amplitud
       await loadOptimal2026();
     } catch { /* panel conserva último estado */ }
     finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
