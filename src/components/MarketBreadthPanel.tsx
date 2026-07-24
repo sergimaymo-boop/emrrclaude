@@ -272,15 +272,10 @@ export function MarketBreadthPanel({ breadth }: Props) {
         </div>
       )}
 
-      {/* Watchlist — top-10 candidatos de rebote (factor model per-ticker) */}
-      {breadth.topTickers && breadth.topTickers.length > 0 && (
-        <RankWatchlist
-          tickers={breadth.topTickers}
-          horizon={breadth.rankHorizonDays}
-          baseUp={breadth.rankBaseUp}
-          isNarrow={isNarrow}
-        />
-      )}
+      {/* Watchlist top-10 rebote DESACTIVADA (consolidación 25-jul-2026, decisión de Sergi):
+          era el último elemento que parecía un segundo módulo de recomendaciones. El panel
+          conserva score, veredicto, métricas y alertas — la información que alimenta a SUPREME.
+          Para reactivar: restaurar <RankWatchlist tickers={breadth.topTickers} …/> aquí. */}
 
       {/* Alertas tempranas */}
       {breadth.alerts && breadth.alerts.length > 0 && (
