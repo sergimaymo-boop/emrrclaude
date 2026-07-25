@@ -832,8 +832,16 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target?.result as string;
+      const text = e.target?.result;
+      // Guard: result puede ser null/ArrayBuffer en fallos raros — nunca pasar no-string al parser
+      if (typeof text !== "string" || !text) {
+        alert("No se pudo leer el archivo (contenido vacío o ilegible). Inténtalo de nuevo.");
+        return;
+      }
       finishLoad(parseIBKPortfolio(text), "IBK_CSV");
+    };
+    reader.onerror = () => {
+      alert("Error al leer el archivo (permisos o archivo dañado). Inténtalo de nuevo.");
     };
     reader.readAsText(file, "utf-8");
   }, [finishLoad]);
@@ -995,7 +1003,10 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
     return t > max ? t : max;
   }, 0);
   const STALE_MS = 5 * 60 * 1000; // 5 min = ~3 ciclos de enriquecimiento
-  const isPricesStale = isLive && (latestRefreshMs === 0 || Date.now() - latestRefreshMs > STALE_MS);
+  // AUDIT FIX: exigir rawItems.length > 0 — sin datos aún no hay nada "obsoleto" que alertar
+  // (antes: primera carga en horario de mercado pintaba la alarma roja junto a "Sin datos aún")
+  const isPricesStale = isLive && rawItems.length > 0
+    && (latestRefreshMs === 0 || Date.now() - latestRefreshMs > STALE_MS);
 
   const badge = data.badge;
   const oos = data.oos;

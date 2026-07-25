@@ -311,26 +311,52 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
 
 // OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
 const OPTIMAL2026_KEY = "optimal2026_v1";
-async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars) {
+async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish = null) {
+  // Régimen: SPY vs EMA200 con las barras de este run. AUDIT FIX: si SPY no llegó
+  // (rate-limit puntual) usar el régimen CACHEADO (spyBullish) en vez de caer a
+  // RISK_OFF — evitaba incoherencia con FABLE01/breadth en el MISMO run.
+  let regime = detectOptimal2026Regime(spyBars ?? []);
+  if ((spyBars?.length ?? 0) < 200 && typeof spyBullish === "boolean") {
+    regime = spyBullish
+      ? { regime: "RISK_ON", deployPct: 100, regimeReason: "SPY sobre EMA200 — alcista (régimen cacheado: SPY no disponible este run)" }
+      : { regime: "RISK_OFF", deployPct: 30, regimeReason: "SPY bajo EMA200 — defensivo (régimen cacheado: SPY no disponible este run)" };
+  }
+
   // Top 4 para mostrar: 2 invertidos (con allocation) + 2 "en banca" a 0% (candidatos de rotación).
   const top = (topO26 ?? []).slice(0, 4);
-  if (top.length === 0) return;
+  if (top.length === 0) {
+    // AUDIT FIX: persistir snapshot VACÍO explícito en vez de dejar el anterior en KV.
+    // Sin candidatos elegibles = mercado sin momentum 9m positivo → la estrategia está
+    // en caja y el dashboard debe reflejarlo, no mostrar la allocation alcista antigua.
+    await kvSet(OPTIMAL2026_KEY, {
+      ok: true, items: [], universeCount, activeMarkets,
+      regime: regime.regime, deployPct: 0,
+      regimeReason: `${regime.regimeReason} · Sin candidatos elegibles — estrategia en CAJA`,
+      badge: OPTIMAL_SUPREME_CALIBRATION.badge,
+      oos: OPTIMAL_SUPREME_CALIBRATION.oos,
+      scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
+    }, 26 * 3600).catch(() => {});
+    return;
+  }
   let nameMap = new Map();
   try {
     const uni = await buildUniverseResponse({ includeFullAssets: true });
     nameMap = new Map((uni.assets ?? []).map((a) => [a.providerSymbol, a.name ?? a.companyName ?? a.providerSymbol]));
   } catch { /* fallback al símbolo */ }
   const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
-  const regime = detectOptimal2026Regime(spyBars ?? []);
   let allocated = allocateOptimal2026(top, regime);
   // OPTIMAL SUPREME — vol-targeting 30%/10d sobre el top-2 invertido (ganador del sweep de 73 variantes)
+  // AUDIT FIX: escalar con factorRaw (sin redondear) — el factor redondeado a 2 decimales
+  // hacía que la suma de allocations divergiera del deployPct publicado (hasta ~0.5pp).
   const vt = applySupremeVolTarget(regime, allocated);
-  if (vt.volTargetFactor < 1) {
+  if (vt.factorRaw < 1) {
     allocated = allocated.map((c) => ({
       ...c,
-      allocationPct: c.allocationPct > 0 ? Math.round(c.allocationPct * vt.volTargetFactor * 10) / 10 : 0,
+      allocationPct: c.allocationPct > 0 ? Math.round(c.allocationPct * vt.factorRaw * 10) / 10 : 0,
     }));
   }
+  // deployPct publicado = suma REAL de las allocations escaladas (coherencia exacta con lo mostrado)
+  const deployPctPublished = Math.round(allocated.reduce((s, c) => s + (c.allocationPct > 0 ? c.allocationPct : 0), 0) * 10) / 10;
   const items = allocated.map((c, i) => {
     const price = c.ft?.close;
     const prev = c.ft?.prevClose;
@@ -357,8 +383,8 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   const payload = {
     ok: true, items, universeCount, activeMarkets,
     regime: regime.regime,
-    deployPct: vt.deployPct,
-    regimeReason: vt.volTargetFactor < 1 ? `${regime.regimeReason} · ${vt.reason}` : regime.regimeReason,
+    deployPct: deployPctPublished,
+    regimeReason: vt.factorRaw < 1 ? `${regime.regimeReason} · ${vt.reason}` : regime.regimeReason,
     volTargetFactor: vt.volTargetFactor,
     realizedVol10d: vt.realizedVol,
     badge: OPTIMAL_SUPREME_CALIBRATION.badge,
@@ -380,7 +406,8 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   // FABLE01 — persiste con el régimen SPY (risk-on/off) para el colchón de caja del overlay blindado.
   await persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish).catch(() => {});
   // OPTIMAL2026 — dual momentum risk-parity, persiste en su propia clave (independiente).
-  await persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars).catch(() => {});
+  // spyBullish (régimen cacheado) como fallback si spyBars llegó vacío este run.
+  await persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish).catch(() => {});
   const history = (await kvGet(HISTORY_KEY).catch(() => null)) ?? [];
   const adNetSeries = Array.isArray(history) ? history.map((h) => h.adNet).filter((v) => Number.isFinite(v)) : [];
   const weights = await loadWeights();

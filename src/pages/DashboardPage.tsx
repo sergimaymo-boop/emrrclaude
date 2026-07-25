@@ -30,7 +30,6 @@ import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
 import { getRegionalMarketStates } from "../utils/marketHours";
-import { shareFullExport } from "../utils/export";
 import { createTimestampPair } from "../utils/time";
 import {
   type MarketBreadthResult,
@@ -182,7 +181,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     recommendedNextAction: "SCAN_FULL_REQUIRED",
   });
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [exportText, setExportText] = useState("");
   // Consolidación 24-jul-2026: estados de rally/marketRegime/monetaryCycle/fable01 eliminados —
   // solo alimentaban a los módulos desactivados (Señal Óptima, FABLE01, CLAUDE01, TOP8 UI).
   const [flowsState, setFlowsState] = useState<IntraDayFlowsState>(initialFlowsState());
@@ -738,73 +736,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     }
   }
 
-  async function handleScan() {
-    // Guarda cruzada: no arrancar si ya corre el SCAN ALL (scanPhase) ni otro scan (audit fix concurrencia).
-    if (scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done")) return;
-    const savedScroll = window.scrollY; // keep user's position
-
-    clearSessionCacheForNewScan();
-    const startedAt = createTimestampPair();
-    setScanState((current) => ({
-      ...current,
-      label: "SCAN FULL running...",
-      isScanning: true,
-      lastRun: startedAt,
-      lastScanClicked: startedAt,
-      scanExecutionMode: "SCAN_SNAPSHOT",
-    }));
-    setSystemStatus((current) =>
-      updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "SCANNING", current.lastRealDataUpdate),
-    );
-
-    // Restore scroll after state update (prevents sticky-header click triggering scroll-to-top on iOS)
-    requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
-
-    const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
-    try {
-      await Promise.all([scanDelay, runAutoChainedScan(startedAt)]);
-    } catch (error) {
-      setScanState((current) => ({
-        ...current,
-        label: "Scan snapshot failed - manual retry available",
-        isScanning: false,
-        scanExecutionMode: "ERROR",
-      }));
-      setSystemStatus((current) =>
-        updateSystemStatusForDataMode(refreshSystemMarketStatus(current), "ERROR", current.lastRealDataUpdate),
-      );
-      showToast(error instanceof Error ? error.message : "Scan snapshot failed", "error");
-    }
-  }
-
-  async function handleContinueScan() {
-    if (scanState.isScanning || !scanState.snapshotToken || (scanPhase !== "idle" && scanPhase !== "done")) return;
-
-    const startedAt = createTimestampPair();
-    setScanState((current) => ({
-      ...current,
-      label: "CONTINUE SCAN running...",
-      isScanning: true,
-      lastScanClicked: startedAt,
-      scanExecutionMode: "SCAN_SNAPSHOT",
-    }));
-
-    const scanDelay = new Promise((resolve) => window.setTimeout(resolve, 700));
-    // try/catch/finally: si applySnapshotResult lanza, no dejar isScanning colgado para siempre
-    // (coherente con handleScan). Permite reintentar el CONTINUE.
-    try {
-      await Promise.all([
-        scanDelay,
-        applySnapshotResult(continueScanSnapshot(scanState.snapshotToken), startedAt, {
-          keepScanning: false,
-          suppressToast: false,
-        }),
-      ]);
-    } catch {
-      setScanState((current) => ({ ...current, isScanning: false, label: "Continue scan failed — reintenta" }));
-      showToast("Continue scan falló — puedes reintentar", "error");
-    }
-  }
+  // Consolidación 25-jul: handleScan y handleContinueScan (botones del bloque TOP8 desactivado)
+  // eliminados — inalcanzables desde el render. Sus llamadas (runAutoChainedScan,
+  // applySnapshotResult, continueScanSnapshot) siguen vivas vía runFull/handleScanAll.
 
   // ─── SCAN ALL — FLOWS en paralelo con FULL, luego AMPLITUD (consolidado) ──
 
@@ -901,12 +835,19 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     let breadthOk = false;
     if (o26ScanActiveRef.current) {
       // AUDIT FIX (concurrencia): un scan manual de SUPREME ya está corriendo — NO lanzar otro
-      // runBreadthScan en paralelo (doble carga a proveedores + doble persistencia + barra de
-      // progreso entrelazada). Esperar a que acabe y refrescar de su resultado persistido.
-      while (o26ScanActiveRef.current) await new Promise(r => setTimeout(r, 1000));
-      loadMarketBreadth();
-      loadOptimal2026();
-      breadthOk = true;
+      // runBreadthScan en paralelo. Esperar ACOTADO (máx 10 min): si el fetch del scan manual
+      // colgara sin timeout, un while infinito dejaría scanPhase="breadth" y el botón SCAN EMRR
+      // bloqueado para siempre (auditoría final: deadlock sin vía de recuperación).
+      let waitTicks = 0;
+      while (o26ScanActiveRef.current && waitTicks < 600) {
+        await new Promise(r => setTimeout(r, 1000));
+        waitTicks++;
+      }
+      if (!o26ScanActiveRef.current) {
+        loadMarketBreadth();
+        loadOptimal2026();
+        breadthOk = true;
+      }
     } else {
       o26ScanActiveRef.current = true;
       try {
@@ -1018,7 +959,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // ── Precios EN VIVO cada 90s para OPTIMAL SUPREME + watchlist Amplitud ──
   useEffect(() => {
     const interval = setInterval(() => {
-      if (scanActiveRef.current) return;
+      // Pausar también durante el scan manual de SUPREME (o26ScanActiveRef): evita que
+      // el enriquecimiento con items antiguos pise momentáneamente el resultado fresco.
+      if (scanActiveRef.current || o26ScanActiveRef.current) return;
       const o26 = optimal2026Ref.current;
       if (o26.items && o26.items.length) {
         enrichOptimal2026WithLiveQuotes(o26.items)
@@ -1065,7 +1008,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ErrorBoundary inline label="Optimal Supreme">
         <Optimal2026Panel
           data={optimal2026}
-          onAutoScan={loadOptimal2026}
+          onAutoScan={handleOptimal2026Scan}
           onScan={handleOptimal2026Scan}
           scanProgress={o26ScanProgress}
         />

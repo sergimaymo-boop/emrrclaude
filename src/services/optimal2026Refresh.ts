@@ -285,17 +285,25 @@ const OCR_NOT_TICKERS = new Set([
  *     → columnas: Último (precio, DECIMAL) · Posición (acciones, ENTERO) · PyG · %
  *   • Listado simple: "AAPL 100 150.25" → cantidad (ENTERO) · precio (DECIMAL)
  *
- * La ambigüedad cantidad/precio se resuelve por tipo: entre los dos primeros números,
- * el ENTERO es la cantidad y el DECIMAL el precio (la app IBK pinta precio primero).
+ * La ambigüedad cantidad/precio se resuelve por FORMATO TEXTUAL (auditoría 25-jul):
+ * un número escrito con decimales ("26.31", "150.00") es PRECIO; sin decimales ("30")
+ * es CANTIDAD. Esto es robusto incluso con precios de valor entero ("150.00") y con
+ * cantidades fraccionarias ("1.5"), donde comparar Number.isInteger fallaba.
  *
- * Se descartan las líneas de NOMBRE DE EMPRESA que la app pinta bajo cada ticker
- * ("POSTE ITALIANE SPA 26.30-26.31"): su pareja de números es el rango del día
- * (dos decimales casi iguales) → regla del rango.
+ * Las líneas de NOMBRE DE EMPRESA que la app pinta bajo cada ticker se descartan por
+ * DOS reglas: (1) frase — el candidato a ticker va seguido de otra palabra en mayúsculas
+ * que no es un código de bolsa ("PALO ALTO…", "POSTE ITALIANE…"); (2) rango — sus números
+ * son el rango del día (dos decimales casi iguales, "26.30-26.31").
  */
+const OCR_EXCHANGES = new Set([
+  "BVME", "NYSE", "NASDAQ", "NMS", "ARCA", "AMEX", "BATS", "IEX", "ISLAND",
+  "LSE", "IBIS", "IBIS2", "SBF", "AEB", "EBS", "SEHK", "TSE", "TSEJ", "SGX",
+  "VENTURE", "PINK", "MEXI", "BM", "SMART",
+]);
+
 export function parseOCRPortfolio(text: string): IBKPosition[] {
   const positions: IBKPosition[] = [];
   const seen = new Set<string>();
-  const isInt = (n: number) => Number.isInteger(n);
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -306,34 +314,51 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
     if (symIdx < 0) continue;
     const symbol = tokens[symIdx];
     if (seen.has(symbol)) continue;
-    const nums = tokens
+
+    // Regla de FRASE: si tras el candidato viene OTRA palabra en mayúsculas que no es
+    // un código de bolsa, esto es un nombre de empresa ("PALO ALTO…"), no una posición.
+    const next = tokens[symIdx + 1];
+    if (next && /^[A-Z]{2,12}$/.test(next) && !OCR_EXCHANGES.has(next)) continue;
+
+    // Números con su formato textual: decimal explícito = precio; entero = cantidad.
+    // "26.30-26.31" (rango del día) se separa en dos números para la regla del rango.
+    const rawNums = tokens
       .slice(symIdx + 1)
-      // "26.30-26.31" (rango del día) llega como UN token con guión → separarlo en dos
-      // números para que la regla del rango pueda reconocer la línea del nombre.
       .flatMap((t) => {
         const range = t.match(/^([\d.,]+)-([\d.,]+)%?$/);
         return range ? [range[1], range[2]] : [t];
       })
-      .map(parseOcrNumber)
-      .filter((n) => isFinite(n));
-    if (nums.length === 0) continue;
+      .map((t) => ({ v: parseOcrNumber(t), dec: /[.,]\d{1,4}$/.test(t.replace(/[$€£+%]/g, "")) }))
+      .filter((n) => isFinite(n.v));
+    if (rawNums.length === 0) continue;
 
     let quantity: number, currentPrice: number | null = null, unrealizedPnL: number | null = null;
-    const [a, b] = [nums[0], nums[1]];
+    const [a, b] = [rawNums[0], rawNums[1]];
+    const pnlCandidate = rawNums.length > 2 ? rawNums[2].v : null;
 
-    if (b != null && !isInt(a) && isInt(b) && a > 0 && b > 0) {
-      // Layout app IBK: precio (decimal) · posición (entero) · PyG · %
-      currentPrice = a;
-      quantity = b;
-      if (nums.length > 2 && Math.abs(nums[2]) < a * b * 2) unrealizedPnL = nums[2];
-    } else if (b != null && !isInt(a) && !isInt(b) && a > 0 && b > 0
-               && Math.abs(a - b) / Math.max(a, b) < 0.02) {
-      // Dos decimales casi iguales = rango del día en la línea del NOMBRE de empresa → descartar
+    if (b == null) {
+      // Un solo número: si es decimal ("180.50" suelto en una línea de nombre) es un
+      // precio huérfano, no una posición → descartar. Entero = cantidad sin precio.
+      if (a.dec || a.v <= 0) continue;
+      quantity = a.v;
+    } else if (a.dec && b.dec && a.v > 0 && b.v > 0
+               && Math.abs(a.v - b.v) / Math.max(a.v, b.v) < 0.02) {
+      // Rango del día (dos decimales casi iguales) → línea de nombre → descartar
       continue;
+    } else if (a.dec && !b.dec && a.v > 0 && b.v > 0) {
+      // Layout app IBK: precio (decimal) · posición (entera) · PyG · %
+      currentPrice = a.v;
+      quantity = b.v;
+      if (pnlCandidate != null && Math.abs(pnlCandidate) < a.v * b.v * 2) unrealizedPnL = pnlCandidate;
+    } else if (a.dec && b.dec && a.v > 0 && b.v > 0) {
+      // App IBK con posición FRACCIONARIA ("913.43 1.2"): precio primero también
+      currentPrice = a.v;
+      quantity = b.v;
+      if (pnlCandidate != null && Math.abs(pnlCandidate) < a.v * b.v * 2) unrealizedPnL = pnlCandidate;
     } else {
-      // Layout simple: cantidad · coste/precio
-      quantity = a;
-      if (b != null && b > 0) currentPrice = b;
+      // Layout simple/CSV: cantidad (entera) · precio
+      quantity = a.v;
+      if (b.v > 0) currentPrice = b.v;
     }
 
     if (!isFinite(quantity) || quantity <= 0 || quantity > 1_000_000) continue;
@@ -348,19 +373,7 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
       currency: "USD",
     });
   }
-  // Seguridad extra: si dos filas consecutivas comparten cantidad exacta (ticker + nombre
-  // con la misma cifra al lado), la segunda es la línea del nombre → fusionar en la primera.
-  const deduped: IBKPosition[] = [];
-  for (const p of positions) {
-    const prev = deduped[deduped.length - 1];
-    if (prev && prev.quantity === p.quantity) {
-      if (prev.currentPrice == null && p.currentPrice != null) prev.currentPrice = p.currentPrice;
-      if (prev.unrealizedPnL == null && p.unrealizedPnL != null) prev.unrealizedPnL = p.unrealizedPnL;
-      continue;
-    }
-    deduped.push(p);
-  }
-  return deduped;
+  return positions;
 }
 
 /**

@@ -249,7 +249,7 @@ export function applySupremeVolTarget(regime, investedItems) {
     (c) => (c.allocationPct ?? 0) > 0 && Array.isArray(c.ft?.recentCloses) && c.ft.recentCloses.length >= SUPREME_VOL_WINDOW + 1,
   );
   if (invested.length === 0) {
-    return { deployPct: base, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (sin históricos recientes)' };
+    return { deployPct: base, factorRaw: 1, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (sin históricos recientes)' };
   }
   const wSum = invested.reduce((s, c) => s + c.allocationPct, 0) || 1;
   // Retornos diarios del portfolio ponderado (últimas SUPREME_VOL_WINDOW sesiones)
@@ -269,13 +269,14 @@ export function applySupremeVolTarget(regime, investedItems) {
   const sd = Math.sqrt(portRets.reduce((s, r) => s + (r - mu) ** 2, 0) / portRets.length);
   const realizedVol = sd * Math.sqrt(252);
   if (!Number.isFinite(realizedVol) || realizedVol <= 0) {
-    return { deployPct: base, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (vol no calculable)' };
+    return { deployPct: base, factorRaw: 1, volTargetFactor: 1, realizedVol: null, reason: 'VT30 no aplicable (vol no calculable)' };
   }
   const factor = Math.min(1, SUPREME_VOL_TARGET / realizedVol);
   const deployPct = Math.round(base * factor * 10) / 10;
   return {
     deployPct,
-    volTargetFactor: Math.round(factor * 100) / 100,
+    factorRaw: factor, // SIN redondear — usar ESTE para escalar allocations (coherencia con deployPct)
+    volTargetFactor: Math.round(factor * 100) / 100, // solo display
     realizedVol: Math.round(realizedVol * 1000) / 10, // % anualizada, 1 decimal
     reason: factor < 1
       ? `VT30: vol 10d ${(realizedVol * 100).toFixed(0)}% > objetivo 30% → exposición ${deployPct}%`

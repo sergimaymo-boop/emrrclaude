@@ -190,7 +190,7 @@ export function enrichWithIntradaySignals(
   });
 }
 
-// ── Backtest comparison (academic basis, estimated) ───────────────────────────
+// ── Backtest comparison (resultados REALES del sweep propio) ──────────────────
 
 // Resultados REALES del sweep de consolidación (24-jul-2026): 73 variantes ×
 // 3 baterías, universo completo 603 tickers US+EU, 2016-2026, costes 20bps/lado.
