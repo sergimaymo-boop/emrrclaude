@@ -275,16 +275,24 @@ export function MarketBreadthPanel({ breadth }: Props) {
           gap: 1, background: "rgba(255,255,255,0.05)",
           borderTop: "1px solid rgba(255,255,255,0.05)",
         }}>
-          {metrics.map((m) => (
-            <div key={m.label} style={{ background: "rgba(15,23,42,0.55)", padding: "8px 10px" }}>
-              <div style={{ fontSize: 8, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                {m.label}
+          {metrics.map((m, i) => {
+            // Sin celdas vacías (fix 26-jul): si la última fila queda incompleta, el último
+            // indicador se expande hasta el final — la rejilla siempre llena el recuadro.
+            const cols = isNarrow ? 2 : 4;
+            const isLast = i === metrics.length - 1;
+            const remainder = metrics.length % cols;
+            const spanStyle = isLast && remainder !== 0 ? { gridColumn: `span ${cols - remainder + 1}` } : {};
+            return (
+              <div key={m.label} style={{ background: "rgba(15,23,42,0.55)", padding: "8px 10px", ...spanStyle }}>
+                <div style={{ fontSize: 8, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  {m.label}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: m.tone, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+                  {Number.isFinite(m.value) ? m.value : "—"}{m.unit}
+                </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: m.tone, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
-                {Number.isFinite(m.value) ? m.value : "—"}{m.unit}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
