@@ -244,19 +244,20 @@ function ItemRow({
             {fmtPct(item.pctDay)}
           </span>
         )}
-
-        {/* Price + live indicator */}
-        {item.price != null && (
-          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
-              {item.price.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            {isLive && item.priceRefreshedAt && (
-              <span style={{ fontSize: 7, color: GREEN, fontWeight: 700 }}>● EN VIVO</span>
-            )}
-          </span>
-        )}
       </div>
+
+      {/* ── Precio SIEMPRE en su propia línea, encima de la barra (fix 25-jul: en móvil
+          el wrap lo colocaba inconsistente — WDC encima de la barra, MU arriba a la derecha) ── */}
+      {item.price != null && (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
+            {item.price.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {isLive && item.priceRefreshedAt && (
+            <span style={{ fontSize: 7, color: GREEN, fontWeight: 700 }}>● EN VIVO</span>
+          )}
+        </div>
+      )}
 
       <AllocationBar pct={item.allocationPct} />
 
@@ -820,30 +821,61 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     onLoad(portfolio);
   }, [onLoad]);
 
-  const handleFile = useCallback((file: File) => {
-    const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|heic|heif|webp)$/i.test(file.name);
-    if (isImage) {
-      setOcrPct(0);
-      parseImagePortfolio(file, (pct) => setOcrPct(pct))
-        .then((positions) => finishLoad(positions, "IBK_PHOTO"))
-        .catch(() => alert("No se pudo leer la foto. Si es HEIC, haz mejor una captura de pantalla (PNG) de las posiciones en la app de IBK e inténtalo de nuevo."))
-        .finally(() => setOcrPct(null));
+  // MULTI-ARCHIVO (25-jul, petición de Sergi): la cartera de IBK a veces no cabe en una
+  // captura — se pueden seleccionar VARIAS fotos (y/o CSV) a la vez desde carrete/Archivos.
+  // Se procesan en secuencia, se fusionan las posiciones (primer símbolo gana) y se carga todo.
+  const readCsvFile = (file: File): Promise<IBKPosition[]> =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result;
+        resolve(typeof text === "string" && text ? parseIBKPortfolio(text) : []);
+      };
+      reader.onerror = () => resolve([]);
+      reader.readAsText(file, "utf-8");
+    });
+
+  const handleFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    const isImage = (f: File) => f.type.startsWith("image/") || /\.(png|jpe?g|heic|heif|webp)$/i.test(f.name);
+    const nImages = files.filter(isImage).length;
+    let imagesDone = 0;
+    let anyPhoto = false;
+    const all: IBKPosition[] = [];
+    const failed: string[] = [];
+    if (nImages > 0) setOcrPct(0);
+    try {
+      for (const f of files) {
+        if (isImage(f)) {
+          anyPhoto = true;
+          try {
+            // Progreso agregado entre todas las fotos: (hechas + progreso actual) / total
+            const positions = await parseImagePortfolio(f, (pct) =>
+              setOcrPct(Math.round(((imagesDone + pct / 100) / nImages) * 100)),
+            );
+            all.push(...positions);
+          } catch { failed.push(f.name); }
+          imagesDone++;
+        } else {
+          const positions = await readCsvFile(f);
+          if (positions.length === 0) failed.push(f.name);
+          all.push(...positions);
+        }
+      }
+    } finally { setOcrPct(null); }
+
+    // Fusionar por símbolo (si el mismo ticker sale en dos capturas, gana la primera lectura)
+    const merged = new Map<string, IBKPosition>();
+    for (const p of all) if (!merged.has(p.symbol.toUpperCase())) merged.set(p.symbol.toUpperCase(), p);
+
+    if (failed.length > 0 && merged.size === 0) {
+      alert(`No se pudo leer: ${failed.join(", ")}. Si es HEIC, haz mejor capturas de pantalla (PNG) e inténtalo de nuevo.`);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result;
-      // Guard: result puede ser null/ArrayBuffer en fallos raros — nunca pasar no-string al parser
-      if (typeof text !== "string" || !text) {
-        alert("No se pudo leer el archivo (contenido vacío o ilegible). Inténtalo de nuevo.");
-        return;
-      }
-      finishLoad(parseIBKPortfolio(text), "IBK_CSV");
-    };
-    reader.onerror = () => {
-      alert("Error al leer el archivo (permisos o archivo dañado). Inténtalo de nuevo.");
-    };
-    reader.readAsText(file, "utf-8");
+    if (failed.length > 0) {
+      alert(`Aviso: no se pudo leer ${failed.join(", ")} — se cargó el resto (${merged.size} posiciones).`);
+    }
+    finishLoad([...merged.values()], anyPhoto ? "IBK_PHOTO" : "IBK_CSV");
   }, [finishLoad]);
 
   const busy = ocrPct !== null;
@@ -861,9 +893,10 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
         <input
           ref={inputRef}
           type="file"
+          multiple
           accept="image/*,.csv,.txt,text/csv,text/plain"
           style={{ display: "none" }}
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+          onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) handleFiles(fs); e.target.value = ""; }}
         />
         <button
           onClick={() => { if (!busy) inputRef.current?.click(); }}
@@ -875,11 +908,12 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
             borderRadius: 5, padding: "4px 10px", cursor: busy ? "wait" : "pointer",
           }}
         >
-          {busy ? `🔍 Leyendo foto… ${ocrPct}%` : "📂 Cargar CSV / 📷 Foto"}
+          {busy ? `🔍 Leyendo fotos… ${ocrPct}%` : "📂 Cargar CSV / 📷 Fotos"}
         </button>
       </div>
       <div style={{ fontSize: 7, color: "#334155", marginTop: 4 }}>
-        📷 Foto: captura de pantalla de tus posiciones en la app IBK (desde carrete, Archivos o cámara).
+        📷 Fotos: capturas de pantalla de tus posiciones en la app IBK (carrete, Archivos o cámara) —
+        puedes seleccionar VARIAS a la vez si la cartera no cabe en una; se fusionan solas.
         CSV: IBK → Informes → Estado de cuenta → Exportar. Todo se procesa y guarda SOLO en tu
         dispositivo (localStorage + OCR local), nunca se envía al servidor.
       </div>

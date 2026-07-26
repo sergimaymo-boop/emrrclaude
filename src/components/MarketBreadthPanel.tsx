@@ -177,12 +177,28 @@ export function MarketBreadthPanel({ breadth }: Props) {
   const score = breadth.score;
   const ind = breadth.indicators;
 
+  // Net Máx−Mín (añadido 25-jul, sugerencia externa validada): % de acciones en nuevos
+  // máximos MENOS % en nuevos mínimos — detecta si la amplitud mejora o empeora antes que
+  // el propio S&P. La parte "línea A/D acumulada" de esa sugerencia YA está en los cálculos:
+  // el McClellan del veredicto se deriva de la serie A/D acumulada del histórico del servidor.
+  const nhNet = ind && Number.isFinite(ind.newHighPct) && Number.isFinite(ind.newLowPct)
+    ? Math.round((ind.newHighPct - ind.newLowPct) * 10) / 10
+    : null;
+
   const metrics = ind ? [
     { label: "Sobre MA50", value: ind.pctAboveMA50, unit: "%", tone: METRIC_MUTED },
     { label: "Sobre MA200", value: ind.pctAboveMA200, unit: "%", tone: METRIC_MUTED },
     { label: "Avances", value: ind.advancePct, unit: "%", tone: METRIC_MUTED },
     { label: "Nuevos máx", value: ind.newHighPct, unit: "%", tone: METRIC_MUTED },
     { label: "Nuevos mín", value: ind.newLowPct, unit: "%", tone: METRIC_MUTED },
+    ...(nhNet != null ? [{
+      label: "Net Máx−Mín",
+      value: nhNet,
+      unit: "%",
+      // Único con color direccional: verde = más valores en máximos que en mínimos (amplitud
+      // sana), rojo = deterioro interno aunque el índice aguante. Lectura, no señal aislada.
+      tone: nhNet > 0 ? "#34d399" : nhNet < 0 ? "#f87171" : METRIC_MUTED,
+    }] : []),
     { label: "Distribución", value: ind.distributionPct, unit: "%", tone: METRIC_MUTED },
     { label: "Pendiente↑", value: ind.slopeUpPct, unit: "%", tone: METRIC_MUTED },
     { label: "McClellan", value: ind.mcclellan, unit: "", tone: METRIC_MUTED },
