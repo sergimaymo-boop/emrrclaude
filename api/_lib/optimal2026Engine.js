@@ -392,13 +392,26 @@ export const OPTIMAL2026_CALIBRATION = {
 // GANADOR: top-2 score-weighted + trailing ATR por bandas con ROTACIÓN INMEDIATA
 //          + régimen binario SPY/EMA200 (100/30) + VOL-TARGET 30% ventana 10d.
 //
-// Comprobado y DESCARTADO con datos (no especulación):
+// Comprobado y DESCARTADO con datos (no especulación) — sweeps 1-3 (73 variantes):
 //   • Diversificar a top-3/top-4  → CAGR -15pp sin bajar DD (la concentración ES el edge)
 //   • Pesos inverse-vol           → MAR 1.56 < 1.87 (score-weighted gana)
 //   • Crash-filter SPY ret10<-6%  → whipsaw: DD SUBE a 41.6% (sale abajo, re-entra tarde)
 //   • Risk-off más duro (15%/0%)  → pierde las recuperaciones, DD sube
 //   • Régimen VIX 4 estados       → MAR 1.55 < 1.75 del binario
 //   • Filtro entrada RSI/dist20   → no mejora al combinar con VT (redundante)
+//
+// SWEEP 4 (25-jul-2026, +45 variantes = 118 totales) — ROTACIÓN PROACTIVA:
+//   • Rotar a DIARIO al mejor ticker → CATASTRÓFICO: CAGR 10.4%, DD 54% (MAR 0.19).
+//     El momentum necesita TIEMPO; saltar de ticket persigue ruido y vende ganadores
+//     en pullbacks normales. Cada semana: MAR ~1.0. Cada 2 semanas: ~1.2. NUNCA <mensual.
+//   • GANADOR: revisión MENSUAL con HISTÉRESIS 1.10 — rotar una posición tenida solo si
+//     el mejor candidato la supera en >10% de score → menos rotaciones inútiles,
+//     MAR 1.79→1.94 y CAGR +4pp en el mismo harness. (Con costes 10bps: MAR 2.07.)
+//   • Régimen EMA100 rápido y graduado 3 niveles → NO mejoran al binario EMA200 en
+//     ninguna cadencia. El "ciclo económico" fino pierde contra el simple.
+export const SUPREME_ROTATION_HYSTERESIS = 1.10; // candidato debe superar al tenido ×1.10
+export const SUPREME_REVIEW_CADENCE = 21;        // sesiones entre revisiones de rotación (mensual)
+
 export const OPTIMAL_SUPREME_CALIBRATION = {
   params: {
     lookbackLong: LOOKBACK_LONG,
@@ -409,21 +422,23 @@ export const OPTIMAL_SUPREME_CALIBRATION = {
     volTarget: SUPREME_VOL_TARGET,      // 0.30 anualizada
     volTargetWindow: SUPREME_VOL_WINDOW, // 10 sesiones
     trailingRotation: true,              // rotación inmediata al saltar trailing (mecánica FABLE01)
+    rotationHysteresis: SUPREME_ROTATION_HYSTERESIS, // sweep 4: rotar solo si candidato > tenido ×1.10
+    reviewCadence: SUPREME_REVIEW_CADENCE,           // sweep 4: revisión MENSUAL (más rápido destruye)
   },
   trailingMults: { TR: 2.5, TN: 3.0, TA: 4.0 },
   deploy: { riskOn: 100, riskOff: 30 },
   // Badge honesto: backtest 10 años sobre universo COMPLETO (603, no 110 curados) con
-  // trailing+VT validados en 73 variantes; sigue llevando haircut por supervivencia del
-  // listado estático + IRPF rotación + slippage. Crudo ~78 → honesto 66/100.
-  badge: 66,
+  // trailing+VT+histéresis validados en 118 variantes; sigue llevando haircut por
+  // supervivencia del listado estático + IRPF rotación + slippage. Crudo ~79 → honesto 67/100.
+  badge: 67,
   oos: {
-    cagr: 50.2,       // % CAGR — universo completo 603 tickers (vs 40.1 del legado en 110)
+    cagr: 52.2,       // % CAGR — config con histéresis 1.10 mensual (sweep 4, 603 tickers)
     maxDD: 26.9,      // % MaxDD — vs 33% sin vol-target y 40% sin trailing
-    mar: 1.87,        // el mejor de las 73 variantes probadas
-    sharpe: 1.46,
+    mar: 1.94,        // el mejor de las 118 variantes probadas
+    sharpe: 1.50,
     winPos: 65,       // % meses ganadores
-    beatsSpy: '3/3',  // sub-períodos 2016-19 / 20-22 / 23-26 todos positivos (43.1/13.8/108.2)
-    tradesYr: 51,     // rebalanceo mensual + rotaciones por trailing
+    beatsSpy: '3/3',  // sub-períodos 2016-19 / 20-22 / 23-26 todos positivos (43/22/102.1)
+    tradesYr: 48,     // revisión mensual con histéresis + rotaciones por trailing
     testPeriod: '2016-2026 · 603 tickers',
   },
 };

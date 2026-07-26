@@ -772,7 +772,7 @@ function SemiActiveComparison() {
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ fontSize: 8, color: ACCENT, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        Backtest real 10 años · 603 tickers · 73 variantes probadas
+        Backtest real 10 años · 603 tickers · 118 variantes probadas
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
         {[
@@ -1181,10 +1181,11 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
             <strong>2</strong> activos con mayor momentum risk-adjusted [(ret9m − ret2m) / vol3m], filtro momentum 9m
             positivo + EMA align ≥ 2. Régimen binario SPY/EMA200 (100%/30%) + <strong>vol-target 30%</strong> (ventana
             10d) que recorta exposición si la volatilidad del top-2 se dispara. <strong>Trailing ATR por bandas</strong>{" "}
-            (TR 2.5× / TN 3.0× / TA 4.0×) con rotación inmediata al mejor candidato al saltar el stop. Señales intraday
-            a las <strong>15:00 Canarias</strong>. Validado con 73 variantes de backtest (10 años, 603 tickers): la
-            concentración top-2, el trailing con rotación y el VT30 GANAN; diversificar, crash-filters y VIX pierden.
-            Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
+            (TR 2.5× / TN 3.0× / TA 4.0×) con rotación inmediata al mejor candidato al saltar el stop, más{" "}
+            <strong>revisión mensual con histéresis 1.10</strong>: rotar una posición SOLO si otro candidato la supera
+            en &gt;10% de score — rotar más rápido que mensual DESTRUYE rentabilidad (probado: a diario, CAGR 10% y
+            DD 54%). Señales intraday a las <strong>15:00 Canarias</strong>. Validado con 118 variantes de backtest
+            (10 años, 603 tickers). Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
           </div>
         </div>
       )}
