@@ -6,11 +6,11 @@
  *   2. Cartera IBK — CSV o FOTO (OCR local) → P&L + acción por posición
  *   3. Auto-scan 15:00 Canarias + botón de scan manual con barra de progreso
  *   4. Precios EN VIVO vs ÚLTIMO CIERRE + alarma roja si mercado abierto y precios obsoletos
- *   5. Comparativa de backtest REAL (sweep propio de 73 variantes)
+ *   5. Comparativa de backtest REAL (sweep propio de 118 variantes)
  *
- * Backtest real (2016-2026, 603 tickers, walk-forward, costes 20bps/lado):
- *   SUPREME (trailing bandas + rotación + VT30/10d): CAGR 50.2%, MaxDD 26.9%, MAR 1.87, Sharpe 1.46
- *   Solo mensual (mismo universo):                   CAGR 61.6%, MaxDD 40.0%, MAR 1.54
+ * Backtest real (2016-2026, 603 tickers, walk-forward, costes 20bps/lado) — CANÓNICAS:
+ *   SUPREME (trailing bandas + VT30/10d + histéresis 1.10): CAGR 52.2%, MaxDD 26.9%, MAR 1.94, Sharpe 1.50
+ *   Solo mensual (mismo universo):                          CAGR 61.6%, MaxDD 40.0%, MAR 1.54
  * Las cifras legadas (CAGR 40.1/DD 18.5/MAR 2.17) eran del universo curado de 110 tickers.
  */
 
@@ -363,7 +363,10 @@ function PortfolioRow({
           <ActionBadge action={isPricesStale ? "HOLD" : matchedItem.action} />
           <span style={{ fontSize: 9, color: "#94a3b8" }}>
             Stop: <span style={{ color: isPricesStale ? GRAY : RED, fontWeight: 700 }}>
-              {!isPricesStale && matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct}%
+              {(() => {
+                const v = !isPricesStale && matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct;
+                return v != null ? `${v}%` : "—";
+              })()}
             </span>
             {!isPricesStale && matchedItem.adjustedStopPrice != null && matchedItem.action !== "HOLD" && (
               <span style={{ color: GRAY }}> @ {matchedItem.adjustedStopPrice.toFixed(2)}</span>
@@ -853,6 +856,9 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
             const positions = await parseImagePortfolio(f, (pct) =>
               setOcrPct(Math.round(((imagesDone + pct / 100) / nImages) * 100)),
             );
+            // AUDIT FIX: una foto borrosa NO lanza — el OCR devuelve texto basura y el parser
+            // 0 posiciones. Sin esto, se cargaba MEDIA cartera en silencio como si fuera completa.
+            if (positions.length === 0) failed.push(f.name);
             all.push(...positions);
           } catch { failed.push(f.name); }
           imagesDone++;

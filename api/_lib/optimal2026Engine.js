@@ -234,7 +234,7 @@ export function detectOptimal2026Regime(spyBars) {
 /**
  * applySupremeVolTarget(regime, investedItems) → { deployPct, volTargetFactor, realizedVol, reason }
  *
- * Overlay GANADOR del sweep de consolidación (73 variantes, 603 tickers, 2016-2026):
+ * Overlay GANADOR de los sweeps de consolidación (118 variantes, 603 tickers, 2016-2026):
  * vol-target 30% anualizada con ventana 10d → MAR 1.87 (vs 1.75 sin VT), DD 33%→26.9%.
  * Escala la exposición del régimen: expo = deployPct × min(1, 0.30 / volRealizada10d).
  * La vol realizada se computa del portfolio top-2 (retornos diarios ponderados por peso).
@@ -385,7 +385,7 @@ export const OPTIMAL2026_CALIBRATION = {
 };
 
 // ══ OPTIMAL SUPREME — calibración del módulo ÚNICO consolidado ════════════════
-// Resultado del sweep de consolidación (24-jul-2026): 73 variantes × 3 baterías
+// Resultado de los sweeps de consolidación (24/25-jul-2026): 118 variantes × 4 baterías
 // sobre el UNIVERSO COMPLETO (603 tickers US+EU, 2016-07 → 2026-07, walk-forward
 // sin lookahead, costes 20bps por lado en cada entrada/salida).
 //

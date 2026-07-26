@@ -1,15 +1,15 @@
 /**
  * OPTIMAL SUPREME Intraday Engine — Señales semi-activas para maximizar rentabilidad
  *
- * VALIDADO CON BACKTEST PROPIO (24-jul-2026): sweep de 73 variantes × 3 baterías,
+ * VALIDADO CON BACKTEST PROPIO (24/25-jul-2026): 118 variantes × 4 baterías,
  * universo completo 603 tickers US+EU, 2016-07→2026-07, walk-forward sin lookahead,
  * costes 20bps por lado. Ya NO es estimación académica.
  *
- * Resultado real vs rebalanceo mensual puro (mismo universo):
- *   Solo mensual:                        CAGR 61.6%, MaxDD 40.0%, MAR 1.54, Sharpe 1.48
- *   SUPREME (trailing+rotación+VT30):    CAGR 50.2%, MaxDD 26.9%, MAR 1.87, Sharpe 1.46
- *   → el modo semi-activo recorta el drawdown 13pp a cambio de ~11pp de CAGR: mejor MAR
- *     de todas las variantes probadas (riesgo moderado, objetivo del usuario).
+ * Resultado real vs rebalanceo mensual puro (mismo universo) — CIFRAS CANÓNICAS:
+ *   Solo mensual:                             CAGR 61.6%, MaxDD 40.0%, MAR 1.54, Sharpe 1.48
+ *   SUPREME (trailing+VT30+histéresis 1.10):  CAGR 52.2%, MaxDD 26.9%, MAR 1.94, Sharpe 1.50
+ *   → el modo semi-activo recorta el drawdown 13pp a cambio de ~9.4pp de CAGR: mejor MAR
+ *     de las 118 variantes probadas (riesgo moderado, objetivo del usuario).
  *
  * Base académica de partida (confirmada por el sweep): Barroso & Santa-Clara (2015)
  * vol-managed momentum; Fan-Li-Shi (2016) trailing stops; Antonacci (2014) dual momentum.
@@ -158,7 +158,7 @@ export function computeActionRec(
     stopMult = 0.55;
   } else if (pullbackRisk >= 58 && rotationTarget) {
     action = "ROTATE";
-    actionDetail = `Rotar hacia ${rotationTarget} — perfil riesgo/retorno superior (+25%)`;
+    actionDetail = `Rotar hacia ${rotationTarget} — supera a esta posición en >10% de score (histéresis; ejecutar máx ~1 vez/mes)`;
     stopMult = 0.68;
   } else if (pullbackRisk >= 38) {
     action = "TIGHTEN";

@@ -96,10 +96,11 @@ function loadStoredScanState(): Partial<ScanState> | null {
 
 function storeScanState(scanState: Partial<ScanState>) {
   if (!scanState.scanId || !scanState.snapshotToken || scanState.coveragePercent === 100) {
-    window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+    try { window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY); } catch { /* modo privado/quota */ }
     return;
   }
 
+  try {
   window.localStorage.setItem(
     SCAN_STATE_STORAGE_KEY,
     JSON.stringify({
@@ -117,6 +118,7 @@ function storeScanState(scanState: Partial<ScanState>) {
       recommendedNextAction: scanState.recommendedNextAction,
     }),
   );
+  } catch { /* quota/modo privado: el scan sigue, solo se pierde la reanudación entre sesiones */ }
 }
 
 function loadSessionCache(): SessionCache | null {
@@ -138,20 +140,24 @@ function loadSessionCache(): SessionCache | null {
 }
 
 function saveSessionCache(cache: Partial<SessionCache>) {
-  const current = loadSessionCache() ?? { sessionTimestamp: new Date().toISOString() };
-  window.localStorage.setItem(
-    SESSION_CACHE_STORAGE_KEY,
-    JSON.stringify({
-      ...current,
-      ...cache,
-      sessionTimestamp: new Date().toISOString(),
-    }),
-  );
+  try {
+    const current = loadSessionCache() ?? { sessionTimestamp: new Date().toISOString() };
+    window.localStorage.setItem(
+      SESSION_CACHE_STORAGE_KEY,
+      JSON.stringify({
+        ...current,
+        ...cache,
+        sessionTimestamp: new Date().toISOString(),
+      }),
+    );
+  } catch { /* quota/modo privado: caché de sesión es opcional */ }
 }
 
 function clearSessionCacheForNewScan() {
-  window.localStorage.removeItem(SESSION_CACHE_STORAGE_KEY);
-  window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(SESSION_CACHE_STORAGE_KEY);
+    window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
+  } catch { /* ignore */ }
 }
 
 export function DashboardPage({ onLogout }: DashboardPageProps) {
@@ -1002,7 +1008,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
       <ScanSummaryBar systemStatus={systemStatus} />
       {/* ══ OPTIMAL SUPREME — el ÚNICO módulo de estrategia (consolidación 24-jul-2026) ══
-          Ganador de 73 variantes de backtest (10 años, 603 tickers). Los módulos CLAUDE01,
+          Ganador de 118 variantes de backtest (10 años, 603 tickers). Los módulos CLAUDE01,
           FABLE01, Señal Óptima y TOP8 quedan DESACTIVADOS (no borrados): la concentración
           top-2 + trailing con rotación + VT30 los superó a todos en MAR. */}
       <ErrorBoundary inline label="Optimal Supreme">

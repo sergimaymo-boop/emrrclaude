@@ -345,7 +345,7 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   } catch { /* fallback al símbolo */ }
   const r2n = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
   let allocated = allocateOptimal2026(top, regime);
-  // OPTIMAL SUPREME — vol-targeting 30%/10d sobre el top-2 invertido (ganador del sweep de 73 variantes)
+  // OPTIMAL SUPREME — vol-targeting 30%/10d sobre el top-2 invertido (ganador de los sweeps: 118 variantes)
   // AUDIT FIX: escalar con factorRaw (sin redondear) — el factor redondeado a 2 decimales
   // hacía que la suma de allocations divergiera del deployPct publicado (hasta ~0.5pp).
   const vt = applySupremeVolTarget(regime, allocated);
