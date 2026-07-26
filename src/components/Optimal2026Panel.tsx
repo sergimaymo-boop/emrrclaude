@@ -890,11 +890,15 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
         <span style={{ fontSize: 9, color: "#94a3b8", flex: 1 }}>
           Carga tu cartera IBK (CSV o foto/captura) para ver P&L y acciones por posición
         </span>
+        {/* SIN atributo accept (fix 26-jul, mismo bug que el CSV del 25-jul): con accept,
+            iOS deja en gris ("desconectadas") las fotos de Archivos cuyo MIME no casa
+            exactamente (HEIC exportados, capturas de otras apps). El filtrado real lo hace
+            handleFiles por extensión/contenido, y un archivo no reconocido solo produce
+            un aviso — nunca datos malos. */}
         <input
           ref={inputRef}
           type="file"
           multiple
-          accept="image/*,.csv,.txt,text/csv,text/plain"
           style={{ display: "none" }}
           onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) handleFiles(fs); e.target.value = ""; }}
         />
