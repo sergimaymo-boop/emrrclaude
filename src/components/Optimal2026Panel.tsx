@@ -410,22 +410,25 @@ function PortfolioRow({
   );
 }
 
-function PortfolioTotalRow({ posValue, cash, accountTotal }: { posValue: number; cash: number | null; accountTotal: number | null }) {
+function PortfolioTotalRow({ posValue, cash, accountTotal, approx }: { posValue: number; cash: number | null; accountTotal: number | null; approx?: boolean }) {
   const fmtM = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const total = accountTotal ?? (cash != null ? posValue + cash : null);
-  const investedPct = total ? (posValue / total) * 100 : null;
+  const investedPct = total && total > 0 ? Math.min(100, (posValue / total) * 100) : null;
   return (
-    <div style={{
-      display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
-      padding: "7px 12px",
-      borderTop: "1px solid rgba(245,158,11,0.2)",
-      background: "rgba(245,158,11,0.05)",
-      fontSize: 10, fontWeight: 800,
-    }}>
-      <span style={{ color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Total</span>
+    <div
+      title="Importes ≈ mezcla EUR/USD sin conversión FX"
+      style={{
+        display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
+        padding: "7px 12px",
+        borderTop: "1px solid rgba(245,158,11,0.2)",
+        background: "rgba(245,158,11,0.05)",
+        fontSize: 10, fontWeight: 800,
+      }}
+    >
+      <span style={{ color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Total invertido</span>
       <span />
       <span />
-      <span style={{ ...cellNum, color: TEXT }}>{fmtM(posValue)}</span>
+      <span style={{ ...cellNum, color: TEXT }}>{approx ? "≈" : ""}{fmtM(posValue)}</span>
       <span />
       <span style={{ textAlign: "right", fontSize: 8.5, color: "#94a3b8", fontWeight: 600 }}>
         {cash != null && <>Efectivo <span style={{ color: GREEN, fontWeight: 800 }}>{fmtM(cash)}</span></>}
@@ -462,17 +465,25 @@ function AlignmentSummary({
   }, [portfolio.loadedAt, portfolio.cashBalance]);
 
   const posValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  // Guard defensivo (además del de finishLoad, por si hay datos viejos en localStorage):
+  // accountTotal < posiciones es incoherente → ignorarlo.
+  const acctTotal = portfolio.accountTotal != null && portfolio.accountTotal >= posValue * 0.98
+    ? portfolio.accountTotal : null;
   // Efectivo: el de la foto (auto) → o derivado de cuenta total − invertido → o manual
   const cash = portfolio.cashBalance
-    ?? (portfolio.accountTotal != null && posValue > 0 ? Math.max(0, Math.round(portfolio.accountTotal - posValue)) : null);
+    ?? (acctTotal != null && posValue > 0 ? Math.max(0, Math.round(acctTotal - posValue)) : null);
   const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  // AUDIT FIX: el ✎ ponía cashBalance=null, pero con accountTotal el cash se re-derivaba
+  // y el formulario nunca aparecía — el botón quedaba muerto. Estado de edición explícito.
+  const [editing, setEditing] = useState(false);
 
   const saveCash = () => {
     const v = parseFloat(cashInput.replace(",", "."));
     onUpdate({ ...portfolio, cashBalance: isFinite(v) && v >= 0 ? v : null });
+    setEditing(false);
   };
 
-  if (cash == null || posValue <= 0) {
+  if (editing || cash == null || posValue <= 0) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderBottom: "1px solid rgba(245,158,11,0.1)", background: "rgba(245,158,11,0.02)" }}>
         <span style={{ fontSize: 9, color: "#94a3b8", flex: 1 }}>
@@ -499,7 +510,7 @@ function AlignmentSummary({
   }
 
   // Total de cuenta: el leído de la foto manda (es el oficial de IBK); si no, invertido + efectivo
-  const total = portfolio.accountTotal ?? (posValue + cash);
+  const total = acctTotal ?? (posValue + cash);
   const investedPct = (posValue / total) * 100;
   const sysPicks = items.filter(it => it.allocationPct > 0);
   const heldSyms = new Set(portfolio.positions.map(p => p.symbol.toUpperCase()));
@@ -510,7 +521,7 @@ function AlignmentSummary({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
         <span style={{ fontSize: 9, fontWeight: 800, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em" }}>⚖ Alineación con SUPREME</span>
         <span style={{ fontSize: 9, color: GRAY }}>
-          Cuenta {portfolio.accountTotal != null ? "📷" : "≈"} <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
+          Cuenta {acctTotal != null ? "📷" : "≈"} <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
         </span>
         <span style={{ fontSize: 9, color: GRAY }}>
           Pendiente de invertir: <span style={{ color: GREEN, fontWeight: 700 }}>{fmtMoney(cash)}</span>
@@ -524,8 +535,8 @@ function AlignmentSummary({
         </span>
         <span style={{ flex: 1 }} />
         <button
-          onClick={() => onUpdate({ ...portfolio, cashBalance: null })}
-          title="Cambiar el efectivo"
+          onClick={() => setEditing(true)}
+          title="Corregir el efectivo manualmente"
           style={{ fontSize: 8, color: GRAY, background: "transparent", border: "1px solid rgba(100,116,139,0.25)", borderRadius: 3, padding: "1px 5px", cursor: "pointer" }}
         >
           ✎ {fmtMoney(cash)}
@@ -680,13 +691,14 @@ function PortfolioSection({
   onUpdate: (p: IBKPortfolio) => void;
 }) {
   const isPhoto = portfolio.source === "IBK_PHOTO";
-  // Con origen FOTO los números del OCR son aproximados: solo mostrar totales si TODAS
-  // las posiciones traen marketValue plausible (si no, el "Valor total" sería basura).
-  const allHaveValue = portfolio.positions.every(p => p.marketValue != null && p.marketValue >= 10);
-  const totalValue = (!isPhoto || allHaveValue)
-    ? portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0)
-    : 0;
+  // AUDIT FIX (26-jul): total ÚNICO sin gate — el antiguo allHaveValue ponía el TOTAL a 0
+  // si una posición perdía el precio en OCR, contradiciendo a la Alineación (que sumaba sin
+  // gate) dos secciones más arriba. Ahora TODAS las secciones usan la MISMA suma; si falta
+  // algún valor, el símbolo "≈" ya comunica que es aproximado.
+  const totalValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  const someMissingValue = portfolio.positions.some(p => p.marketValue == null);
   const totalPnL = portfolio.positions.reduce((s, p) => s + (p.unrealizedPnL ?? 0), 0);
+  void totalPnL;
 
   return (
     <div style={{
@@ -714,16 +726,8 @@ function PortfolioSection({
             📷 OCR — verifica los datos
           </span>
         )}
-        {totalValue > 0 && (
-          <span style={{ fontSize: 9, color: "#94a3b8" }}>
-            Valor: <span style={{ color: TEXT, fontWeight: 700 }}>{totalValue.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}€/$ </span>
-          </span>
-        )}
-        {totalPnL !== 0 && (
-          <span style={{ fontSize: 9, fontWeight: 700, color: pctColor(totalPnL) }}>
-            P&L: {totalPnL >= 0 ? "+" : ""}{totalPnL.toFixed(0)}
-          </span>
-        )}
+        {/* AUDIT FIX: los chips "Valor:"/"P&L:" duplicaban (y podían contradecir) la fila
+            TOTAL de la tabla — eliminados; la fila TOTAL es la única fuente. */}
         <span style={{ flex: 1 }} />
         <button
           onClick={onClear}
@@ -743,25 +747,35 @@ function PortfolioSection({
       {/* Alineación con el sistema */}
       <AlignmentSummary portfolio={portfolio} items={items} deployPct={deployPct} onUpdate={onUpdate} isPricesStale={isPricesStale} />
 
-      {/* Tabla de posiciones: cabecera + filas + TOTAL */}
-      <PortfolioHeaderRow />
-      {portfolio.positions.map((pos) => {
-        const matched = items.find(it => it.symbol.split(".")[0].toUpperCase() === pos.symbol.toUpperCase());
+      {/* Tabla de posiciones: cabecera + filas + TOTAL.
+          AUDIT FIX (HIGH): en móvil (375px) la rejilla desbordaba y amputaba la columna
+          Señal·Stop — contenedor con scroll horizontal propio (patrón terminal) y ancho
+          mínimo para que las columnas nunca se aplasten. */}
+      {(() => {
+        const acct = portfolio.accountTotal != null && portfolio.accountTotal >= totalValue * 0.98
+          ? portfolio.accountTotal : null;
+        const cash = portfolio.cashBalance ?? (acct != null ? Math.max(0, Math.round(acct - totalValue)) : null);
         return (
-          <PortfolioRow
-            key={pos.symbol}
-            pos={pos}
-            matchedItem={matched}
-            isPricesStale={isPricesStale}
-            accountTotal={portfolio.accountTotal ?? (portfolio.cashBalance != null ? totalValue + portfolio.cashBalance : null)}
-          />
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: 470 }}>
+              <PortfolioHeaderRow />
+              {portfolio.positions.map((pos) => {
+                const matched = items.find(it => it.symbol.split(".")[0].toUpperCase() === pos.symbol.toUpperCase());
+                return (
+                  <PortfolioRow
+                    key={pos.symbol}
+                    pos={pos}
+                    matchedItem={matched}
+                    isPricesStale={isPricesStale}
+                    accountTotal={acct ?? (cash != null ? totalValue + cash : null)}
+                  />
+                );
+              })}
+              <PortfolioTotalRow posValue={totalValue} cash={cash} accountTotal={acct} approx={someMissingValue} />
+            </div>
+          </div>
         );
-      })}
-      <PortfolioTotalRow
-        posValue={totalValue}
-        cash={portfolio.cashBalance ?? (portfolio.accountTotal != null ? Math.max(0, Math.round(portfolio.accountTotal - totalValue)) : null)}
-        accountTotal={portfolio.accountTotal ?? null}
-      />
+      })()}
     </div>
   );
 }
@@ -906,15 +920,22 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
     // anterior (tras "Limpiar" quedaba el importe viejo). El efectivo se lee AUTO de la
     // propia foto ("Total efectivo") o, si no aparece, se deriva de cuenta − invertido.
     const posValue = positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+    // AUDIT FIX: un accountTotal MENOR que la suma de posiciones es imposible (OCR malo:
+    // dígito perdido u otro número colado) — descartarlo ANTES de que genere "Pendiente 0",
+    // porcentajes >100% u órdenes "Reducir" falsas. Margen 2% por redondeos/FX.
+    const accountTotal =
+      summary?.accountTotal != null && summary.accountTotal >= posValue * 0.98
+        ? summary.accountTotal
+        : null;
     const cashBalance =
       summary?.totalCash
-      ?? (summary?.accountTotal != null && posValue > 0 ? Math.max(0, Math.round(summary.accountTotal - posValue)) : null);
+      ?? (accountTotal != null && posValue > 0 ? Math.max(0, Math.round(accountTotal - posValue)) : null);
     const portfolio: IBKPortfolio = {
       positions,
       loadedAt: new Date().toISOString(),
       source,
       cashBalance,
-      accountTotal: summary?.accountTotal ?? null,
+      accountTotal,
     };
     savePortfolioToStorage(portfolio);
     onLoad(portfolio);

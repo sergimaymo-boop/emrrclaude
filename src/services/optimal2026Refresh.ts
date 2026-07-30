@@ -398,10 +398,23 @@ export interface IBKAccountSummary {
   totalCash: number | null;
 }
 
-function parseKNumber(s: string): number | null {
-  const m = s.replace(/,/g, "").match(/([\d]+(?:\.\d+)?)\s*([KM])?/i);
+// AUDIT FIX (26-jul): locale-aware — "16,9K" español y "16.9K" US son ambos 16.900;
+// "16.857" (miles europeos) es 16.857, no 17. Regla: el ÚLTIMO separador seguido de
+// 1-2 dígitos es decimal; separadores seguidos de 3 dígitos son de miles.
+function parseKNumber(raw: string): number | null {
+  const m = raw.trim().match(/^([\d.,]+)\s*([KM])?$/i);
   if (!m) return null;
-  let v = parseFloat(m[1]);
+  let num = m[1];
+  const lastSep = Math.max(num.lastIndexOf("."), num.lastIndexOf(","));
+  if (lastSep >= 0) {
+    const tail = num.slice(lastSep + 1);
+    if (tail.length >= 1 && tail.length <= 2 && !tail.includes(".") && !tail.includes(",")) {
+      num = `${num.slice(0, lastSep).replace(/[.,]/g, "")}.${tail}`;
+    } else {
+      num = num.replace(/[.,]/g, "");
+    }
+  }
+  let v = parseFloat(num);
   if (/^k$/i.test(m[2] ?? "")) v *= 1_000;
   if (/^m$/i.test(m[2] ?? "")) v *= 1_000_000;
   return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
