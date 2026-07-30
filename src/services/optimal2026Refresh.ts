@@ -57,10 +57,11 @@ export interface Optimal2026Result {
 
 export interface IBKPosition {
   symbol: string;       // ticker sin sufijo (e.g., "NVDA", "ASML")
+  name?: string | null; // nombre de la empresa (capturado de la línea bajo el ticker en la app IBK)
   quantity: number;     // número de acciones
   avgCost: number | null;      // precio medio de compra
   currentPrice: number | null; // precio al exportar (puede actualizarse con vivo)
-  marketValue: number | null;  // valor de mercado
+  marketValue: number | null;  // valor de mercado = importe invertido en la posición
   unrealizedPnL: number | null;
   currency: string;     // "USD" | "EUR" | etc.
 }
@@ -69,7 +70,8 @@ export interface IBKPortfolio {
   positions: IBKPosition[];
   loadedAt: string;     // ISO timestamp de la carga
   source: "IBK_CSV" | "IBK_PHOTO" | "MANUAL"; // IBK_PHOTO = OCR (números aproximados, verificar)
-  cashBalance?: number | null; // efectivo disponible (lo introduce el usuario) → permite calcular pesos reales y alineación con SUPREME
+  cashBalance?: number | null;  // efectivo pendiente de invertir — AUTO desde la foto ("Total efectivo") o manual
+  accountTotal?: number | null; // valor TOTAL de la cuenta — AUTO desde la cabecera de la foto de IBK
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
@@ -317,8 +319,17 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 
     // Regla de FRASE: si tras el candidato viene OTRA palabra en mayúsculas que no es
     // un código de bolsa, esto es un nombre de empresa ("PALO ALTO…"), no una posición.
+    // BONUS (26-jul): esa línea de nombre se CAPTURA y se asigna a la posición anterior
+    // — así la tabla muestra "PST · Poste Italiane SPA" leído de la propia foto.
     const next = tokens[symIdx + 1];
-    if (next && /^[A-Z]{2,12}$/.test(next) && !OCR_EXCHANGES.has(next)) continue;
+    if (next && /^[A-Z]{2,12}$/.test(next) && !OCR_EXCHANGES.has(next)) {
+      const prevPos = positions[positions.length - 1];
+      if (prevPos && !prevPos.name) {
+        const nameWords = tokens.slice(symIdx).filter((t) => /^[A-ZÀ-Ü&.]{2,}$/.test(t));
+        if (nameWords.length > 0) prevPos.name = nameWords.join(" ");
+      }
+      continue;
+    }
 
     // Números con su formato textual: decimal explícito = precio; entero = cantidad.
     // "26.30-26.31" (rango del día) se separa en dos números para la regla del rango.
@@ -377,14 +388,64 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 }
 
 /**
+ * Resumen de CUENTA leído de la cabecera de la foto de la app IBK:
+ *   • accountTotal — el número grande bajo "Cartera" (ej. "22,245")
+ *   • totalCash    — la línea "Total efectivo 16.9K" (o suma de "EUR/USD Efectivo")
+ * Permite calcular lo PENDIENTE DE INVERTIR sin que Sergi teclee nada.
+ */
+export interface IBKAccountSummary {
+  accountTotal: number | null;
+  totalCash: number | null;
+}
+
+function parseKNumber(s: string): number | null {
+  const m = s.replace(/,/g, "").match(/([\d]+(?:\.\d+)?)\s*([KM])?/i);
+  if (!m) return null;
+  let v = parseFloat(m[1]);
+  if (/^k$/i.test(m[2] ?? "")) v *= 1_000;
+  if (/^m$/i.test(m[2] ?? "")) v *= 1_000_000;
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+}
+
+export function parseIBKAccountSummary(text: string): IBKAccountSummary {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  let accountTotal: number | null = null;
+  let totalCash: number | null = null;
+  const perCurrencyCash: number[] = [];
+
+  for (const l of lines) {
+    const mTotal = l.match(/total\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
+    if (mTotal && totalCash == null) totalCash = parseKNumber(mTotal[1]);
+    const mCur = l.match(/^(?:EUR|USD|GBP|CHF)\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
+    if (mCur) { const v = parseKNumber(mCur[1]); if (v != null) perCurrencyCash.push(v); }
+  }
+  if (totalCash == null && perCurrencyCash.length > 0) {
+    totalCash = perCurrencyCash.reduce((a, b) => a + b, 0);
+  }
+
+  // Total de cuenta: número grande con separador de miles ("22,245") en las primeras
+  // líneas tras "Cartera"/"Portfolio" (cabecera de la app IBK).
+  const anchor = lines.findIndex((l) => /^(cartera|portfolio)$/i.test(l));
+  const from = anchor >= 0 ? anchor : 0;
+  for (let i = from; i < Math.min(lines.length, from + 8); i++) {
+    const m = lines[i].match(/^([\d]{1,3}(?:[.,]\d{3})+)$/);
+    if (m) {
+      const v = parseFloat(m[1].replace(/[.,]/g, ""));
+      if (Number.isFinite(v) && v >= 1000 && v < 100_000_000) { accountTotal = v; break; }
+    }
+  }
+  return { accountTotal, totalCash };
+}
+
+/**
  * Lee una FOTO (captura de pantalla del carrete del iPhone, Archivos, etc.)
  * con OCR (tesseract.js, lazy-loaded — no infla el bundle principal) y
- * extrae las posiciones. Todo en el dispositivo, nada se sube al servidor.
+ * extrae posiciones + resumen de cuenta. Todo en el dispositivo, nada se sube.
  */
 export async function parseImagePortfolio(
   file: File,
   onProgress?: (pct: number) => void,
-): Promise<IBKPosition[]> {
+): Promise<{ positions: IBKPosition[]; summary: IBKAccountSummary }> {
   const Tesseract = await import("tesseract.js");
   const result = await Tesseract.recognize(file, "eng", {
     logger: (m: { status: string; progress: number }) => {
@@ -393,7 +454,10 @@ export async function parseImagePortfolio(
       }
     },
   });
-  return parseOCRPortfolio(result.data.text);
+  return {
+    positions: parseOCRPortfolio(result.data.text),
+    summary: parseIBKAccountSummary(result.data.text),
+  };
 }
 
 export function initialOptimal2026(): Optimal2026Result {

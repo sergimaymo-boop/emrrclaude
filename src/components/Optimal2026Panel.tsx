@@ -314,71 +314,124 @@ function ItemRow({
 
 // ── Portfolio section ─────────────────────────────────────────────────────────
 
+// ── Tabla de cartera estilo terminal (rediseño 26-jul) ────────────────────────
+// Columnas fijas alineadas: TICKER+NOMBRE · ACCIONES · PRECIO · INVERTIDO · P&L · SEÑAL
+const PORT_GRID = "minmax(86px,1.3fr) 52px 64px 72px 60px minmax(96px,1fr)";
+const cellNum = { textAlign: "right", fontVariantNumeric: "tabular-nums" } as const;
+
+function PortfolioHeaderRow() {
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
+      padding: "4px 12px", borderBottom: "1px solid rgba(245,158,11,0.15)",
+      fontSize: 7.5, fontWeight: 800, color: GRAY, textTransform: "uppercase", letterSpacing: "0.06em",
+    }}>
+      <span>Ticker · Nombre</span>
+      <span style={cellNum}>Acciones</span>
+      <span style={cellNum}>Precio</span>
+      <span style={cellNum}>Invertido</span>
+      <span style={cellNum}>P&L</span>
+      <span style={{ textAlign: "right" }}>Señal · Stop</span>
+    </div>
+  );
+}
+
 function PortfolioRow({
   pos,
   matchedItem,
   isPricesStale,
+  accountTotal,
 }: {
   pos: IBKPosition;
   matchedItem: Optimal2026ItemWithSignal | undefined;
   isPricesStale?: boolean;
+  accountTotal?: number | null;
 }) {
-  const pnlPct = pos.avgCost && pos.currentPrice ? ((pos.currentPrice / pos.avgCost) - 1) * 100 : null;
   const inStrategy = !!matchedItem;
+  const cur = pos.currency === "USD" ? "$" : "€";
+  const name = pos.name ?? matchedItem?.name ?? null;
+  const weightPct = accountTotal && pos.marketValue != null ? (pos.marketValue / accountTotal) * 100 : null;
 
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 8,
+      display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
       padding: "6px 12px",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
       background: inStrategy ? "rgba(245,158,11,0.03)" : "transparent",
     }}>
-      {/* Ticker */}
-      <span style={{ fontSize: 11, fontWeight: 800, color: inStrategy ? ACCENT : TEXT, minWidth: 50 }}>{pos.symbol}</span>
-      {/* Qty */}
-      <span style={{ fontSize: 10, color: GRAY, minWidth: 40 }}>{pos.quantity % 1 === 0 ? pos.quantity.toFixed(0) : pos.quantity.toFixed(2)} acc</span>
-      {/* Avg cost */}
-      {pos.avgCost != null && (
-        <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 60, fontVariantNumeric: "tabular-nums" }}>
-          {pos.currency === "USD" ? "$" : "€"}{pos.avgCost.toFixed(2)}
-        </span>
-      )}
+      {/* Ticker + nombre + % de la cuenta */}
+      <span style={{ minWidth: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: inStrategy ? ACCENT : TEXT }}>{pos.symbol}</span>
+        {weightPct != null && (
+          <span style={{ fontSize: 8, color: GRAY, marginLeft: 5 }}>{weightPct.toFixed(1)}%</span>
+        )}
+        {name && (
+          <div style={{ fontSize: 8, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {name}
+          </div>
+        )}
+      </span>
+      {/* Acciones */}
+      <span style={{ ...cellNum, fontSize: 10, color: TEXT }}>
+        {pos.quantity % 1 === 0 ? pos.quantity.toFixed(0) : pos.quantity.toFixed(2)}
+      </span>
+      {/* Precio */}
+      <span style={{ ...cellNum, fontSize: 10, color: "#94a3b8" }}>
+        {pos.currentPrice != null ? `${cur}${pos.currentPrice.toFixed(2)}` : "—"}
+      </span>
+      {/* Invertido (valor de mercado) */}
+      <span style={{ ...cellNum, fontSize: 10.5, fontWeight: 700, color: TEXT }}>
+        {pos.marketValue != null ? `${cur}${pos.marketValue.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}` : "—"}
+      </span>
       {/* P&L */}
-      {pnlPct != null && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: pctColor(pnlPct), minWidth: 56, fontVariantNumeric: "tabular-nums" }}>
-          {fmtPct(pnlPct)}
-        </span>
-      )}
-      {pos.unrealizedPnL != null && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: pctColor(pos.unrealizedPnL), fontVariantNumeric: "tabular-nums" }}>
-          {pos.unrealizedPnL >= 0 ? "+" : ""}{pos.unrealizedPnL.toFixed(0)}{pos.currency === "USD" ? "$" : "€"}
-        </span>
-      )}
-
-      <span style={{ flex: 1 }} />
-
-      {/* In strategy badge */}
-      {inStrategy ? (
-        <span style={{ display: "flex", alignItems: "center", gap: 6, opacity: isPricesStale ? 0.4 : 1 }} title={isPricesStale ? "⚠ Señal no fiable — precios no en tiempo real" : undefined}>
-          <ActionBadge action={isPricesStale ? "HOLD" : matchedItem.action} />
-          <span style={{ fontSize: 9, color: "#94a3b8" }}>
-            Stop: <span style={{ color: isPricesStale ? GRAY : RED, fontWeight: 700 }}>
+      <span style={{ ...cellNum, fontSize: 10, fontWeight: 700, color: pos.unrealizedPnL != null ? pctColor(pos.unrealizedPnL) : GRAY }}>
+        {pos.unrealizedPnL != null ? `${pos.unrealizedPnL >= 0 ? "+" : ""}${pos.unrealizedPnL.toFixed(0)}` : "—"}
+      </span>
+      {/* Señal + stop */}
+      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, opacity: inStrategy && isPricesStale ? 0.4 : 1 }}>
+        {inStrategy ? (
+          <>
+            <ActionBadge action={isPricesStale ? "HOLD" : matchedItem.action} />
+            <span style={{ fontSize: 8.5, color: isPricesStale ? GRAY : RED, fontWeight: 700 }}>
               {(() => {
                 const v = !isPricesStale && matchedItem.action !== "HOLD" ? matchedItem.adjustedStopPct : matchedItem.stopPct;
-                return v != null ? `${v}%` : "—";
+                return v != null ? `-${v}%` : "—";
               })()}
             </span>
-            {!isPricesStale && matchedItem.adjustedStopPrice != null && matchedItem.action !== "HOLD" && (
-              <span style={{ color: GRAY }}> @ {matchedItem.adjustedStopPrice.toFixed(2)}</span>
-            )}
-            {isPricesStale && <span style={{ color: RED, marginLeft: 4 }}>⚠</span>}
+            {isPricesStale && <span style={{ color: RED, fontSize: 9 }}>⚠</span>}
+          </>
+        ) : (
+          <span style={{ fontSize: 8, color: "#475569", background: "rgba(255,255,255,0.04)", borderRadius: 3, padding: "2px 6px", whiteSpace: "nowrap" }}>
+            Fuera del ranking
           </span>
-        </span>
-      ) : (
-        <span style={{ fontSize: 8, color: "#475569", background: "rgba(255,255,255,0.04)", borderRadius: 3, padding: "2px 6px" }}>
-          Fuera del ranking
-        </span>
-      )}
+        )}
+      </span>
+    </div>
+  );
+}
+
+function PortfolioTotalRow({ posValue, cash, accountTotal }: { posValue: number; cash: number | null; accountTotal: number | null }) {
+  const fmtM = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const total = accountTotal ?? (cash != null ? posValue + cash : null);
+  const investedPct = total ? (posValue / total) * 100 : null;
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
+      padding: "7px 12px",
+      borderTop: "1px solid rgba(245,158,11,0.2)",
+      background: "rgba(245,158,11,0.05)",
+      fontSize: 10, fontWeight: 800,
+    }}>
+      <span style={{ color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Total</span>
+      <span />
+      <span />
+      <span style={{ ...cellNum, color: TEXT }}>{fmtM(posValue)}</span>
+      <span />
+      <span style={{ textAlign: "right", fontSize: 8.5, color: "#94a3b8", fontWeight: 600 }}>
+        {cash != null && <>Efectivo <span style={{ color: GREEN, fontWeight: 800 }}>{fmtM(cash)}</span></>}
+        {total != null && <> · Cuenta <span style={{ color: TEXT, fontWeight: 800 }}>{fmtM(total)}</span></>}
+        {investedPct != null && <> · <span style={{ color: ACCENT, fontWeight: 800 }}>{investedPct.toFixed(0)}% inv.</span></>}
+      </span>
     </div>
   );
 }
@@ -402,8 +455,16 @@ function AlignmentSummary({
   isPricesStale?: boolean;
 }) {
   const [cashInput, setCashInput] = useState<string>(portfolio.cashBalance != null ? String(portfolio.cashBalance) : "");
+  // BUG FIX (26-jul): el input guardaba el efectivo de la carga ANTERIOR aunque se hiciera
+  // Limpiar + nueva carga (useState solo inicializa al montar). Sincronizar con cada carga.
+  useEffect(() => {
+    setCashInput(portfolio.cashBalance != null ? String(portfolio.cashBalance) : "");
+  }, [portfolio.loadedAt, portfolio.cashBalance]);
+
   const posValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
-  const cash = portfolio.cashBalance;
+  // Efectivo: el de la foto (auto) → o derivado de cuenta total − invertido → o manual
+  const cash = portfolio.cashBalance
+    ?? (portfolio.accountTotal != null && posValue > 0 ? Math.max(0, Math.round(portfolio.accountTotal - posValue)) : null);
   const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
   const saveCash = () => {
@@ -437,7 +498,8 @@ function AlignmentSummary({
     );
   }
 
-  const total = posValue + cash;
+  // Total de cuenta: el leído de la foto manda (es el oficial de IBK); si no, invertido + efectivo
+  const total = portfolio.accountTotal ?? (posValue + cash);
   const investedPct = (posValue / total) * 100;
   const sysPicks = items.filter(it => it.allocationPct > 0);
   const heldSyms = new Set(portfolio.positions.map(p => p.symbol.toUpperCase()));
@@ -448,7 +510,10 @@ function AlignmentSummary({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
         <span style={{ fontSize: 9, fontWeight: 800, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em" }}>⚖ Alineación con SUPREME</span>
         <span style={{ fontSize: 9, color: GRAY }}>
-          Cuenta ≈ <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
+          Cuenta {portfolio.accountTotal != null ? "📷" : "≈"} <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
+        </span>
+        <span style={{ fontSize: 9, color: GRAY }}>
+          Pendiente de invertir: <span style={{ color: GREEN, fontWeight: 700 }}>{fmtMoney(cash)}</span>
         </span>
         <span style={{
           fontSize: 8, fontWeight: 700, borderRadius: 3, padding: "1px 5px",
@@ -678,11 +743,25 @@ function PortfolioSection({
       {/* Alineación con el sistema */}
       <AlignmentSummary portfolio={portfolio} items={items} deployPct={deployPct} onUpdate={onUpdate} isPricesStale={isPricesStale} />
 
-      {/* Portfolio rows */}
+      {/* Tabla de posiciones: cabecera + filas + TOTAL */}
+      <PortfolioHeaderRow />
       {portfolio.positions.map((pos) => {
         const matched = items.find(it => it.symbol.split(".")[0].toUpperCase() === pos.symbol.toUpperCase());
-        return <PortfolioRow key={pos.symbol} pos={pos} matchedItem={matched} isPricesStale={isPricesStale} />;
+        return (
+          <PortfolioRow
+            key={pos.symbol}
+            pos={pos}
+            matchedItem={matched}
+            isPricesStale={isPricesStale}
+            accountTotal={portfolio.accountTotal ?? (portfolio.cashBalance != null ? totalValue + portfolio.cashBalance : null)}
+          />
+        );
       })}
+      <PortfolioTotalRow
+        posValue={totalValue}
+        cash={portfolio.cashBalance ?? (portfolio.accountTotal != null ? Math.max(0, Math.round(portfolio.accountTotal - totalValue)) : null)}
+        accountTotal={portfolio.accountTotal ?? null}
+      />
     </div>
   );
 }
@@ -810,19 +889,39 @@ function SemiActiveComparison() {
 
 // ── Portfolio upload ──────────────────────────────────────────────────────────
 
-function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
+function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio) => void; onScanAfterLoad?: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [ocrPct, setOcrPct] = useState<number | null>(null); // null = sin OCR en curso
 
-  const finishLoad = useCallback((positions: IBKPosition[], source: IBKPortfolio["source"]) => {
+  const finishLoad = useCallback((
+    positions: IBKPosition[],
+    source: IBKPortfolio["source"],
+    summary?: { accountTotal: number | null; totalCash: number | null },
+  ) => {
     if (positions.length === 0) {
       alert("No se encontraron posiciones.\n\n• Foto: usa una captura de pantalla nítida de la lista de posiciones de IBK.\n• CSV: exporta desde IBK → Informes → Estado de cuenta.");
       return;
     }
-    const portfolio: IBKPortfolio = { positions, loadedAt: new Date().toISOString(), source };
+    // BUG FIX (26-jul): objeto SIEMPRE nuevo — nunca heredar el efectivo de una carga
+    // anterior (tras "Limpiar" quedaba el importe viejo). El efectivo se lee AUTO de la
+    // propia foto ("Total efectivo") o, si no aparece, se deriva de cuenta − invertido.
+    const posValue = positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+    const cashBalance =
+      summary?.totalCash
+      ?? (summary?.accountTotal != null && posValue > 0 ? Math.max(0, Math.round(summary.accountTotal - posValue)) : null);
+    const portfolio: IBKPortfolio = {
+      positions,
+      loadedAt: new Date().toISOString(),
+      source,
+      cashBalance,
+      accountTotal: summary?.accountTotal ?? null,
+    };
     savePortfolioToStorage(portfolio);
     onLoad(portfolio);
-  }, [onLoad]);
+    // SCAN PREVIO AUTOMÁTICO (petición 26-jul): al cargar la cartera se lanza un scan
+    // fresco para que los % objetivo del plan salgan de datos actuales, no de un ranking viejo.
+    onScanAfterLoad?.();
+  }, [onLoad, onScanAfterLoad]);
 
   // MULTI-ARCHIVO (25-jul, petición de Sergi): la cartera de IBK a veces no cabe en una
   // captura — se pueden seleccionar VARIAS fotos (y/o CSV) a la vez desde carrete/Archivos.
@@ -846,6 +945,7 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     let anyPhoto = false;
     const all: IBKPosition[] = [];
     const failed: string[] = [];
+    let summary: { accountTotal: number | null; totalCash: number | null } = { accountTotal: null, totalCash: null };
     if (nImages > 0) setOcrPct(0);
     try {
       for (const f of files) {
@@ -853,13 +953,16 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
           anyPhoto = true;
           try {
             // Progreso agregado entre todas las fotos: (hechas + progreso actual) / total
-            const positions = await parseImagePortfolio(f, (pct) =>
+            const res = await parseImagePortfolio(f, (pct) =>
               setOcrPct(Math.round(((imagesDone + pct / 100) / nImages) * 100)),
             );
             // AUDIT FIX: una foto borrosa NO lanza — el OCR devuelve texto basura y el parser
             // 0 posiciones. Sin esto, se cargaba MEDIA cartera en silencio como si fuera completa.
-            if (positions.length === 0) failed.push(f.name);
-            all.push(...positions);
+            if (res.positions.length === 0) failed.push(f.name);
+            all.push(...res.positions);
+            // El resumen de cuenta (total + efectivo) suele estar en la PRIMERA captura
+            if (summary.accountTotal == null && res.summary.accountTotal != null) summary.accountTotal = res.summary.accountTotal;
+            if (summary.totalCash == null && res.summary.totalCash != null) summary.totalCash = res.summary.totalCash;
           } catch { failed.push(f.name); }
           imagesDone++;
         } else {
@@ -881,7 +984,7 @@ function PortfolioUpload({ onLoad }: { onLoad: (p: IBKPortfolio) => void }) {
     if (failed.length > 0) {
       alert(`Aviso: no se pudo leer ${failed.join(", ")} — se cargó el resto (${merged.size} posiciones).`);
     }
-    finishLoad([...merged.values()], anyPhoto ? "IBK_PHOTO" : "IBK_CSV");
+    finishLoad([...merged.values()], anyPhoto ? "IBK_PHOTO" : "IBK_CSV", summary);
   }, [finishLoad]);
 
   const busy = ocrPct !== null;
@@ -1195,7 +1298,7 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
       {portfolio && portfolio.positions.length > 0 ? (
         <PortfolioSection portfolio={portfolio} items={items} onClear={handlePortfolioClear} isPricesStale={isPricesStale} deployPct={deployPct} onUpdate={handlePortfolioUpdate} />
       ) : (
-        <PortfolioUpload onLoad={handlePortfolioLoad} />
+        <PortfolioUpload onLoad={handlePortfolioLoad} onScanAfterLoad={onScan} />
       )}
 
       {/* ── Footer: OOS + semi-active comparison + disclaimer ── */}
