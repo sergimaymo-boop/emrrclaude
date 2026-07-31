@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { Optimal2026Result, Optimal2026Item, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
-import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage, loadPortfolioHistory } from "../services/optimal2026Refresh";
+import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage, clearPortfolioHistory, loadPortfolioHistory } from "../services/optimal2026Refresh";
 import { enrichWithIntradaySignals, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 
@@ -1150,6 +1150,7 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
   }, []);
   const handlePortfolioClear = useCallback(() => {
     clearPortfolioFromStorage();
+    clearPortfolioHistory(); // limpieza TOTAL: sin restos de sesiones anteriores (fix 31-jul)
     setPortfolio(null);
   }, []);
 

@@ -141,6 +141,12 @@ export function clearPortfolioFromStorage(): void {
   try { localStorage.removeItem(IBK_STORAGE_KEY); } catch { /* ignore */ }
 }
 
+// "Limpiar" = borrado COMPLETO (31-jul): también el histórico de aprendizaje —
+// las lecturas OCR malas acumuladas contaminaban el "P&L desde la foto anterior".
+export function clearPortfolioHistory(): void {
+  try { localStorage.removeItem(IBK_HISTORY_KEY); } catch { /* ignore */ }
+}
+
 /**
  * Parsea un CSV exportado de Interactive Brokers.
  * Soporta 2 formatos:
@@ -277,6 +283,10 @@ const OCR_NOT_TICKERS = new Set([
   "SPA", "INC", "CORP", "LTD", "PLC", "GROUP", "GRP", "HOLDING", "HOLDINGS",
   "CLASS", "SHS", "ADR", "NV", "SE", "AG", "SA", "AB", "ASA", "OYJ", "CO",
   "TECH", "TECHNOLOGIES", "TECHNOLOGY", "NETWORKS", "SYSTEMS", "THE", "AND",
+  // Palabras de ÓRDENES (bug 31-jul: la captura incluía la zona de órdenes pendientes
+  // y "TRAIL" se parseó como ticker fantasma con importes de la orden)
+  "TRAIL", "VENTA", "COMPRA", "BUY", "SELL", "LMT", "MKT", "STP", "GTC",
+  "ORDEN", "ORDENES", "VLR", "MRCD",
 ]);
 
 /**
@@ -303,11 +313,41 @@ const OCR_EXCHANGES = new Set([
   "VENTURE", "PINK", "MEXI", "BM", "SMART",
 ]);
 
+// ── Mapa de columnas por CABECERA (fix definitivo 31-jul) ─────────────────────
+// La app de IBK permite reordenar columnas (y cambió de "Último·Posición·PyG" a
+// "PyG·Posición·Último"), lo que rompía cualquier heurística por formato: el PyG
+// de HUM (14.70) se leía como precio, y el PyG negativo de MU (−101.98) en primera
+// posición hacía descartar la posición entera. Solución: leer la FILA DE CABECERA
+// de la propia foto ("Instrumento PyG Posición Último Vlr mrcd") y asignar cada
+// número de las filas a su columna real. Funciona con CUALQUIER orden.
+const OCR_COL_MATCHERS: Array<[string, RegExp]> = [
+  ["pnl", /^(pyg|p&l|pnl)/i],
+  ["qty", /^(posici|position|pos$|cantidad|qty)/i],
+  ["price", /^(ultimo|último|last|precio|price)/i],
+  ["value", /^(vlr|valor|mrcd|market|value)/i],
+];
+
+function detectColumnMap(lines: string[]): string[] | null {
+  for (const line of lines) {
+    if (!/instrument/i.test(line)) continue;
+    const cols: string[] = [];
+    for (const tok of line.split(/\s+/)) {
+      for (const [key, re] of OCR_COL_MATCHERS) {
+        if (!cols.includes(key) && re.test(tok)) { cols.push(key); break; }
+      }
+    }
+    // Un mapa útil necesita al menos cantidad + (precio o valor)
+    if (cols.includes("qty") && (cols.includes("price") || cols.includes("value"))) return cols;
+  }
+  return null;
+}
+
 export function parseOCRPortfolio(text: string): IBKPosition[] {
   const positions: IBKPosition[] = [];
   const seen = new Set<string>();
-  for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim();
+  const allLines = text.split("\n").map((l) => l.trim());
+  const colMap = detectColumnMap(allLines);
+  for (const line of allLines) {
     if (!line) continue;
     const tokens = line.split(/\s+/);
     const symIdx = tokens.findIndex(
@@ -344,10 +384,26 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
     if (rawNums.length === 0) continue;
 
     let quantity: number, currentPrice: number | null = null, unrealizedPnL: number | null = null;
+    let mappedValue: number | null = null;
     const [a, b] = [rawNums[0], rawNums[1]];
     const pnlCandidate = rawNums.length > 2 ? rawNums[2].v : null;
 
-    if (b == null) {
+    if (colMap && rawNums.length >= 2) {
+      // ── Modo CABECERA: cada número se asigna a su columna real, en orden ──
+      const get = (key: string): number | null => {
+        const idx = colMap.indexOf(key);
+        return idx >= 0 && idx < rawNums.length ? rawNums[idx].v : null;
+      };
+      const q = get("qty");
+      if (q == null || q <= 0 || q > 1_000_000) continue; // sin cantidad válida no hay posición
+      quantity = q;
+      const p = get("price");
+      currentPrice = p != null && p > 0 ? p : null;
+      const pnl = get("pnl");
+      unrealizedPnL = pnl != null && Math.abs(pnl) < 10_000_000 ? pnl : null;
+      const mv = get("value");
+      mappedValue = mv != null && mv > 0 ? mv : null;
+    } else if (b == null) {
       // Un solo número: si es decimal ("180.50" suelto en una línea de nombre) es un
       // precio huérfano, no una posición → descartar. Entero = cantidad sin precio.
       if (a.dec || a.v <= 0) continue;
@@ -379,7 +435,9 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
       quantity,
       avgCost: null, // la app IBK no muestra coste medio en esta vista — no inventarlo
       currentPrice,
-      marketValue: currentPrice != null ? Math.round(currentPrice * quantity * 100) / 100 : null,
+      // Con cabecera, la columna "Vlr mrcd" de IBK manda (exacta); si no, precio × cantidad
+      marketValue: mappedValue
+        ?? (currentPrice != null ? Math.round(currentPrice * quantity * 100) / 100 : null),
       unrealizedPnL,
       currency: "USD",
     });
