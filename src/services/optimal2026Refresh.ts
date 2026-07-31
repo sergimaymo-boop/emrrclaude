@@ -262,16 +262,26 @@ function parseSimpleCSV(csv: string): IBKPosition[] {
 // ── OCR: cartera desde FOTO (captura de pantalla de la app IBK) ───────────────
 
 function parseOcrNumber(token: string): number {
-  let t = token.replace(/[$€£+%]/g, "").trim();
+  // AUDIT FIX (31-jul): tesseract lee el "−" rojo de los PyG negativos como guion unicode
+  // (— – −); sin normalizarlo, el número se perdía y TODAS las columnas se desplazaban.
+  let t = token.replace(/[—–−]/g, "-").replace(/[$€£+%]/g, "").trim();
+  const negative = t.startsWith("-");
+  if (negative) t = t.slice(1);
   if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) {
-    // Formato europeo: 1.234,56
+    // Formato europeo: 1.234,56 (también con signo: −1.136,00)
     t = t.replace(/\./g, "").replace(",", ".");
   } else {
     // Formato US: 1,234.56
     t = t.replace(/,/g, "");
   }
-  return parseFloat(t);
+  const v = parseFloat(t);
+  return negative ? -v : v;
 }
+
+// Palabras que identifican una LÍNEA de la zona de ÓRDENES pendientes — la línea entera
+// se descarta (AUDIT FIX 31-jul: blacklistear solo el token dejaba que symIdx saltara al
+// siguiente, creando posiciones fantasma desde filas de órdenes: "VENTA TRAIL WDC 6 …").
+const OCR_ORDER_LINE_WORDS = /\b(TRAIL|VENTA|COMPRA|BUY|SELL|LMT|STP|GTC|M[OÓ]VIL)\b/;
 
 const OCR_NOT_TICKERS = new Set([
   "USD", "EUR", "GBP", "CHF", "PNL", "MKT", "VALUE", "QTY", "POS", "TOTAL",
@@ -327,9 +337,14 @@ const OCR_COL_MATCHERS: Array<[string, RegExp]> = [
   ["value", /^(vlr|valor|mrcd|market|value)/i],
 ];
 
+// AUDIT FIX (31-jul, adversarial): (a) ya no exige el literal "instrument" — tesseract
+// confunde la I mayúscula con l/1 ("lnstrumento") y sin ancla secundaria se volvía en
+// silencio a la heurística vieja; (b) escanea TODAS las líneas y elige la de MÁS columnas
+// reconocidas (no la primera que pase), evitando engancharse a una línea de órdenes o a
+// un disclaimer; "instrument" cuenta solo como bonus de desempate.
 function detectColumnMap(lines: string[]): string[] | null {
+  let best: { cols: string[]; score: number } | null = null;
   for (const line of lines) {
-    if (!/instrument/i.test(line)) continue;
     const cols: string[] = [];
     for (const tok of line.split(/\s+/)) {
       for (const [key, re] of OCR_COL_MATCHERS) {
@@ -337,9 +352,11 @@ function detectColumnMap(lines: string[]): string[] | null {
       }
     }
     // Un mapa útil necesita al menos cantidad + (precio o valor)
-    if (cols.includes("qty") && (cols.includes("price") || cols.includes("value"))) return cols;
+    if (!(cols.includes("qty") && (cols.includes("price") || cols.includes("value")))) continue;
+    const score = cols.length + (/instrument/i.test(line) ? 0.5 : 0);
+    if (!best || score > best.score) best = { cols, score };
   }
-  return null;
+  return best?.cols ?? null;
 }
 
 export function parseOCRPortfolio(text: string): IBKPosition[] {
@@ -349,6 +366,10 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
   const colMap = detectColumnMap(allLines);
   for (const line of allLines) {
     if (!line) continue;
+    // AUDIT FIX: líneas de ÓRDENES pendientes se descartan ENTERAS — blacklistear solo el
+    // token dejaba que el ticker de la orden ("VENTA TRAIL WDC 6 …") creara una posición
+    // fantasma o duplicara una real con los importes de la orden.
+    if (OCR_ORDER_LINE_WORDS.test(line)) continue;
     const tokens = line.split(/\s+/);
     const symIdx = tokens.findIndex(
       (t) => /^[A-Z]{2,6}$/.test(t) && !OCR_NOT_TICKERS.has(t),
@@ -373,13 +394,16 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 
     // Números con su formato textual: decimal explícito = precio; entero = cantidad.
     // "26.30-26.31" (rango del día) se separa en dos números para la regla del rango.
+    // AUDIT FIX: los tokens de PORCENTAJE ("-3.06%") se EXCLUYEN — la columna % nunca se
+    // mapea y un porcentaje colado desplazaba todas las asignaciones posicionales.
     const rawNums = tokens
       .slice(symIdx + 1)
+      .filter((t) => !/%$/.test(t))
       .flatMap((t) => {
-        const range = t.match(/^([\d.,]+)-([\d.,]+)%?$/);
+        const range = t.match(/^([\d.,]+)-([\d.,]+)$/);
         return range ? [range[1], range[2]] : [t];
       })
-      .map((t) => ({ v: parseOcrNumber(t), dec: /[.,]\d{1,4}$/.test(t.replace(/[$€£+%]/g, "")) }))
+      .map((t) => ({ v: parseOcrNumber(t), dec: /[.,]\d{1,4}$/.test(t.replace(/[$€£+%—–−]/g, "")) }))
       .filter((n) => isFinite(n.v));
     if (rawNums.length === 0) continue;
 
@@ -389,20 +413,42 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
     const pnlCandidate = rawNums.length > 2 ? rawNums[2].v : null;
 
     if (colMap && rawNums.length >= 2) {
-      // ── Modo CABECERA: cada número se asigna a su columna real, en orden ──
-      const get = (key: string): number | null => {
-        const idx = colMap.indexOf(key);
-        return idx >= 0 && idx < rawNums.length ? rawNums[idx].v : null;
+      // ── Modo CABECERA con VERIFICACIÓN DE CONSISTENCIA (audit adversarial 31-jul) ──
+      // El OCR puede perder o colar un número y desplazar el mapeo posicional en silencio.
+      // Defensa: se prueban offsets 0/−1/+1 y se explota la REDUNDANCIA de IBK
+      // (Vlr mrcd ≈ precio × cantidad) para elegir la asignación que CUADRA; si ninguna
+      // cuadra, se repara la cantidad desde valor/precio antes de rendirse.
+      const tryAt = (offset: number) => {
+        const at = (key: string): number | null => {
+          const idx = colMap.indexOf(key);
+          const j = idx >= 0 ? idx + offset : -1;
+          return j >= 0 && j < rawNums.length ? rawNums[j].v : null;
+        };
+        return { q: at("qty"), p: at("price"), pnl: at("pnl"), mv: at("value") };
       };
-      const q = get("qty");
-      if (q == null || q <= 0 || q > 1_000_000) continue; // sin cantidad válida no hay posición
-      quantity = q;
-      const p = get("price");
-      currentPrice = p != null && p > 0 ? p : null;
-      const pnl = get("pnl");
-      unrealizedPnL = pnl != null && Math.abs(pnl) < 10_000_000 ? pnl : null;
-      const mv = get("value");
-      mappedValue = mv != null && mv > 0 ? mv : null;
+      type Cand = ReturnType<typeof tryAt>;
+      const verifiable = (c: Cand) => c.mv != null && c.p != null && c.p > 0 && c.q != null && c.q > 0;
+      const consistent = (c: Cand) =>
+        verifiable(c) ? Math.abs((c.mv as number) - (c.p as number) * (c.q as number)) / (c.mv as number) < 0.2 : true;
+      let pick: Cand | null = null;
+      for (const off of [0, -1, 1]) {
+        const c = tryAt(off);
+        if (c.q == null || c.q <= 0 || c.q > 1_000_000) continue;
+        if (consistent(c)) { pick = c; break; }
+      }
+      if (!pick) {
+        // Reparación por redundancia: cantidad = valor / precio (si plausible)
+        const c0 = tryAt(0);
+        if (c0.mv != null && c0.p != null && c0.p > 0) {
+          const qFix = Math.round(((c0.mv as number) / (c0.p as number)) * 100) / 100;
+          if (qFix > 0 && qFix <= 1_000_000) pick = { ...c0, q: qFix };
+        }
+      }
+      if (!pick || pick.q == null) continue;
+      quantity = pick.q;
+      currentPrice = pick.p != null && pick.p > 0 ? pick.p : null;
+      unrealizedPnL = pick.pnl != null && Math.abs(pick.pnl) < 10_000_000 ? pick.pnl : null;
+      mappedValue = pick.mv != null && pick.mv > 0 ? pick.mv : null;
     } else if (b == null) {
       // Un solo número: si es decimal ("180.50" suelto en una línea de nombre) es un
       // precio huérfano, no una posición → descartar. Entero = cantidad sin precio.
@@ -513,10 +559,10 @@ export function parseIBKAccountSummary(text: string): IBKAccountSummary {
  * con OCR (tesseract.js, lazy-loaded — no infla el bundle principal) y
  * extrae posiciones + resumen de cuenta. Todo en el dispositivo, nada se sube.
  */
-export async function parseImagePortfolio(
+export async function ocrImageToText(
   file: File,
   onProgress?: (pct: number) => void,
-): Promise<{ positions: IBKPosition[]; summary: IBKAccountSummary }> {
+): Promise<string> {
   const Tesseract = await import("tesseract.js");
   const result = await Tesseract.recognize(file, "eng", {
     logger: (m: { status: string; progress: number }) => {
@@ -525,9 +571,18 @@ export async function parseImagePortfolio(
       }
     },
   });
+  return result.data.text;
+}
+
+export async function parseImagePortfolio(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ positions: IBKPosition[]; summary: IBKAccountSummary; text: string }> {
+  const text = await ocrImageToText(file, onProgress);
   return {
-    positions: parseOCRPortfolio(result.data.text),
-    summary: parseIBKAccountSummary(result.data.text),
+    positions: parseOCRPortfolio(text),
+    summary: parseIBKAccountSummary(text),
+    text,
   };
 }
 

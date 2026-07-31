@@ -966,7 +966,7 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
     let anyPhoto = false;
     const all: IBKPosition[] = [];
     const failed: string[] = [];
-    let summary: { accountTotal: number | null; totalCash: number | null } = { accountTotal: null, totalCash: null };
+    const photoTexts: string[] = [];
     if (nImages > 0) setOcrPct(0);
     try {
       for (const f of files) {
@@ -980,10 +980,7 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
             // AUDIT FIX: una foto borrosa NO lanza — el OCR devuelve texto basura y el parser
             // 0 posiciones. Sin esto, se cargaba MEDIA cartera en silencio como si fuera completa.
             if (res.positions.length === 0) failed.push(f.name);
-            all.push(...res.positions);
-            // El resumen de cuenta (total + efectivo) suele estar en la PRIMERA captura
-            if (summary.accountTotal == null && res.summary.accountTotal != null) summary.accountTotal = res.summary.accountTotal;
-            if (summary.totalCash == null && res.summary.totalCash != null) summary.totalCash = res.summary.totalCash;
+            photoTexts.push(res.text);
           } catch { failed.push(f.name); }
           imagesDone++;
         } else {
@@ -993,6 +990,16 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
         }
       }
     } finally { setOcrPct(null); }
+
+    // AUDIT FIX (multi-foto): las FOTOS se parsean COMBINADAS en un único texto — así el
+    // mapa de columnas de la cabecera (que suele estar solo en la 1ª captura) se aplica
+    // también a las fotos de continuación, y el resumen de cuenta se busca en todas.
+    let summary: { accountTotal: number | null; totalCash: number | null } = { accountTotal: null, totalCash: null };
+    if (photoTexts.length > 0) {
+      const combined = photoTexts.join("\n");
+      all.push(...parseOCRPortfolio(combined));
+      summary = parseIBKAccountSummary(combined);
+    }
 
     // Fusionar por símbolo (si el mismo ticker sale en dos capturas, gana la primera lectura)
     const merged = new Map<string, IBKPosition>();

@@ -128,6 +128,10 @@ export function computeOptimal2026Features(bars, spyBars = null) {
 
   // ── Calidad de tendencia (R² sobre la ventana larga) ─────────────
   const r2 = r2Linear(closes, Math.min(LOOKBACK_LONG, closes.length));
+  // R² de 60 sesiones para las BANDAS de trailing — el backtest (118 variantes) validó
+  // las bandas TR/TN/TA con R² de 60d, no de 189d (dictamen auditoría 31-jul: el motor
+  // divergía del harness y la banda asignada en vivo podía diferir de la validada).
+  const r2Band = r2Linear(closes, Math.min(60, closes.length));
 
   // ── EMA alignment (0-3) ───────────────────────────────────────────
   const ema20 = ema(closes, 20) ?? 0;
@@ -161,7 +165,8 @@ export function computeOptimal2026Features(bars, spyBars = null) {
     ret63,       // retorno 3m (secundario, informativo)
     vol63,       // volatilidad anualizada 3m
     rsLong,      // fuerza relativa vs SPY (ventana larga)
-    r2,          // calidad de tendencia (R²)
+    r2,          // calidad de tendencia (R², ventana larga — informativo)
+    r2Band,      // R² 60d — el que usan las BANDAS de trailing (igual que el backtest)
     align,       // alineación EMA 0-3
     dist52H,     // proximidad al máximo de 52 semanas
     atrPct,      // ATR%
@@ -321,12 +326,15 @@ export function allocateOptimal2026(scored, regime) {
  * (concentration demands tighter risk management per position).
  */
 export function assignOptimal2026Stops(item) {
-  const { atrPct, r2 } = item.ft ?? {};
+  const { atrPct, r2, r2Band } = item.ft ?? {};
   if (!atrPct || !Number.isFinite(atrPct)) return { stopPct: null, stopPrice: null, band: 'TN' };
 
+  // Banda por R² de 60 SESIONES (igual que el backtest de 118 variantes); fallback al
+  // R² largo solo para snapshots antiguos en KV que aún no traigan r2Band.
+  const rb = Number.isFinite(r2Band) ? r2Band : r2;
   let band, mult;
-  if (atrPct < 0.025 && r2 > 0.70) { band = 'TR'; mult = 2.5; }
-  else if (atrPct > 0.045 || (r2 < 0.40)) { band = 'TA'; mult = 4.0; }
+  if (atrPct < 0.025 && rb > 0.70) { band = 'TR'; mult = 2.5; }
+  else if (atrPct > 0.045 || (rb < 0.40)) { band = 'TA'; mult = 4.0; }
   else { band = 'TN'; mult = 3.0; }
 
   const stopPct = Math.round(atrPct * mult * 100 * 10) / 10;
