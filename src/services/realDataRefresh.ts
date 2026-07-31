@@ -728,7 +728,10 @@ export function deriveDashboardDataMode(
   if (modes.length === 0) return "DATA_UNAVAILABLE";
   if (modes.every((mode) => mode === "REAL")) return "REAL";
   if (modes.every((mode) => mode === "LAST_CLOSE")) return "LAST_CLOSE";
-  if (modes.some((mode) => mode === "ERROR")) return "ERROR";
+  // AUDIT FIX (31-jul): every, no some — alineado con deriveIndicatorsDataMode. Con "some",
+  // UN solo indicador sin cargar tumbaba a ERROR el panel entero aunque hubiera 8 precios
+  // reales; ese caso ahora cae honesto en PARTIAL_DATA. Un fallo TOTAL sigue dando ERROR.
+  if (modes.every((mode) => mode === "ERROR")) return "ERROR";
   if (modes.some((mode) => mode === "REAL" || mode === "LAST_CLOSE" || mode === "LAST_SESSION")) return "PARTIAL_DATA";
   return "DATA_UNAVAILABLE";
 }
@@ -755,9 +758,18 @@ export function updateSystemStatusForDataMode(
           ? "ERROR"
           : "DATA_UNAVAILABLE",
     operationalDecisionAllowed: false,
+    // AUDIT FIX (31-jul): la lista acumulaba razones MUTUAMENTE EXCLUYENTES de pasadas
+    // anteriores (REAL_OPERATIONAL_DATA_UNAVAILABLE junto a EXEC_REQUIRES_SEPARATE_...,
+    // y *_IS_NOT_OPERATIONAL de modos ya superados). Se podan las obsoletas del acumulado
+    // antes de añadir las vigentes — la lista refleja SOLO el estado actual.
     operationalBlockReasons: [
       ...new Set([
-        ...systemStatus.operationalBlockReasons,
+        ...systemStatus.operationalBlockReasons.filter(
+          (r) =>
+            r !== "REAL_OPERATIONAL_DATA_UNAVAILABLE" &&
+            r !== "EXEC_REQUIRES_SEPARATE_REAL_SCORE_INPUT_AUDIT" &&
+            !r.endsWith("_IS_NOT_OPERATIONAL"),
+        ),
         "DASHBOARD_INFORMATIONAL_ONLY",
         hasPartialDashboard ? `${dashboardDataMode}_IS_NOT_OPERATIONAL` : null,
         hasRealDashboard ? "EXEC_REQUIRES_SEPARATE_REAL_SCORE_INPUT_AUDIT" : "REAL_OPERATIONAL_DATA_UNAVAILABLE",

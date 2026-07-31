@@ -277,7 +277,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setSystemStatus((current) =>
           updateSystemStatusForDataMode(
             refreshSystemMarketStatus(current),
-            deriveDashboardDataMode(merged.top8, masterIndicators, {
+            // AUDIT FIX (31-jul, causa raíz del "ERROR" con mercados abiertos): usar el REF,
+            // no la variable de render — los 3 call-sites viven en useEffect(...,[]) y el
+            // closure congelaba la SEMILLA inicial (7 indicadores dataMode:"ERROR"), así que
+            // CADA refresco de precios exitoso (90s) degradaba todo el System Status a ERROR.
+            // Mismo fix que applySnapshotResult ya llevaba; esta ruta se quedó atrás.
+            deriveDashboardDataMode(merged.top8, masterIndicatorsRef.current, {
               coveragePercent: current.technical.universeStats.coveragePercent ?? 0,
             }),
             merged.lastRealDataUpdate,
