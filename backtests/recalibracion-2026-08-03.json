@@ -1,0 +1,99 @@
+{
+  "generatedAt": "2026-08-03T11:10:36.513Z",
+  "universe": 603,
+  "sessions": 2514,
+  "range": "2016-08-01 → 2026-07-31",
+  "championKey": "b200_r21_h1.1",
+  "results": {
+    "b200_r21_h1.1": {
+      "cagr": 38.9,
+      "maxDD": 26.7,
+      "mar": 1.46,
+      "sharpe": 1.24,
+      "tradesYr": 49,
+      "sub": [
+        21.4,
+        22.2,
+        80.8
+      ]
+    },
+    "b200_r21_h1.0": {
+      "cagr": 32.7,
+      "maxDD": 38.1,
+      "mar": 0.86,
+      "sharpe": 1.07,
+      "tradesYr": 53,
+      "sub": [
+        7.7,
+        22,
+        78.1
+      ]
+    },
+    "b200_r21_h1.25": {
+      "cagr": 38,
+      "maxDD": 39.4,
+      "mar": 0.96,
+      "sharpe": 1.19,
+      "tradesYr": 44,
+      "sub": [
+        13.2,
+        23.7,
+        87.7
+      ]
+    },
+    "b100_r21_h1.1": {
+      "cagr": 43.3,
+      "maxDD": 26.3,
+      "mar": 1.64,
+      "sharpe": 1.34,
+      "tradesYr": 49,
+      "sub": [
+        27.9,
+        27.5,
+        80.5
+      ]
+    },
+    "graded_r21_h1.1": {
+      "cagr": 40.3,
+      "maxDD": 25.6,
+      "mar": 1.57,
+      "sharpe": 1.28,
+      "tradesYr": 49,
+      "sub": [
+        25.2,
+        22.2,
+        80.7
+      ]
+    },
+    "b200_r10_h1.1": {
+      "cagr": 44.5,
+      "maxDD": 31.7,
+      "mar": 1.4,
+      "sharpe": 1.34,
+      "tradesYr": 59,
+      "sub": [
+        26.3,
+        34,
+        78.4
+      ]
+    },
+    "b200_r42_h1.1": {
+      "cagr": 34.7,
+      "maxDD": 37,
+      "mar": 0.94,
+      "sharpe": 1.11,
+      "tradesYr": 41,
+      "sub": [
+        22,
+        10.5,
+        81.4
+      ]
+    }
+  },
+  "verdict": {
+    "decision": "RETADOR SUPERA AL CAMPEÓN",
+    "champion": "b200_r21_h1.1",
+    "challenger": "b100_r21_h1.1",
+    "reason": "MAR 1.64 vs 1.46 (+0.18 > 0.10) y gana 2/3 subperíodos"
+  }
+}

@@ -439,6 +439,11 @@ export const OPTIMAL_SUPREME_CALIBRATION = {
   // trailing+VT+histéresis validados en 118 variantes; sigue llevando haircut por
   // supervivencia del listado estático + IRPF rotación + slippage. Crudo ~79 → honesto 67/100.
   badge: 67,
+  // NOTA DE VARIANZA (3-ago-2026, primera recalibración trimestral): estas cifras son la
+  // medición de jul-2026. La MISMA config sobre un pull de datos fresco de Yahoo (ago-2026,
+  // ventana desplazada ~10 días) midió CAGR 38.9 / DD 26.7 / MAR 1.46 — la varianza entre
+  // pulls es grande. Tomar las cifras publicadas como el EXTREMO OPTIMISTA del rango; el
+  // DD ~27% es lo más estable entre mediciones. Informes en backtests/recalibracion-*.json.
   oos: {
     cagr: 52.2,       // % CAGR — config con histéresis 1.10 mensual (sweep 4, 603 tickers)
     maxDD: 26.9,      // % MaxDD — vs 33% sin vol-target y 40% sin trailing
