@@ -64,18 +64,22 @@ Revisión     : semanal (lunes), saltos de 10 pp, banda muerta de 10 pp
 Fuera        : efectivo remunerado
 ```
 
-### Perfiles de riesgo (1994→2026, todo neto de costes)
-| Perfil | CAGR | Caída máx. | MAR | Órdenes/año |
-|---|---|---|---|---|
-| Comprar y mantener | 10,9% | 55,2% | 0,20 | 0 |
-| **Prudente** (VT15·tope100) | 10,2% | 18,2% | **0,56** | 4 |
-| **Equilibrado** (CORE 1x) | **13,6%** | 25,4% | 0,54 | 15 |
-| Ambicioso (CORE 1,25x) | 15,9% | 30,8% | 0,51 | 18 |
-| Agresivo (CORE 1,5x) | 17,7% | 36,5% | 0,48 | 20 |
-| Muy agresivo (CORE 2x) | 20,9% | 47,1% | 0,44 | 20 |
+### Perfiles de riesgo tal y como se han publicado en el módulo
+Cada uno verificado sesión a sesión por `scripts/sp500-verify-engine.mjs`, que compara el motor
+de producción contra estas cifras y **falla si se desvían** (así el panel nunca enseña un número
+que la estrategia no da).
 
-**Recomendación**: Equilibrado (1x). Gana 2,7 pp anuales a comprar y mantener **con menos de
-la mitad de caída máxima**. El apalancamiento es un mando disponible, no el punto de partida.
+| Perfil | CAGR | Caída máx. | ¿Apalanca? |
+|---|---|---|---|
+| Comprar y mantener | 10,9% | 55,2% | no |
+| **Prudente** | 10,2% | **18,2%** | no |
+| **Equilibrado** (recomendado) | 11,2% | 21,0% | no |
+| Ambicioso | 13,6% | 25,4% | sí, hasta 150% |
+| Agresivo | 17,7% | 36,5% | sí, hasta 225% |
+
+**Recomendación**: Equilibrado. Gana a comprar y mantener con **menos de la mitad de caída** y
+sin necesitar margen. Los perfiles apalancados existen porque el estudio los valida, pero el
+panel avisa en rojo cada vez que la exposición pasa del 100%.
 
 ## 3. Restricción real de ejecución (España + IBK)
 La normativa PRIIPs impide a un minorista europeo comprar ETF domiciliados en EE.UU. → **SPY,
@@ -85,12 +89,16 @@ VOO, SSO y UPRO no son comprables desde IBK España.** Equivalentes UCITS:
 - 2x: **Xtrackers S&P 500 2x Leveraged Daily Swap UCITS ETF** (TER 0,60%, Luxemburgo).
 - El apalancamiento diario tiene decaimiento en mercados laterales: el módulo lo mostrará.
 
-## 4. Plan de construcción
-1. `api/_lib/sp500Engine.js` — cálculo del régimen, exposición objetivo, señal de retroceso,
-   niveles de entrada/salida y calibración congelada del estudio.
-2. `api/_lib/sp500Handler.js` + `source=sp500` en `api/market-data.js` + rewrite `/api/sp500`.
-3. `src/services/sp500Refresh.ts` — cliente, estado propio en `localStorage` `sp500_*`.
-4. `src/components/SP500Panel.tsx` — panel Bloomberg: semáforo de régimen, % de capital a
-   invertir, importe concreto, distancia a la salida, próxima revisión, y la cartera SP500
-   independiente.
-5. Cartera propia por foto (opcional, aislada) y verificación runtime.
+## 4. Construcción — COMPLETADA (8-ago-2026)
+1. ✅ `api/_lib/sp500Engine.js` — calibración congelada, tope duro de exposición por perfil.
+2. ✅ `api/_lib/sp500Handler.js` + `source=sp500` + rewrite `/api/sp500` (0 funciones nuevas).
+3. ✅ `src/services/sp500Refresh.ts` — claves `sp500_*`, todo con estado seguro ante fallos.
+4. ✅ `src/components/SP500Panel.tsx` — semáforo, % de capital, importe exacto de la orden,
+   distancia a la salida, próxima revisión, perfiles y vehículos UCITS.
+5. ✅ Verificado en producción: endpoint, panel, aviso de apalancamiento, convivencia con
+   SUPREME sin colisión de claves, y sin desbordamiento en móvil (375 px).
+
+### Pendiente para próximas vueltas
+- Cartera SP500 propia por foto (aislada de la del SUPREME) — solo si Sergi la pide: hoy el
+  módulo ya da el importe exacto introduciendo capital e invertido a mano.
+- Añadir el módulo a la auditoría semanal de los lunes.
