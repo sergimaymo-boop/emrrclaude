@@ -18,6 +18,7 @@ import { handler as marketRegime } from "./_lib/marketRegimeHandler.js";
 import { handler as monetaryCycle } from "./_lib/monetaryCycleHandler.js";
 import { handler as masterIndicators } from "./_lib/masterIndicatorsHandler.js";
 import { handler as optimal2026 } from "./_lib/optimal2026Handler.js";
+import { handler as sp500 } from "./_lib/sp500Handler.js";
 
 export default async function handler(req, res) {
   // El rewrite inyecta ?source=...; el fallback parsea la URL por si se llama directo.
@@ -28,12 +29,13 @@ export default async function handler(req, res) {
     case "monetary-cycle":    return monetaryCycle(req, res);
     case "master-indicators": return masterIndicators(req, res);
     case "optimal2026":       return optimal2026(req, res);
+    case "sp500":             return sp500(req, res);
     default:
       res.setHeader("Cache-Control", "no-store");
       return res.status(400).json({
         ok: false,
         error: "UNKNOWN_SOURCE",
-        validSources: ["fear-greed", "market-regime", "monetary-cycle", "master-indicators", "optimal2026"],
+        validSources: ["fear-greed", "market-regime", "monetary-cycle", "master-indicators", "optimal2026", "sp500"],
       });
   }
 }

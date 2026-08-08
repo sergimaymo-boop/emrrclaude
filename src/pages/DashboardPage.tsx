@@ -46,6 +46,7 @@ import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
+import { SP500Panel } from "../components/SP500Panel";
 import {
   type Optimal2026Result,
   fetchOptimal2026,
@@ -1023,6 +1024,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           onScan={handleOptimal2026Scan}
           scanProgress={o26ScanProgress}
         />
+      </ErrorBoundary>
+      {/* ══ MÓDULO SP500 — INDEPENDIENTE del SUPREME (mandato 8-ago-2026) ══
+          Analiza SOLO el S&P 500: cuándo entrar, cuándo salir y con cuánto capital.
+          Endpoint propio (/api/sp500), motor propio (sp500Engine) y almacenamiento
+          propio (sp500_*). Envuelto en su ErrorBoundary: si falla, el resto sigue. */}
+      <ErrorBoundary inline label="SP500">
+        <SP500Panel />
       </ErrorBoundary>
       {/* ── FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
       <ErrorBoundary inline label="Fear & Greed">
