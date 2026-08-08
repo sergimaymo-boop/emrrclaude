@@ -192,8 +192,8 @@ const spyEma200 = emaSeriesOf(spyClose, 200);
 
 // ─── simulador ───────────────────────────────────────────────────────────────
 function simulate({ topN = 10, review = 21, W = BASE_W, regimeFilter = false, trailPct = null,
-                    minScore = 0, noPenalties = false, label = "" }) {
-  const FROM = 260, TO = D - 1;
+                    minScore = 0, noPenalties = false, label = "", from = 260, to = null, sampleEveryN = 1 }) {
+  const FROM = from, TO = to ?? D - 1;
   let eq = 1;
   const curve = new Array(D).fill(null); curve[FROM] = 1;
   const dret = [];
@@ -234,7 +234,7 @@ function simulate({ topN = 10, review = 21, W = BASE_W, regimeFilter = false, tr
     let pick = [];
     if (regimeOk) {
       const cands = [];
-      for (let ti = 0; ti < T.length; ti++) {
+      for (let ti = 0; ti < T.length; ti += sampleEveryN) {
         const t = T[ti];
         const f = t.feat[i];
         if (!f || !isNum(t.adj[i])) continue;
@@ -302,8 +302,10 @@ if (process.argv.includes("--verify")) {
       const spySlice = spyRaw.filter((b) => b.d <= endDate);
       const prod = calculateRallyScore({ bars: toBars(bars.slice(0, cut)), spyBars: toBars(spySlice), region: t.region });
       if (!prod.ok) continue;
-      // La réplica omite el spread (no hay histórico): se compara con la misma omisión.
-      const mine = scoreOf(t.feat[k], t.region, BASE_W);
+      // v3.0: producción usa RS 50 + momento 50, sin penalizar. La réplica omite el
+      // spread (no hay histórico), única diferencia esperada frente a producción.
+      const W_RSM = { rs: 0.50, mom: 0.50, trend: 0, prox: 0, rvol: 0, atr: 0, liq: 0 };
+      const mine = scoreOf(t.feat[k], t.region, W_RSM, { noPenalties: true });
       const diff = Math.abs(Math.round(mine) - prod.rallyScore);
       n++; if (diff > maxDiff) maxDiff = diff;
       if (diff > 2) { bad++; if (bad <= 5) console.log(`  desvío ${diff} en ${t.sym} @ ${endDate}: réplica ${Math.round(mine)} vs producción ${prod.rallyScore}`); }
@@ -313,6 +315,54 @@ if (process.argv.includes("--verify")) {
   console.log(bad === 0 ? "✅ La réplica del backtest puntúa igual que el motor de producción."
                         : `❌ ${bad}/${n} muestras se desvían: el backtest NO mide la fórmula real.`);
   process.exit(bad === 0 ? 0 : 1);
+}
+
+// ─── modo --verify-v3: el motor de PRODUCCIÓN (post-edición) reproduce lo publicado ──
+if (process.argv.includes("--verify-v3")) {
+  const { calculateRallyScore } = await import("../api/_lib/rallyScoreEngine.js");
+  const toBars = (arr) => arr.map((b) => ({ date: b.d, open: b.c, high: b.h, low: b.l, close: b.c, volume: b.v }));
+  const FROM = 260, TO = D - 1, review = 84;
+  let eq = 1, trades = 0, daysIn = 0;
+  const curve = new Array(D).fill(null); curve[FROM] = 1; const dret = [];
+  let held = [];
+  for (let i = FROM + 1; i <= TO; i++) {
+    let r = 0;
+    if (held.length) { for (const ti of held) { const t = T[ti]; const a = t.adj[i], b = t.adj[i - 1]; if (isNum(a) && isNum(b) && b > 0) r += (a / b - 1) / held.length; } daysIn++; }
+    eq *= 1 + r; curve[i] = eq; dret.push(r);
+    if ((i - FROM) % review !== 0) continue;
+    const cands = [];
+    for (let ti = 0; ti < T.length; ti += 4) {   // muestreo 1/4 por coste de --verify-v3 (motor real es lento)
+      const t = T[ti]; const bars = series[t.sym].bars;
+      const endDate = dates[i]; const cut = bars.findIndex((b) => b.d > endDate);
+      const slice = cut === -1 ? bars : bars.slice(0, cut);
+      if (slice.length < 300) continue;
+      const spySlice = spyRaw.filter((b) => b.d <= endDate);
+      const prod = calculateRallyScore({ bars: toBars(slice), spyBars: toBars(spySlice), region: t.region });
+      if (prod.ok) cands.push({ ti, s: prod.rallyScore });
+    }
+    cands.sort((a, b) => b.s - a.s);
+    const pick = cands.slice(0, 10).map((c) => c.ti);
+    const turnover = held.filter((x) => !pick.includes(x)).length + pick.filter((x) => !held.includes(x)).length;
+    if (turnover) { eq *= 1 - COST_BPS * (turnover / 10); trades += turnover; }
+    held = pick;
+    console.log(`  revisión ${dates[i]}: ${pick.map((ti) => T[ti].sym).join(", ")}`);
+  }
+  const years = (TO - FROM) / 252, cagr = Math.pow(eq, 1 / years) - 1;
+  let peak = 0, mdd = 0; for (let i = FROM; i <= TO; i++) { if (curve[i] == null) continue; peak = Math.max(peak, curve[i]); mdd = Math.max(mdd, 1 - curve[i] / peak); }
+  console.log(`\nMOTOR DE PRODUCCIÓN (post-edición, muestra 1/4 del universo): CAGR ${(cagr * 100).toFixed(1)}%  caída ${(mdd * 100).toFixed(1)}%  MAR ${(cagr / mdd).toFixed(2)}`);
+  console.log("(Cifra de referencia con universo completo: CAGR 34,3% / caída 41,5% / MAR 0,82 — la muestra 1/4 es más ruidosa pero debe ir en el mismo orden de magnitud.)");
+  process.exit(0);
+}
+
+// ─── modo --verify-sample: ¿el 16,7% del motor real es por MUESTREAR 1/4, o un bug? ──
+if (process.argv.includes("--verify-sample")) {
+  const W_RSM = { rs: 0.50, mom: 0.50, trend: 0, prox: 0, rvol: 0, atr: 0, liq: 0 };
+  for (const everyN of [1, 4]) {
+    const r = simulate({ topN: 10, review: 84, W: W_RSM, noPenalties: true, from: 260, to: D - 1,
+      label: `réplica JS · muestra 1/${everyN}` , sampleEveryN: everyN });
+    console.log(`  réplica JS, universo 1/${everyN}: CAGR ${(r.cagr * 100).toFixed(1)}%  caída ${(r.mdd * 100).toFixed(1)}%  MAR ${r.mar.toFixed(2)}`);
+  }
+  process.exit(0);
 }
 
 // ─── informe ─────────────────────────────────────────────────────────────────

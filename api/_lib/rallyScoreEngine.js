@@ -1,35 +1,37 @@
 /**
- * RALLY LEADERS ENGINE — Rally Score Engine v2.0
+ * RALLY LEADERS ENGINE — Rally Score Engine v3.0 (validado con backtest, 9-ago-2026)
  *
- * Upgraded formula based on institutional analysis best practices
- * (O'Neil CAN SLIM, Minervini, Weinstein Stage 2, Jegadeesh-Titman momentum):
+ * v2.0 usaba pesos de literatura (O'Neil CAN SLIM, Minervini, Weinstein) que NUNCA se
+ * habían contrastado con datos. Auditoría con 10 años / 603 tickers (docs/RALLY-MODULE-AUDIT.md,
+ * scripts/rally-backtest-*.mjs): v2.0 tal cual RENTABILIDAD 14,0%/año, caída 44,9% — PIERDE
+ * contra comprar y mantener el S&P 500 (15,6%/33,7%). Validado en 3 pasos: equivalencia
+ * réplica↔producción, partición fuera de muestra (elegir el mejor del entrenamiento NO se
+ * transfiere, rho=0,03 → se eligió por robustez) y control contra selección al azar (supera
+ * 30/30 sorteos en ambas mitades del periodo, p≈0,032 — descarta sesgo de supervivencia).
  *
- *   Relative Strength  33% — RS 3M + RS 6M (percentile-curve normalization)
- *   Momentum           23% — 3M primary (60%), 6M (30%), 1M noise-filtered (10%)
- *   Trend              17% — EMA20/50 structure + slopes + Stage 2 filter
- *   52W High Proximity  7% — breakout proximity (key institutional signal)
- *   RVOL (directional) 10% — accumulation vs distribution aware
- *   ATR healthy         5% — volatility in sweet spot
- *   Liquidity/Spread    5% — execution quality
+ *   Fuerza relativa   50% — RS 3M + RS 6M (normalización curva, sin techo artificial)
+ *   Momento           50% — 3M principal (60%), 6M (30%), 1M filtrado de ruido (10%)
  *
- * Key improvements over v1.0:
- * - RS uses curve normalization — exceptional performers (RS>60%) now score higher
- * - Momentum 1M reduced to 10% (too noisy) — 3M raised to 60%
- * - RVOL is direction-aware: high volume on down price = distribution penalty
- * - 52W High Proximity added: breakouts near all-time highs score highest
- * - Total weights sum to exactly 1.0
+ * Trend/Proximidad52s/RVOL/ATR/Liquidez SIGUEN CALCULÁNDOSE (se muestran en el panel para
+ * contexto) pero YA NO puntúan: el backtest mostró que diluyen la señal.
+ *
+ * Las penalizaciones (extensión parabólica, precio bajo EMA50…) YA NO restan puntos del
+ * ranking — el backtest mostró que recortaban justo a los líderes. Se devuelven como
+ * `warningFlags` explícitos para que el panel las muestre sin distorsionar el orden.
  */
 
 import { calculateEma, calculateAtr } from "./technicalEngine.js";
 
+export const RALLY_ENGINE_VERSION = "3.0.0";
+
 const WEIGHTS = {
-  relativeStrength: 0.33,
-  momentum:         0.23,
-  trend:            0.17,
-  proximity52w:     0.07,
-  rvol:             0.10,
-  atr:              0.05,
-  liquiditySpread:  0.05,
+  relativeStrength: 0.50,
+  momentum:         0.50,
+  trend:            0,
+  proximity52w:     0,
+  rvol:             0,
+  atr:              0,
+  liquiditySpread:  0,
 };
 
 export const RALLY_RANGES = [
@@ -220,38 +222,38 @@ function scoreLiquidity(avgValue20, spreadPercent, region) {
   return clamp(score);
 }
 
-// ─── Penalties ───────────────────────────────────────────────────────────────
+// ─── Avisos (v3.0: ya NO restan puntos del ranking — el backtest mostró que ─────
+// recortaban justo a los líderes; se muestran como aviso explícito en el panel) ──
 
-function applyPenalties(baseScore, metrics) {
-  let penalty = 0;
+function computeWarningFlags(metrics) {
+  const flags = [];
   const { price, ema20, ema50, mom1m, mom3m, rvol, rs5d } = metrics;
 
-  // Extreme extension above EMA20 (parabolic — dangerous entry)
   if (isFiniteNum(price) && isFiniteNum(ema20) && ema20 > 0) {
     const ext = (price - ema20) / ema20;
-    if (ext > 0.30) penalty += 25; // >30% above EMA20 = late-stage blow-off
-    else if (ext > 0.20) penalty += 15;
-    else if (ext > 0.15) penalty += 8;
+    if (ext > 0.30) flags.push({ code: "EXTENDED_30", label: `Extendido +${Math.round(ext * 100)}% sobre su media de 20 sesiones — entrada tardía / parabólico` });
+    else if (ext > 0.20) flags.push({ code: "EXTENDED_20", label: `Extendido +${Math.round(ext * 100)}% sobre su media de 20 sesiones` });
   }
-
-  // Price below EMA50 — broken trend structure (Stage 3/4)
-  if (isFiniteNum(price) && isFiniteNum(ema50) && price < ema50) penalty += 20;
-
-  // Parabolic 1M momentum — acceleration too steep, reversal risk high
-  if (isFiniteNum(mom1m) && mom1m > 40) penalty += 10;
-  if (isFiniteNum(mom1m) && mom1m > 60) penalty += 15;
-
-  // Blow-off volume — distribution by institutions
-  if (isFiniteNum(rvol) && rvol > 3.5) penalty += 15;
-
-  // Recent RS deterioration (5-day)
-  if (isFiniteNum(rs5d) && rs5d < -8) penalty += 8;
-  if (isFiniteNum(rs5d) && rs5d < -15) penalty += 8;
-
-  // Momentum divergence: strong 3M but stalling (1M deteriorating)
-  if (isFiniteNum(mom3m) && isFiniteNum(mom1m) && mom3m > 15 && mom1m < -5) penalty += 8;
-
-  return clamp(baseScore - penalty);
+  if (isFiniteNum(price) && isFiniteNum(ema50) && price < ema50) {
+    flags.push({ code: "BELOW_EMA50", label: "Precio por debajo de su media de 50 sesiones — estructura de tendencia rota" });
+  }
+  if (isFiniteNum(mom1m) && mom1m > 60) {
+    flags.push({ code: "PARABOLIC_1M", label: `Subida del ${Math.round(mom1m)}% en 1 mes — ritmo insostenible, riesgo de giro` });
+  } else if (isFiniteNum(mom1m) && mom1m > 40) {
+    flags.push({ code: "FAST_1M", label: `Subida del ${Math.round(mom1m)}% en 1 mes — acelerado` });
+  }
+  if (isFiniteNum(rvol) && rvol > 3.5) {
+    flags.push({ code: "BLOWOFF_VOLUME", label: "Volumen anómalo (>3,5x) — posible distribución institucional" });
+  }
+  if (isFiniteNum(rs5d) && rs5d < -15) {
+    flags.push({ code: "RS_DETERIORATING", label: "Fuerza relativa cayendo con fuerza en los últimos 5 días" });
+  } else if (isFiniteNum(rs5d) && rs5d < -8) {
+    flags.push({ code: "RS_WEAKENING", label: "Fuerza relativa debilitándose en los últimos 5 días" });
+  }
+  if (isFiniteNum(mom3m) && isFiniteNum(mom1m) && mom3m > 15 && mom1m < -5) {
+    flags.push({ code: "MOMENTUM_DIVERGENCE", label: "Momento a 3 meses fuerte pero frenando en el último mes — divergencia" });
+  }
+  return flags;
 }
 
 // ─── Main entry ──────────────────────────────────────────────────────────────
@@ -335,8 +337,8 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     sAtr     * WEIGHTS.atr +
     sLiq     * WEIGHTS.liquiditySpread;
 
-  const penaltyMetrics = { price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d };
-  const finalScore = Math.round(applyPenalties(rawScore, penaltyMetrics));
+  const warningFlags = computeWarningFlags({ price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d });
+  const finalScore = Math.round(clamp(rawScore));
   const rangeInfo = getRallyLabel(finalScore);
   const trailingStop = calculateTrailingStop(atrPercent);
 
@@ -346,6 +348,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     label: rangeInfo.label,
     color: rangeInfo.color,
     trailingStop, // optimal trailing stop % for this specific ticker
+    warningFlags, // v3.0: ya no restan del score — se muestran explícitos
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,
@@ -369,7 +372,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
       high52w: Math.round(high52w * 100) / 100,
       proximity52w: Math.round((lastClose / high52w) * 100) / 100,
       components: { sRS, sMom, sTrend, sProx52w, sRvol, sAtr, sLiq },
-      version: "2.0",
+      version: RALLY_ENGINE_VERSION,
     },
   };
 }

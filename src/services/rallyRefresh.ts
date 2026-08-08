@@ -3,6 +3,11 @@
  * Completely independent from realDataRefresh.ts / TOP 8
  */
 
+export interface RallyWarningFlag {
+  code: string;
+  label: string;
+}
+
 export interface RallyMetrics {
   lastClose: number;
   ema20: number | null;
@@ -18,6 +23,7 @@ export interface RallyMetrics {
   atrPercent: number | null;
   trailingStop: number | null;
   avgValue20: number;
+  version?: string;
 }
 
 export type MarketRegime = "BULLISH" | "BEARISH" | "UNKNOWN";
@@ -45,9 +51,28 @@ export interface RallyAsset {
   rallyLabel: string;
   rallyColor: string;
   trailingStop: number | null;
+  warningFlags?: RallyWarningFlag[];
   metrics: RallyMetrics | null;
   dataMode: string;
   scanId: string | null;
+}
+
+/** Calibración v3.0 (validada 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md) para mostrar en el panel. */
+export const RALLY_BACKTEST = {
+  period: "2017-08 → 2026-08 (10 años, 603 tickers)",
+  formula: "Fuerza relativa 50% + Momento 50% · revisión ~cada 4 meses (84 sesiones) · top 10 a peso igual",
+  strategy: { cagr: 0.343, maxDD: 0.415, mar: 0.82, sharpe: 1.14 },
+  buyHold: { cagr: 0.156, maxDD: 0.337 },
+  reviewDays: 84,
+} as const;
+
+/** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */
+export function estimateNextReview(scanCompletedAtUtc: string | null | undefined): string | null {
+  if (!scanCompletedAtUtc) return null;
+  const d = new Date(scanCompletedAtUtc);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + 121);
+  return d.toISOString().slice(0, 10);
 }
 
 export interface RallyScanResponse {

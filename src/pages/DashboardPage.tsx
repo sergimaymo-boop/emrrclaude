@@ -46,6 +46,7 @@ import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
+import { RallyPanel } from "../components/RallyPanel";
 import { SP500Panel } from "../components/SP500Panel";
 import {
   type Optimal2026Result,
@@ -1025,7 +1026,14 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           scanProgress={o26ScanProgress}
         />
       </ErrorBoundary>
-      {/* ══ MÓDULO SP500 — INDEPENDIENTE del SUPREME (mandato 8-ago-2026) ══
+      {/* ══ MÓDULO 2 — RALLY LEADERS: los 10 con la tendencia alcista más sana ══
+          Reactivado y REVALIDADO 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md): v2.0 perdía
+          contra el S&P500; v3.0 (RS 50% + momento 50%, sin penalizar el ranking) bate
+          al índice con backtest de 10 años, validado contra sobreajuste y azar. */}
+      <ErrorBoundary inline label="Rally Leaders">
+        <RallyPanel />
+      </ErrorBoundary>
+      {/* ══ MÓDULO 3 — SP500: INDEPENDIENTE del SUPREME y del Rally (mandato 8-ago-2026) ══
           Analiza SOLO el S&P 500: cuándo entrar, cuándo salir y con cuánto capital.
           Endpoint propio (/api/sp500), motor propio (sp500Engine) y almacenamiento
           propio (sp500_*). Envuelto en su ErrorBoundary: si falla, el resto sigue. */}
