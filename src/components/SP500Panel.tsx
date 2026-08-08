@@ -156,6 +156,15 @@ export function SP500Panel() {
             </div>
           </div>
 
+          {/* Aviso de apalancamiento — nunca debe pasar desapercibido */}
+          {signal.usesLeverage && (
+            <div style={{ margin: "0 16px 12px", padding: "8px 12px", borderRadius: 8, background: `${RED}12`, border: `1px solid ${RED}55`, fontSize: 11, color: "#fecaca" }}>
+              ⚠ <b>Esto pasa del 100%: es apalancamiento.</b> Necesitas margen en IBK o un ETF apalancado
+              (XS2D). Amplifica también las pérdidas, y el apalancamiento diario se erosiona en mercados
+              laterales. Si no quieres esto, cambia a perfil Prudente o Equilibrado.
+            </div>
+          )}
+
           {/* Oportunidad de retroceso */}
           {signal.pullbackOpen && (
             <div style={{ margin: "0 16px 12px", padding: "8px 12px", borderRadius: 8, background: `${GREEN}14`, border: `1px solid ${GREEN}55`, fontSize: 11, color: "#dcfce7" }}>
@@ -245,7 +254,9 @@ export function SP500Panel() {
                       color: active ? AMBER : "#cbd5e1", minWidth: 104,
                     }}
                   >
-                    <div style={{ fontSize: 10, fontWeight: 800 }}>{meta?.label ?? p}</div>
+                    <div style={{ fontSize: 10, fontWeight: 800 }}>
+                      {meta?.label ?? p}{meta?.leveraged ? " ⚠" : ""}
+                    </div>
                     <div style={{ fontSize: 9, color: active ? AMBER : SLATE, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
                       {meta ? `${(meta.cagr * 100).toFixed(1)}%/año · caída ${(meta.maxDD * 100).toFixed(0)}%` : "—"}
                     </div>
@@ -278,9 +289,10 @@ export function SP500Panel() {
           {/* Referencia del backtest */}
           {signal.backtest && (
             <div style={{ padding: "8px 16px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", fontSize: 9.5, color: "#64748b", lineHeight: 1.6 }}>
-              Validado en <b style={{ color: SLATE }}>{signal.backtest.period}</b>: esta regla dio{" "}
-              <b style={{ color: AMBER }}>{(signal.backtest.core.cagr * 100).toFixed(1)}%</b> anual con una caída máxima del{" "}
-              <b style={{ color: AMBER }}>{(signal.backtest.core.maxDD * 100).toFixed(0)}%</b>, frente a{" "}
+              Validado en <b style={{ color: SLATE }}>{signal.backtest.period}</b>: el perfil{" "}
+              <b style={{ color: SLATE }}>{signal.profileLabel}</b> dio{" "}
+              <b style={{ color: AMBER }}>{(((signal.profiles?.[signal.profile ?? ""]?.cagr) ?? signal.backtest.core.cagr) * 100).toFixed(1)}%</b> anual con una caída máxima del{" "}
+              <b style={{ color: AMBER }}>{(((signal.profiles?.[signal.profile ?? ""]?.maxDD) ?? signal.backtest.core.maxDD) * 100).toFixed(0)}%</b>, frente a{" "}
               {(signal.backtest.buyHold.cagr * 100).toFixed(1)}% y caída del {(signal.backtest.buyHold.maxDD * 100).toFixed(0)}% de comprar y mantener.
               Rentabilidad pasada; no garantiza la futura.
             </div>

@@ -43,6 +43,8 @@ export interface Sp500Signal {
   exposurePct?: number;
   volTargetPct?: number;
   volCapPct?: number;
+  usesLeverage?: boolean;
+  profileAllowsLeverage?: boolean;
   pullbackOpen?: boolean;
   pullbackReason?: string | null;
 
@@ -51,7 +53,7 @@ export interface Sp500Signal {
   distanceToTrendPct?: number | null;
   nextReview?: string;
 
-  profiles?: Record<string, { label: string; cagr: number; maxDD: number }>;
+  profiles?: Record<string, { label: string; cagr: number; maxDD: number; leveraged?: boolean }>;
   vehicles?: Sp500Vehicle[];
   backtest?: {
     period: string;

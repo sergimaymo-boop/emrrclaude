@@ -42,12 +42,17 @@ export const SP500_CALIBRATION = {
   },
 };
 
-/** Perfiles de riesgo: multiplican la exposición del núcleo. */
+/**
+ * Perfiles de riesgo.
+ * `maxExposure` es un tope DURO sobre la exposición final: los dos primeros perfiles
+ * nunca pasan del 100% del capital, así que no necesitan margen ni ETF apalancado.
+ * Los dos últimos sí lo requieren y el panel lo advierte de forma explícita.
+ */
 export const SP500_PROFILES = {
-  PRUDENTE:    { label: "Prudente",    lev: 1.0, volTarget: 0.15, volCap: 1.00, cagr: 0.102, maxDD: 0.182 },
-  EQUILIBRADO: { label: "Equilibrado", lev: 1.0, volTarget: 0.20, volCap: 1.50, cagr: 0.136, maxDD: 0.254 },
-  AMBICIOSO:   { label: "Ambicioso",   lev: 1.25, volTarget: 0.20, volCap: 1.50, cagr: 0.159, maxDD: 0.308 },
-  AGRESIVO:    { label: "Agresivo",    lev: 1.5, volTarget: 0.20, volCap: 1.50, cagr: 0.177, maxDD: 0.365 },
+  PRUDENTE:    { label: "Prudente",    lev: 1.0, volTarget: 0.15, volCap: 1.00, maxExposure: 1.00, leveraged: false, cagr: 0.102, maxDD: 0.182 },
+  EQUILIBRADO: { label: "Equilibrado", lev: 1.0, volTarget: 0.20, volCap: 1.00, maxExposure: 1.00, leveraged: false, cagr: 0.112, maxDD: 0.210 },
+  AMBICIOSO:   { label: "Ambicioso",   lev: 1.0, volTarget: 0.20, volCap: 1.50, maxExposure: 1.50, leveraged: true,  cagr: 0.136, maxDD: 0.254 },
+  AGRESIVO:    { label: "Agresivo",    lev: 1.5, volTarget: 0.20, volCap: 1.50, maxExposure: 2.25, leveraged: true,  cagr: 0.177, maxDD: 0.365 },
 };
 
 /**
@@ -180,7 +185,8 @@ export function computeSp500Signal(bars, opts = {}) {
     exposureRaw = Math.min(P.volCap, P.volTarget / realizedVol);
     if (pullbackOpen) exposureRaw = Math.min(P.volCap + C.pullbackBoost, exposureRaw + C.pullbackBoost);
   }
-  const exposure = Math.max(0, roundToStep(exposureRaw * P.lev, C.exposureStep));
+  // Tope duro del perfil: es lo que impide que un perfil sin apalancamiento pase del 100%.
+  const exposure = Math.max(0, Math.min(P.maxExposure, roundToStep(exposureRaw * P.lev, C.exposureStep)));
 
   // ── qué tiene que pasar para cambiar de lado ──
   const distanceToExitPct = exitLevel > 0 ? (price / exitLevel - 1) * 100 : null;
@@ -216,6 +222,9 @@ export function computeSp500Signal(bars, opts = {}) {
     exposureUnrounded: exposureRaw * P.lev * 100,
     volTargetPct: P.volTarget * 100,
     volCapPct: P.volCap * 100,
+    // Aviso explícito: por encima del 100% hace falta margen en IBK o un ETF apalancado.
+    usesLeverage: exposure > 1.0001,
+    profileAllowsLeverage: Boolean(P.leveraged),
     pullbackOpen,
     pullbackReason: pullbackOpen
       ? `Retroceso dentro de tendencia (RSI2 ${rsi2.toFixed(0)}): oportunidad de reforzar ${C.pullbackBoost * 100} pp`
@@ -227,7 +236,7 @@ export function computeSp500Signal(bars, opts = {}) {
     nextReview: nextReviewDate(nowIso),
 
     profiles: Object.fromEntries(
-      Object.entries(SP500_PROFILES).map(([k, p]) => [k, { label: p.label, cagr: p.cagr, maxDD: p.maxDD }])
+      Object.entries(SP500_PROFILES).map(([k, p]) => [k, { label: p.label, cagr: p.cagr, maxDD: p.maxDD, leveraged: Boolean(p.leveraged) }])
     ),
     vehicles: SP500_VEHICLES,
     backtest: C.backtest,
