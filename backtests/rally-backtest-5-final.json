@@ -1,0 +1,470 @@
+{
+ "ranAt": "2026-08-08T22:44:24.070Z",
+ "winner": {
+  "weights": {
+   "rs": 0.5,
+   "mom": 0.5,
+   "trend": 0,
+   "prox": 0,
+   "rvol": 0,
+   "atr": 0,
+   "liq": 0
+  },
+  "review": 84,
+  "topN": 10,
+  "noPenalties": true,
+  "label": "RS+momento · rev84 · top10 sin pen."
+ },
+ "full": {
+  "label": "RS+momento · rev84 · top10 sin pen.",
+  "cagr": 0.3425895957985483,
+  "mdd": 0.4153206150599521,
+  "mar": 0.8248798238659427,
+  "sharpe": 1.1414908508924095,
+  "tradesYr": 49.43808255659122,
+  "pctIn": 0.96271637816245,
+  "sub": [
+   0.2419267960280922,
+   0.3038442519368647,
+   0.4945419778134612
+  ],
+  "picksLog": [
+   {
+    "date": "2017-12-18",
+    "top": [
+     "ARGX.BR",
+     "FSLR.US",
+     "GAW.LSE",
+     "NTAP.US",
+     "DHI.US"
+    ]
+   },
+   {
+    "date": "2018-04-20",
+    "top": [
+     "AXON.US",
+     "NFLX.US",
+     "ARGX.BR",
+     "DXCM.US",
+     "MONC.MI"
+    ]
+   },
+   {
+    "date": "2018-08-20",
+    "top": [
+     "DXCM.US",
+     "TTD.US",
+     "AMD.US",
+     "LULU.US",
+     "FTNT.US"
+    ]
+   }
+  ]
+ },
+ "buyHold": {
+  "label": "SPY comprar y mantener",
+  "cagr": 0.15638174286026985,
+  "mdd": 0.33717264353564513,
+  "mar": 0.4638031757868207,
+  "sharpe": 0.6736748679887234,
+  "tradesYr": 0,
+  "pctIn": 1,
+  "sub": [
+   0.13812885552822562,
+   0.11532815859826306,
+   0.21817470627850777
+  ]
+ },
+ "halves": [
+  {
+   "wn": "RS+momento",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+momento · rev84 · top10 sin pen.",
+   "worst": 0.31914456967046045,
+   "worstSharpe": 1.0854270684283949,
+   "worstMdd": 0.4153206150599521,
+   "aCagr": 0.31914456967046045,
+   "bCagr": 0.4105084660297351
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+mom+liquidez · rev84 · top10 sin pen.",
+   "worst": 0.31774535260743497,
+   "worstSharpe": 1.076602521008296,
+   "worstMdd": 0.41532061505995244,
+   "aCagr": 0.31774535260743497,
+   "bCagr": 0.4148556739495497
+  },
+  {
+   "wn": "RS+momento",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+momento · rev63 · top10 sin pen.",
+   "worst": 0.3125339616719538,
+   "worstSharpe": 1.0181231114576272,
+   "worstMdd": 0.4514023269521298,
+   "aCagr": 0.3125339616719538,
+   "bCagr": 0.3924810838084374
+  },
+  {
+   "wn": "RS+momento",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+momento · rev84 · top10 con pen.",
+   "worst": 0.3109497356230748,
+   "worstSharpe": 1.0709637346638363,
+   "worstMdd": 0.4153206150599522,
+   "aCagr": 0.3109497356230748,
+   "bCagr": 0.43690114815830494
+  },
+  {
+   "wn": "momento",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "momento · rev84 · top10 sin pen.",
+   "worst": 0.30742380197573715,
+   "worstSharpe": 1.045316152401943,
+   "worstMdd": 0.4153206150599523,
+   "aCagr": 0.30742380197573715,
+   "bCagr": 0.4391025474749404
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+mom+liquidez · rev63 · top10 sin pen.",
+   "worst": 0.29509400110876016,
+   "worstSharpe": 0.9491633018176799,
+   "worstMdd": 0.45553251241410087,
+   "aCagr": 0.29509400110876016,
+   "bCagr": 0.3924810838084374
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+mom+liquidez · rev84 · top10 con pen.",
+   "worst": 0.29509080797839315,
+   "worstSharpe": 1.0140138607435014,
+   "worstMdd": 0.4153206150599522,
+   "aCagr": 0.29509080797839315,
+   "bCagr": 0.4413296987141533
+  },
+  {
+   "wn": "momento",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "momento · rev63 · top10 sin pen.",
+   "worst": 0.29354393881304963,
+   "worstSharpe": 0.9528854795177678,
+   "worstMdd": 0.45140232695212956,
+   "aCagr": 0.29354393881304963,
+   "bCagr": 0.4251566422526529
+  },
+  {
+   "wn": "RS+momento",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+momento · rev63 · top10 con pen.",
+   "worst": 0.29109709667749617,
+   "worstSharpe": 0.938958665189775,
+   "worstMdd": 0.47622596477264356,
+   "aCagr": 0.29109709667749617,
+   "bCagr": 0.35266901383860083
+  },
+  {
+   "wn": "momento",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "momento · rev84 · top10 con pen.",
+   "worst": 0.2832335996295323,
+   "worstSharpe": 0.973534288094087,
+   "worstMdd": 0.4153206150599521,
+   "aCagr": 0.2832335996295323,
+   "bCagr": 0.43540726392529905
+  },
+  {
+   "wn": "momento",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "momento · rev63 · top10 con pen.",
+   "worst": 0.276040779155339,
+   "worstSharpe": 0.8979645260793194,
+   "worstMdd": 0.4594450162506325,
+   "aCagr": 0.276040779155339,
+   "bCagr": 0.3651111590299507
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+mom+liquidez · rev126 · top10 sin pen.",
+   "worst": 0.2641337026448538,
+   "worstSharpe": 0.8602114888059749,
+   "worstMdd": 0.44383061712713556,
+   "aCagr": 0.2641337026448538,
+   "bCagr": 0.37835135642833073
+  },
+  {
+   "wn": "RS+momento",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "RS+momento · rev126 · top10 sin pen.",
+   "worst": 0.26178060182022445,
+   "worstSharpe": 0.8542290083472371,
+   "worstMdd": 0.44383061712713534,
+   "aCagr": 0.26178060182022445,
+   "bCagr": 0.37835135642833073
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+mom+liquidez · rev63 · top10 con pen.",
+   "worst": 0.25970212983621277,
+   "worstSharpe": 0.8250664573314154,
+   "worstMdd": 0.48016926240574354,
+   "aCagr": 0.25970212983621277,
+   "bCagr": 0.35266901383860083
+  },
+  {
+   "wn": "RS+momento",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+momento · rev126 · top10 con pen.",
+   "worst": 0.25931693382676446,
+   "worstSharpe": 0.837367552507399,
+   "worstMdd": 0.46920995231972884,
+   "aCagr": 0.25931693382676446,
+   "bCagr": 0.39005715531106144
+  },
+  {
+   "wn": "RS+mom+liquidez",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "RS+mom+liquidez · rev126 · top10 con pen.",
+   "worst": 0.24539264860949261,
+   "worstSharpe": 0.7886239025794617,
+   "worstMdd": 0.46920995231972873,
+   "aCagr": 0.24539264860949261,
+   "bCagr": 0.39005715531106144
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "v2.0 actual · rev84 · top10 sin pen.",
+   "worst": 0.24367686437701752,
+   "worstSharpe": 0.7818079047238584,
+   "worstMdd": 0.4528715872002499,
+   "aCagr": 0.24367686437701752,
+   "bCagr": 0.41850175052827265
+  },
+  {
+   "wn": "momento",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "momento · rev126 · top10 sin pen.",
+   "worst": 0.2396242765517942,
+   "worstSharpe": 0.7842511375378157,
+   "worstMdd": 0.44251633823685854,
+   "aCagr": 0.2396242765517942,
+   "bCagr": 0.4160759674999768
+  },
+  {
+   "wn": "momento",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "momento · rev126 · top10 con pen.",
+   "worst": 0.22723754917115557,
+   "worstSharpe": 0.7339280040587272,
+   "worstMdd": 0.45068930013741226,
+   "aCagr": 0.22723754917115557,
+   "bCagr": 0.38713777829790796
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "v2.0 actual · rev63 · top10 sin pen.",
+   "worst": 0.21686065714120328,
+   "worstSharpe": 0.7683609205579521,
+   "worstMdd": 0.38156337287806297,
+   "aCagr": 0.21686065714120328,
+   "bCagr": 0.4336405480868164
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": true,
+   "label": "v2.0 actual · rev126 · top10 sin pen.",
+   "worst": 0.19688774190816738,
+   "worstSharpe": 0.7172993496896218,
+   "worstMdd": 0.37025536057694264,
+   "aCagr": 0.19688774190816738,
+   "bCagr": 0.42425544666498194
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 63,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "v2.0 actual · rev63 · top10 con pen.",
+   "worst": 0.19211932712026836,
+   "worstSharpe": 0.6688769253270044,
+   "worstMdd": 0.3826023880428643,
+   "aCagr": 0.19211932712026836,
+   "bCagr": 0.39260499810908733
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 84,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "v2.0 actual · rev84 · top10 con pen.",
+   "worst": 0.19176590930374848,
+   "worstSharpe": 0.6043608575433793,
+   "worstMdd": 0.4528715872002501,
+   "aCagr": 0.19176590930374848,
+   "bCagr": 0.39531149654757325
+  },
+  {
+   "wn": "v2.0 actual",
+   "review": 126,
+   "topN": 10,
+   "noPenalties": false,
+   "label": "v2.0 actual · rev126 · top10 con pen.",
+   "worst": 0.16377095798320962,
+   "worstSharpe": 0.5726041345271317,
+   "worstMdd": 0.36766578575523046,
+   "aCagr": 0.16377095798320962,
+   "bCagr": 0.39079225256580186
+  }
+ ],
+ "todayTop10": [
+  {
+   "sym": "PANW.US",
+   "name": "Palo Alto Networks",
+   "s": 97.9153795920381,
+   "m3": 85.14221116959206,
+   "m6": 135.09722511282897,
+   "rs3m": 79.17265279320219,
+   "prox": 0.9932303024209218,
+   "atr": 4.19719428928287
+  },
+  {
+   "sym": "CRWD.US",
+   "name": "CrowdStrike",
+   "s": 97.6431026178068,
+   "m3": 69.59582191835794,
+   "m6": 127.40481078268331,
+   "rs3m": 63.62626354196808,
+   "prox": 1,
+   "atr": 4.4450692809799515
+  },
+  {
+   "sym": "HPE.US",
+   "name": "Hewlett Packard Enterprise",
+   "s": 97.35871324327968,
+   "m3": 79.1919186989134,
+   "m6": 134.3461178608803,
+   "rs3m": 73.22236032252354,
+   "prox": 0.9478183397052024,
+   "atr": 5.709069720476915
+  },
+  {
+   "sym": "DELL.US",
+   "name": "Dell Technologies",
+   "s": 97.0226576957248,
+   "m3": 97.05996464774475,
+   "m6": 293.24897427322395,
+   "rs3m": 91.09040627135488,
+   "prox": 0.9711087801112667,
+   "atr": 7.783099827536876
+  },
+  {
+   "sym": "NTAP.US",
+   "name": "NetApp",
+   "s": 96.84258673342501,
+   "m3": 67.71681794023092,
+   "m6": 90.30024223462591,
+   "rs3m": 61.74725956384106,
+   "prox": 0.989763988412309,
+   "atr": 4.086129667718097
+  },
+  {
+   "sym": "ZBRA.US",
+   "name": "Zebra Technologies",
+   "s": 94.99932624061437,
+   "m3": 64.67937987724623,
+   "m6": 56.16807174998017,
+   "rs3m": 58.70982150085637,
+   "prox": 1,
+   "atr": 4.118778011370142
+  },
+  {
+   "sym": "HUM.US",
+   "name": "Humana",
+   "s": 93.46380782420175,
+   "m3": 55.79475866266023,
+   "m6": 98.91500590524194,
+   "rs3m": 49.825200286270366,
+   "prox": 0.9403546171979092,
+   "atr": 4.100998124000423
+  },
+  {
+   "sym": "FTNT.US",
+   "name": "Fortinet",
+   "s": 92.868126677184,
+   "m3": 47.855883657281694,
+   "m6": 102.25516124719962,
+   "rs3m": 41.88632528089183,
+   "prox": 0.9486006640824013,
+   "atr": 4.448462596125786
+  },
+  {
+   "sym": "HPQ.US",
+   "name": "HP Inc.",
+   "s": 91.31775758704632,
+   "m3": 43.163409074490644,
+   "m6": 56.9190591940431,
+   "rs3m": 37.19385069810078,
+   "prox": 1,
+   "atr": 4.325260627659631
+  },
+  {
+   "sym": "EDEN.PA",
+   "name": "Edenred",
+   "s": 87.73192247733094,
+   "m3": 35.966146938835536,
+   "m6": 63.94558433638537,
+   "rs3m": 29.996588562445673,
+   "prox": 0.9873676740297659,
+   "atr": 2.8236966288023844
+  }
+ ]
+}

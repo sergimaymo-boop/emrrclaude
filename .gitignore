@@ -19,3 +19,7 @@ dist/
 # Editor
 .DS_Store
 *.local
+
+# Cachés de histórico para backtests: se regeneran con scripts/*-fetch-*.mjs (pesan cientos de MB)
+data/*.json
+!data/.gitkeep
