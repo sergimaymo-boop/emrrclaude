@@ -78,6 +78,10 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           rallyLabel: rallyResult.label,
           rallyColor: rallyResult.color,
           trailingStop: rallyResult.trailingStop,
+          // v3.0: el panel necesita AMBOS. Se listaban campo a campo y estos dos
+          // se quedaron fuera, así que nunca llegaban al frontend.
+          warningFlags: rallyResult.warningFlags ?? [],
+          entryTiming: rallyResult.entryTiming ?? null,
           metrics: rallyResult.metrics,
           dataMode: "REAL",
           dataQuality: "GOOD",
