@@ -102,3 +102,47 @@ Tercios: 24% / 30% / 49%.
 PANW · CRWD · HPE · DELL · NTAP · ZBRA · HUM · FTNT · HPQ · EDEN.PA
 
 _(PANW y HUM ya están en la cartera real de Sergi.)_
+
+## 7. Score de momento de entrada por ticker (9-ago-2026)
+
+Mandato de Sergi: el ranking dice QUÉ tickers comprar, pero no decía SI hoy es buen
+día para entrar en cada uno. Se estudió con datos si existe una señal de timing.
+
+**Método**: 260 episodios históricos (cada vez que un ticker entró en el top-10 en
+una revisión, 2017-2026). Para cada episodio se probaron 6 variables de estado
+conocidas el día de la entrada — extensión sobre EMA20, deterioro de fuerza relativa
+a 5 días, volumen relativo, ATR, momento a 1 mes, proximidad al máximo de 52
+semanas — contra el retorno hasta la siguiente revisión y la caída máxima
+intra-periodo. Cada variable se validó partiendo el periodo en dos mitades.
+
+**Resultado, con honestidad por delante**: de las 6 variables, **solo la proximidad
+al máximo de 52 semanas mostró señal consistente en ambas mitades**:
+
+| Zona | Entrenamiento (2017-22) | Prueba (2022-26) |
+|---|---|---|
+| Lejos del máximo (<96%) | alpha 10,5% · caída −13,8% | alpha 6,0% · caída −12,9% |
+| **Cerca sin tocarlo (96-99,7%)** | **alpha 9,1% · caída −7,9%** | **alpha 16,3% · caída −9,6%** |
+| En máximos/rompiendo (>99,7%) | alpha 1,6% · caída −11,8% | alpha 7,0% · caída −10,5% |
+
+La zona "cerca sin tocarlo" gana en caída máxima en las dos mitades por un margen
+grande (~4-6 puntos menos de caída) y empata o gana en rentabilidad. Coincide con
+la sabiduría técnica clásica (zona de entrada de O'Neil, VCP de Minervini), pero
+aquí **por primera vez validada con datos fuera de muestra**, no solo citada.
+
+**Lo que NO funcionó** — y por eso NO se usa para puntuar, aunque eran justo las
+variables en las que se basaban las penalizaciones de v2.0:
+- Extensión sobre EMA20: alpha prácticamente idéntico entre terciles (8,2/8,2/8,0%)
+  — no predice nada.
+- Deterioro de fuerza relativa a 5 días: sin patrón consistente entre mitades.
+- Momento a 1 mes: mejoró en la prueba (25,7% en el tercil "acelerado") pero con
+  muestra pequeña (n=30) y en la dirección contraria a la intuición de "no
+  perseguir" — se deja fuera por prudencia, no se confía en un resultado así.
+
+**Implementación**: `computeEntryTiming()` en `rallyScoreEngine.js`, campo
+`entryTiming` independiente del `rallyScore` (no cambia el ranking). Tres zonas:
+IDEAL (verde), LEJOS (gris), EN_MAXIMOS (ámbar, cautela). Mostrado como badge en
+cada fila del panel y con la explicación completa al desplegar.
+
+**Reserva honesta**: 260 episodios / partido en dos mitades de ~130 es una muestra
+mucho más pequeña que el backtest principal (2.514 sesiones × 603 tickers). Es una
+señal de apoyo razonablemente validada, no una certeza — así se etiqueta en el panel.

@@ -140,6 +140,41 @@ function scoreTrend(price, ema20, ema50, ema20Slope, ema50Slope) {
  *   75-85%:  40 — pulling back from highs
  *   < 75%:   10 — too far from highs
  */
+/**
+ * ENTRY TIMING SCORE — "¿es buen momento de entrar en ESTE ticker concreto, o
+ * espero?" Distinto del rallyScore (que decide QUÉ tickers merecen estar en el
+ * top-10). Validado con estudio propio (docs/RALLY-MODULE-AUDIT.md §7,
+ * scripts/rally-entry-timing-study.mjs): de 6 variables candidatas (extensión
+ * sobre EMA20, deterioro de fuerza relativa 5d, volumen relativo, ATR, momento
+ * 1m, proximidad al máximo de 52 semanas), probadas contra 260 episodios
+ * históricos de entrada en el top-10 con partición fuera de muestra, SOLO la
+ * proximidad al máximo de 52 semanas mostró una señal consistente en AMBAS
+ * mitades del periodo (2017-2022 y 2022-2026):
+ *
+ *   cerca del máximo SIN TOCARLO (96-99,7%): mejor alpha Y menor caída en las
+ *     dos mitades (caída intra-periodo -7,9%/-9,6% frente a -13,8%/-12,9% lejos
+ *     del máximo, o -11,8%/-10,5% rompiendo máximos nuevos)
+ *   lejos del máximo (<96%) y en máximos/rompiéndolos (>99,7%): peor en ambas.
+ *
+ * Extensión sobre EMA20 y deterioro de RS 5d — las señales en las que se
+ * basaban las PENALIZACIONES de v2.0 — NO mostraron predecir nada (alpha
+ * prácticamente idéntico entre terciles): por eso NO se usan aquí. Momento 1m
+ * mostró mejora en la prueba pero con muestra pequeña (n=30) y económicamente
+ * a la inversa de lo esperado — se deja fuera del score por prudencia.
+ */
+function computeEntryTiming(proximity52w) {
+  if (typeof proximity52w !== "number" || !Number.isFinite(proximity52w)) {
+    return { score: null, zone: "SIN_DATOS", label: "Sin histórico suficiente para valorar el momento de entrada" };
+  }
+  if (proximity52w >= 0.96 && proximity52w <= 0.997) {
+    return { score: 90, zone: "IDEAL", label: "Cerca de su máximo de 52 semanas sin haberlo tocado — la zona con mejor rentabilidad y menor caída en el estudio" };
+  }
+  if (proximity52w > 0.997) {
+    return { score: 45, zone: "EN_MAXIMOS", label: "En máximos históricos o rompiéndolos ahora mismo — el estudio muestra más riesgo de retroceso a corto plazo" };
+  }
+  return { score: 55, zone: "LEJOS", label: "Alejado de su máximo de 52 semanas — el estudio muestra menor rentabilidad esperada que la zona ideal" };
+}
+
 function scoreProximity52w(price, closes) {
   const lookback = Math.min(closes.length - 1, 252);
   if (lookback < 50) return 40; // not enough data, neutral
@@ -338,6 +373,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     sLiq     * WEIGHTS.liquiditySpread;
 
   const warningFlags = computeWarningFlags({ price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d });
+  const entryTiming = computeEntryTiming(high52w > 0 ? lastClose / high52w : null);
   const finalScore = Math.round(clamp(rawScore));
   const rangeInfo = getRallyLabel(finalScore);
   const trailingStop = calculateTrailingStop(atrPercent);
@@ -349,6 +385,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     color: rangeInfo.color,
     trailingStop, // optimal trailing stop % for this specific ticker
     warningFlags, // v3.0: ya no restan del score — se muestran explícitos
+    entryTiming, // "¿es buen momento de entrar en ESTE ticker?" — validado, ver docstring
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,

@@ -8,6 +8,14 @@ export interface RallyWarningFlag {
   label: string;
 }
 
+export type RallyEntryZone = "IDEAL" | "LEJOS" | "EN_MAXIMOS" | "SIN_DATOS";
+
+export interface RallyEntryTiming {
+  score: number | null;
+  zone: RallyEntryZone;
+  label: string;
+}
+
 export interface RallyMetrics {
   lastClose: number;
   ema20: number | null;
@@ -52,6 +60,7 @@ export interface RallyAsset {
   rallyColor: string;
   trailingStop: number | null;
   warningFlags?: RallyWarningFlag[];
+  entryTiming?: RallyEntryTiming;
   metrics: RallyMetrics | null;
   dataMode: string;
   scanId: string | null;

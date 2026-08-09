@@ -130,6 +130,11 @@ export function RallyPanel() {
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.maxDD * 100).toFixed(0)}%</b> (MAR {RALLY_BACKTEST.strategy.mar.toFixed(2)}),
             frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(0)}% de comprar y mantener el S&amp;P 500.
             ⚠ Caída máxima superior al índice: diez valores de máximo momento pueden caer a la vez. Rentabilidad pasada; no garantiza la futura.
+            <br />
+            <b style={{ color: SLATE }}>Zona de entrada</b> (badge junto a cada ticker): validada por separado con 260 episodios históricos de
+            entrada en el top-10, comprobada en dos mitades independientes del periodo. Solo la proximidad al máximo de 52 semanas mostró señal
+            consistente — cerca del máximo sin tocarlo dio mejor rentabilidad Y menor caída en ambas mitades. Muestra más pequeña que el
+            backtest principal: tómala como apoyo, no como semáforo definitivo.
           </div>
         </>
       )}
@@ -137,9 +142,18 @@ export function RallyPanel() {
   );
 }
 
+const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string }> = {
+  IDEAL: { color: GREEN, label: "ENTRADA IDEAL" },
+  LEJOS: { color: SLATE, label: "LEJOS DEL MÁXIMO" },
+  EN_MAXIMOS: { color: "#eab308", label: "EN MÁXIMOS — CAUTELA" },
+  SIN_DATOS: { color: SLATE, label: "—" },
+};
+
 function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void }) {
   const m = asset.metrics;
   const flags = asset.warningFlags ?? [];
+  const entry = asset.entryTiming;
+  const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"];
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
@@ -152,7 +166,11 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
         <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{rank}</span>
         <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 70 : 90 }}>{asset.ticker}</span>
         {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
-        <span style={{ fontSize: 10, color: "#64748b" }}>{asset.exchange}</span>
+        {!isNarrow && entry && (
+          <span title={entry.label} style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: entryStyle.color, background: `${entryStyle.color}18`, border: `1px solid ${entryStyle.color}55`, whiteSpace: "nowrap" }}>
+            {entryStyle.label}
+          </span>
+        )}
         {flags.length > 0 && <span title={flags.map((f) => f.label).join(" · ")} style={{ fontSize: 11 }}>⚠</span>}
         <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 34, textAlign: "right" }}>{asset.rallyScore}</span>
         <span style={{ fontSize: 9, color: "#64748b", width: 60, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
@@ -161,6 +179,11 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
       {expanded && (
         <div style={{ padding: "4px 4px 12px 34px", display: "flex", flexDirection: "column", gap: 8 }}>
           {isNarrow && <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{asset.name}</div>}
+          {entry && (
+            <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: entryStyle.color, background: `${entryStyle.color}14`, border: `1px solid ${entryStyle.color}44` }}>
+              <b>{entryStyle.label}</b> — {entry.label}
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
             <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toFixed(2) : "—"} />
             <Stat label="Momento 3m" value={pct(m?.mom3m)} tone={(m?.mom3m ?? 0) > 0 ? GREEN : RED} />
