@@ -16,6 +16,14 @@ export interface RallyEntryTiming {
   label: string;
 }
 
+/** "¿Cuánto recorrido le queda al rally?" — informativo, no reordena el top-10. */
+export interface RallyRunway {
+  score: number;
+  level: "ALTO" | "MEDIO" | "BAJO";
+  trendAge: number | null;
+  reasons: string[];
+}
+
 export interface RallyMetrics {
   lastClose: number;
   ema20: number | null;
@@ -61,6 +69,7 @@ export interface RallyAsset {
   trailingStop: number | null;
   warningFlags?: RallyWarningFlag[];
   entryTiming?: RallyEntryTiming;
+  runway?: RallyRunway | null;
   metrics: RallyMetrics | null;
   dataMode: string;
   scanId: string | null;

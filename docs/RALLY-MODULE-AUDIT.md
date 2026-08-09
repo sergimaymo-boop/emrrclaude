@@ -146,3 +146,70 @@ cada fila del panel y con la explicación completa al desplegar.
 **Reserva honesta**: 260 episodios / partido en dos mitades de ~130 es una muestra
 mucho más pequeña que el backtest principal (2.514 sesiones × 603 tickers). Es una
 señal de apoyo razonablemente validada, no una certeza — así se etiqueta en el panel.
+
+## 8. Recorrido restante y el trailing stop (9-ago-2026)
+
+Mandato de Sergi: poder entrar en tickers a los que **todavía les queda recorrido**,
+aunque no hayamos pillado el mejor momento del rally, y recoger con el trailing stop
+la parte que queda.
+
+**Variable objetivo correcta**: no el retorno a un horizonte fijo, sino **lo que un
+trailing stop captura de verdad** desde la entrada. 1.060 episodios (top-10 cada 21
+sesiones, 2017-2026), validados en dos mitades independientes.
+Capturado medio general: **4,2%** en 36 sesiones.
+
+### Indicadores que SÍ predicen recorrido (consistentes en ambas mitades)
+
+| Indicador | 1ª mitad | 2ª mitad |
+|---|---|---|
+| **Tendencia joven** (<40 sesiones sobre EMA50) | 7,3% | 9,4% |
+| **Poco extendida sobre EMA50** (<5%) | 11,7% | 7,6% |
+| **En máximos de 52 semanas** (>99,7%) — lo PEOR | 1,2% | 1,5% |
+
+La intuición de Sergi era correcta: **un rally que acaba de empezar deja más recorrido
+que uno que lleva meses corriendo**.
+
+**Descartados por no ser consistentes**: aceleración del momento, contracción de
+volatilidad, extensión sobre la EMA20 (esta última, otra vez, sin poder predictivo).
+
+### Pero filtrar por recorrido NO mejora la cartera
+
+| Variante (10 años) | CAGR | Caída | Peor mitad |
+|---|---|---|---|
+| **v3.0 base (lo que está en producción)** | **34,3%** | 41,5% | **31,9%** |
+| Filtrar por recorrido ≥60 | 26,4% | 42,2% | 26,3% |
+| Filtrar por recorrido ≥70 | 20,1% | 46,8% | 16,4% |
+| Mezclar 70/30 ranking/recorrido | 35,3% | 42,1% | 30,3% |
+| Mezclar 50/50 + trailing | 37,1% | 36,1% | **17,1%** ← espejismo |
+
+La mezcla 50/50 + trailing luce un MAR de 1,03 pero rinde 17,1% en una mitad y 60,5%
+en la otra: es un artefacto de un periodo bueno, no una mejora. El criterio del **peor
+semestre** lo desenmascara. **Conclusión: el recorrido se muestra como INFORMACIÓN,
+no reordena el top-10.** El ranking ya selecciona bien y filtrar también echa fuera
+ganadores.
+
+### Hallazgo grande: el trailing stop ceñido DESTRUYE rentabilidad
+
+Se midió con **reinversión inmediata** del capital liberado (la primera prueba dejaba
+el dinero parado hasta 84 sesiones — error propio, corregido):
+
+| Gestión de salida | CAGR |
+|---|---|
+| Sin trailing (revisión cada 84 sesiones) | **34,3%** |
+| Trailing ceñido por ATR (5-18%) ← lo que el módulo sugería | 19,3% |
+| Trailing fijo 10% | 22,2% |
+| Trailing fijo 20% | 26,9% |
+| Trailing fijo 30% | 31,5% |
+
+El patrón es **monótono**: cuanto menos actúa el stop, mejor. No es calibración —
+el mecanismo perjudica, porque son valores de máximo momento y un stop ceñido los
+corta en retrocesos normales de los que se recuperan.
+
+**Riesgo real de operar sin stop** (260 posiciones): retorno medio +13,3%, un 34% en
+pérdida, caída intra-periodo media −11,1%, **peor posición del histórico −64%**
+(IAG.LSE, desplome de 2020). Un 12% de las posiciones llegó a caer más del 25%, y de
+esas **solo el 10% acabó recuperándose**.
+
+**Decisión**: el módulo pasa a sugerir un **stop ancho de catástrofe (~30%)** en vez
+del ceñido por ATR. Cuesta ~2,8 puntos anuales y a cambio acota la cola. El panel lo
+etiqueta como "Stop de catástrofe" y explica por qué no debe ceñirse.

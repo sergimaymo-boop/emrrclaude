@@ -135,12 +135,28 @@ export function RallyPanel() {
             entrada en el top-10, comprobada en dos mitades independientes del periodo. Solo la proximidad al máximo de 52 semanas mostró señal
             consistente — cerca del máximo sin tocarlo dio mejor rentabilidad Y menor caída en ambas mitades. Muestra más pequeña que el
             backtest principal: tómala como apoyo, no como semáforo definitivo.
+            <br />
+            <b style={{ color: SLATE }}>Recorrido restante</b>: validado con 1.060 episodios midiendo lo que un trailing stop captura de verdad
+            desde la entrada. Tendencia joven y poco extendida sobre su media de 50 = más recorrido por delante; en máximos de 52 semanas = menos.
+            Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
+            <br />
+            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: el backtest demuestra que un trailing stop ceñido <b>destruye rentabilidad aquí</b>
+            (34,3% sin stop → 19,3% con stop ATR del 5-18%, incluso reinvirtiendo al instante). El número que se muestra es un
+            <b> stop ancho de catástrofe (~30%)</b>: cuesta unos 3 puntos anuales y a cambio acota la cola — sin ningún stop, la peor posición
+            del histórico fue −64%.
           </div>
         </>
       )}
     </section>
   );
 }
+
+/** Recorrido restante del rally. Informativo: NO reordena el top-10 (probado, no mejora). */
+const RUNWAY_STYLE: Record<string, { color: string; label: string; short: string }> = {
+  ALTO: { color: GREEN, label: "RECORRIDO ALTO", short: "REC.↑" },
+  MEDIO: { color: SLATE, label: "RECORRIDO MEDIO", short: "REC.=" },
+  BAJO: { color: "#eab308", label: "RECORRIDO BAJO", short: "REC.↓" },
+};
 
 /** `short` se usa en móvil: la zona de entrada NUNCA debe ocultarse, es el dato clave. */
 const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string; short: string }> = {
@@ -155,6 +171,8 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   const flags = asset.warningFlags ?? [];
   const entry = asset.entryTiming;
   const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"];
+  const runway = asset.runway;
+  const runwayStyle = RUNWAY_STYLE[runway?.level ?? "MEDIO"];
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
@@ -168,6 +186,12 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
         <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 70 : 90 }}>{asset.ticker}</span>
         {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
         {isNarrow && <span style={{ flex: 1 }} />}
+        {runway && (
+          <span title={`Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}`}
+            style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: runwayStyle.color, background: `${runwayStyle.color}18`, border: `1px solid ${runwayStyle.color}55`, whiteSpace: "nowrap" }}>
+            {isNarrow ? runwayStyle.short : runwayStyle.label}
+          </span>
+        )}
         {entry && (
           <span title={entry.label} style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: entryStyle.color, background: `${entryStyle.color}18`, border: `1px solid ${entryStyle.color}55`, whiteSpace: "nowrap" }}>
             {isNarrow ? entryStyle.short : entryStyle.label}
@@ -186,13 +210,19 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
               <b>{entryStyle.label}</b> — {entry.label}
             </div>
           )}
+          {runway && (
+            <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: runwayStyle.color, background: `${runwayStyle.color}14`, border: `1px solid ${runwayStyle.color}44` }}>
+              <b>{runwayStyle.label} ({runway.score}/100)</b>
+              {runway.reasons.length > 0 && <> — {runway.reasons.join(". ")}</>}
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
             <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toFixed(2) : "—"} />
             <Stat label="Momento 3m" value={pct(m?.mom3m)} tone={(m?.mom3m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Momento 6m" value={pct(m?.mom6m)} tone={(m?.mom6m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Fuerza rel. 3m vs S&P" value={pct(m?.rs3m)} tone={(m?.rs3m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Fuerza rel. 6m vs S&P" value={pct(m?.rs6m)} tone={(m?.rs6m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Trailing stop sugerido" value={m?.trailingStop != null ? `${m.trailingStop}%` : "—"} />
+            <Stat label="Stop de catástrofe" value={m?.trailingStop != null ? `${m.trailingStop}%` : "—"} tone="#eab308" />
             <Stat label="ATR" value={m?.atrPercent != null ? `${m.atrPercent.toFixed(1)}%` : "—"} />
             <Stat label="Volumen relativo" value={m?.rvol != null ? `${m.rvol.toFixed(2)}x` : "—"} />
           </div>

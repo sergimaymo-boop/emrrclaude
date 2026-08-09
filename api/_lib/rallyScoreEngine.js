@@ -222,28 +222,98 @@ function scoreAtr(atrPercent) {
 }
 
 /**
- * Optimal trailing stop % based on ATR (Average True Range).
+ * Trailing stop — CORREGIDO 9-ago-2026 tras medirlo (docs/RALLY-MODULE-AUDIT.md §8).
  *
- * Institutional method (Wilder / Chandelier exit logic):
- * - Low volatility (ATR% < 1.5): tighter 2.0× multiplier — protect gains
- * - Normal volatility (1.5-3%): standard 2.5× multiplier
- * - High volatility (> 3%): wider 3.0× multiplier — avoid noise stop-outs
+ * La versión anterior sugería un stop ceñido por ATR (2,0-3,0× ATR, acotado a
+ * [5%, 18%]) siguiendo la lógica clásica de Wilder/Chandelier. El backtest de
+ * cartera demostró que ESO DESTRUYE RENTABILIDAD en esta estrategia concreta:
  *
- * Clamped to [5%, 18%] so it stays operationally meaningful.
- * Returns the % below the high at which to exit.
+ *   sin trailing ................................ 34,3% anual
+ *   trailing ceñido por ATR (5-18%) ............. 19,3%   ← lo que se sugería antes
+ *   trailing fijo 10% ........................... 22,2%
+ *   trailing fijo 20% ........................... 26,9%
+ *   trailing fijo 30% ........................... 31,5%
+ *
+ * (todo con REINVERSIÓN inmediata del capital liberado, para que la comparación
+ * sea justa). El patrón es monótono: cuanto MENOS actúa el stop, mejor. No es un
+ * problema de calibración — el mecanismo perjudica, porque estos son valores de
+ * máximo momento y un stop ceñido los corta en retrocesos normales de los que se
+ * recuperan.
+ *
+ * Qué se sugiere ahora: un stop ANCHO de catástrofe (~30%), que apenas cuesta
+ * rentabilidad (−2,8 pp) y sí acota la cola: sin ningún stop, la peor posición
+ * del histórico fue −64% (IAG.LSE en el desplome de 2020), y de las posiciones
+ * que llegaron a caer más del 25%, solo el 10% acabó recuperándose en positivo.
+ * Se mantiene un ajuste leve por volatilidad para que los valores más nerviosos
+ * tengan algo más de margen, pero SIEMPRE en la banda ancha.
  */
 function calculateTrailingStop(atrPercent) {
-  if (!isFiniteNum(atrPercent) || atrPercent <= 0) return null;
+  if (!isFiniteNum(atrPercent) || atrPercent <= 0) return 30;
   const atp = Math.abs(atrPercent);
+  // Banda ancha 25-35%: solo salta ante un derrumbe real, no ante un retroceso.
+  const raw = 25 + atp * 2;
+  return Math.round(clamp(raw, 25, 35) * 10) / 10;
+}
 
-  let multiplier;
-  if (atp < 1.5) multiplier = 2.0;
-  else if (atp <= 3.0) multiplier = 2.5;
-  else multiplier = 3.0;
+/**
+ * RECORRIDO RESTANTE — "¿a este rally le queda gasolina desde hoy?" (mandato de
+ * Sergi, 9-ago-2026). Distinto del rallyScore (QUÉ comprar) y del entryTiming
+ * (si el precio está en buena zona).
+ *
+ * Validado en scripts/rally-runway-study.mjs: 1.060 episodios históricos de
+ * entrada en el top-10, midiendo lo que un trailing stop captura de verdad desde
+ * la entrada, con partición en dos mitades independientes. Solo tres señales
+ * fueron consistentes en AMBAS mitades (capturado medio general: 4,2%):
+ *
+ *   · tendencia JOVEN, <40 sesiones sobre la EMA50 ... 7,3% y 9,4%
+ *   · POCO EXTENDIDA sobre la EMA50, <5% ............ 11,7% y 7,6%
+ *   · EN MÁXIMOS de 52 semanas (>99,7%) ............. 1,2% y 1,5%  (lo peor)
+ *
+ * Descartadas por NO ser consistentes entre mitades: aceleración del momento,
+ * contracción de volatilidad, y la extensión sobre la EMA20.
+ *
+ * IMPORTANTE: es INFORMATIVO, no reordena el top-10. Se probó filtrar y mezclar
+ * esta puntuación dentro del ranking y ninguna variante mejoró a la cartera base
+ * en el peor de los dos semestres — el ranking ya selecciona bien y el filtro
+ * también dejaba fuera a ganadores.
+ */
+function computeRunway(price, closes, ema50Series, ema50, proximity52w) {
+  let score = 50;
+  const reasons = [];
 
-  const rawStop = atp * multiplier;
-  // Operational bounds: never tighter than 5%, never wider than 18%
-  return Math.round(clamp(rawStop, 5, 18) * 10) / 10;
+  // Edad de la tendencia: sesiones consecutivas cerrando sobre la EMA50.
+  let trendAge = null;
+  if (Array.isArray(ema50Series) && ema50Series.length) {
+    // ema50Series[k] corresponde a closes[k + (closes.length - ema50Series.length)]
+    const offset = closes.length - ema50Series.length;
+    trendAge = 0;
+    for (let k = ema50Series.length - 1; k >= 0; k--) {
+      const px = closes[k + offset];
+      if (!isFiniteNum(px) || !isFiniteNum(ema50Series[k]) || px < ema50Series[k]) break;
+      trendAge++;
+    }
+  }
+  if (trendAge != null) {
+    if (trendAge < 40) { score += 25; reasons.push(`Tendencia joven (${trendAge} sesiones sobre su media de 50) — históricamente la que más recorrido deja`); }
+    else if (trendAge < 100) { score += 5; reasons.push(`Tendencia de ${trendAge} sesiones — recorrido intermedio`); }
+    else { score -= 5; reasons.push(`Tendencia madura (${trendAge} sesiones) — buena parte del recorrido puede estar hecha`); }
+  }
+
+  const ext50 = isFiniteNum(ema50) && ema50 > 0 && isFiniteNum(price) ? (price - ema50) / ema50 : null;
+  if (ext50 != null) {
+    if (ext50 < 0.05) { score += 20; reasons.push(`Solo un ${(ext50 * 100).toFixed(0)}% sobre su media de 50 — el tramo aún no se ha estirado`); }
+    else if (ext50 < 0.15) { score += 5; }
+    else if (ext50 > 0.30) { score -= 10; reasons.push(`Un ${(ext50 * 100).toFixed(0)}% por encima de su media de 50 — tramo muy estirado`); }
+  }
+
+  if (isFiniteNum(proximity52w) && proximity52w > 0.997) {
+    score -= 15;
+    reasons.push("Justo en máximos de 52 semanas — en el estudio es la peor zona para lo que queda de recorrido");
+  }
+
+  score = clamp(score);
+  const level = score >= 75 ? "ALTO" : score >= 55 ? "MEDIO" : "BAJO";
+  return { score: Math.round(score), level, trendAge, reasons };
 }
 
 function scoreLiquidity(avgValue20, spreadPercent, region) {
@@ -374,6 +444,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
 
   const warningFlags = computeWarningFlags({ price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d });
   const entryTiming = computeEntryTiming(high52w > 0 ? lastClose / high52w : null);
+  const runway = computeRunway(lastClose, closes, emaSeries(closes, 50), ema50, high52w > 0 ? lastClose / high52w : null);
   const finalScore = Math.round(clamp(rawScore));
   const rangeInfo = getRallyLabel(finalScore);
   const trailingStop = calculateTrailingStop(atrPercent);
@@ -386,6 +457,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     trailingStop, // optimal trailing stop % for this specific ticker
     warningFlags, // v3.0: ya no restan del score — se muestran explícitos
     entryTiming, // "¿es buen momento de entrar en ESTE ticker?" — validado, ver docstring
+    runway,      // "¿cuánto recorrido le queda al rally?" — informativo, no reordena
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,

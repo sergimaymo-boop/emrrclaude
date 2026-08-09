@@ -82,6 +82,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           // se quedaron fuera, así que nunca llegaban al frontend.
           warningFlags: rallyResult.warningFlags ?? [],
           entryTiming: rallyResult.entryTiming ?? null,
+          runway: rallyResult.runway ?? null,
           metrics: rallyResult.metrics,
           dataMode: "REAL",
           dataQuality: "GOOD",
