@@ -70,6 +70,8 @@ export interface RallyAsset {
   warningFlags?: RallyWarningFlag[];
   entryTiming?: RallyEntryTiming;
   runway?: RallyRunway | null;
+  /** % del capital del módulo sugerido para esta posición (ponderación por convicción). */
+  suggestedWeightPct?: number;
   metrics: RallyMetrics | null;
   dataMode: string;
   scanId: string | null;
@@ -78,8 +80,9 @@ export interface RallyAsset {
 /** Calibración v3.0 (validada 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md) para mostrar en el panel. */
 export const RALLY_BACKTEST = {
   period: "2017-08 → 2026-08 (10 años, 603 tickers)",
-  formula: "Fuerza relativa 50% + Momento 50% · revisión ~cada 4 meses (84 sesiones) · top 10 a peso igual",
-  strategy: { cagr: 0.343, maxDD: 0.415, mar: 0.82, sharpe: 1.14 },
+  formula: "Fuerza relativa 50% + Momento 50% · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por convicción",
+  strategy: { cagr: 0.375, maxDD: 0.419, mar: 0.89, sharpe: 1.14 },
+  equalWeight: { cagr: 0.343, maxDD: 0.415, mar: 0.82 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
 } as const;

@@ -23,6 +23,7 @@
 import { buildUniverseResponse } from './universe.js';
 import { saveLastRallySnapshot, loadLastRallySnapshot } from './_lib/kvStorage.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
+import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
 import { filterActiveOperableAssets, getActiveMarketsAt } from './_lib/scanSnapshot.js';
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
@@ -85,7 +86,8 @@ async function handleStart(req, res) {
   const batchesCompleted = 1;
   const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
   const isComplete = batchesCompleted >= batchesTotal;
-  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
+  // El peso por convicción se asigna sobre el conjunto final (necesita todos los scores).
+  const top10 = assignSuggestedWeights(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
@@ -133,7 +135,8 @@ async function handleContinue(req, res) {
   const newCoveragePercent  = Math.round((newBatchesCompleted / batchesTotal) * 100);
   const isComplete  = newBatchesCompleted >= batchesTotal;
   const totalCalls  = (actualProviderCalls ?? 0) + newCalls;
-  const top10 = candidates.map((c, i) => ({ ...c, rank: i + 1, scanId }));
+  // El peso por convicción se asigna sobre el conjunto final (necesita todos los scores).
+  const top10 = assignSuggestedWeights(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
     await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });

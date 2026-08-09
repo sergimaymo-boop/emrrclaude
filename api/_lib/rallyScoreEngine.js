@@ -363,6 +363,33 @@ function computeWarningFlags(metrics) {
 
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
+/**
+ * PESO SUGERIDO POR CONVICCIÓN — validado 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md §9).
+ *
+ * En vez de repartir el capital a partes iguales entre los 10, se pondera según la
+ * puntuación: los que más destacan pesan más. Es la ÚNICA mejora que superó la
+ * prueba dura de robustez (mejorar en las TRES cadencias de revisión probadas —
+ * 63, 84 y 105 sesiones — midiendo siempre el PEOR de los dos semestres):
+ *
+ *   peso igual (lo anterior) .... CAGR 34,3% · caída 41,5% · MAR 0,82 · peor-3 28,0%
+ *   por convicción .............. CAGR 37,5% · caída 41,9% · MAR 0,89 · peor-3 29,8%
+ *
+ * El efecto es monótono (cuanto más se inclina, mejor mide), lo que indica que es
+ * real y no un ajuste a un parámetro concreto. Se eligió la inclinación intermedia
+ * con TOPE del 18% por posición: la variante más agresiva medía algo mejor (39,0%)
+ * pero llegaba al 21% en un solo valor, demasiada concentración para una cartera de
+ * 10 valores de máximo momento. Suelo del 4% para que ninguna posición sea simbólica.
+ */
+export function assignSuggestedWeights(assets) {
+  if (!Array.isArray(assets) || !assets.length) return assets;
+  const raw = assets.map((a) => Math.max(0.1, (Number(a.rallyScore) || 0) - 50));
+  const total = raw.reduce((s, v) => s + v, 0) || 1;
+  // Reparto proporcional, luego acotado a [4%, 18%] y renormalizado para sumar 100%.
+  const clamped = raw.map((v) => clamp((v / total) * 100, 4, 18));
+  const sum = clamped.reduce((s, v) => s + v, 0) || 1;
+  return assets.map((a, i) => ({ ...a, suggestedWeightPct: Math.round((clamped[i] / sum) * 1000) / 10 }));
+}
+
 export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA" }) {
   const MIN_BARS = 130;
 

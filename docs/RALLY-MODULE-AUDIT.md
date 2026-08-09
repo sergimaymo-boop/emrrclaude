@@ -213,3 +213,66 @@ esas **solo el 10% acabó recuperándose**.
 **Decisión**: el módulo pasa a sugerir un **stop ancho de catástrofe (~30%)** en vez
 del ceñido por ATR. Cuesta ~2,8 puntos anuales y a cambio acota la cola. El panel lo
 etiqueta como "Stop de catástrofe" y explica por qué no debe ceñirse.
+
+## 9. Auditoría de los 3 módulos y optimización (9-ago-2026)
+
+Mandato: auditar los tres módulos con backtesting y dejar cada uno en su mejor versión.
+
+### Salud en producción
+| Módulo | Estado |
+|---|---|
+| OPTIMAL SUPREME | ✅ ok · TIT.MI/MU/LOTB.BR/SPM.MI · RISK_ON · exposición 52,8% |
+| RALLY | ✅ ok · 10 tickers · cobertura 100% · con recorrido y zona de entrada |
+| SP500 | ✅ ok · DENTRO · exposición 100% · sin apalancamiento |
+
+### Verificación de que cada motor reproduce lo que enseña
+- **SP500**: los 4 perfiles reproducen (desvíos 0,1-0,7 pp de CAGR).
+- **RALLY**: réplica ↔ producción, desvío máximo 1 punto sobre 81 muestras.
+- **SUPREME**: gobernado por el protocolo de recalibración TRIMESTRAL
+  ([[project_emrr_optimal_supreme]]); la próxima toca ~nov-2026 y el retador b100 sigue
+  en observación. **No se re-optimiza aquí**: la regla anti-sobreajuste exige evidencia
+  persistente en dos recalibraciones consecutivas, nunca una medición suelta.
+  Lo mismo aplica al SP500, cuya calibración se congeló el 8-ago tras su propio estudio.
+
+### RALLY — segundo intento de usar el "recorrido" para seleccionar: TAMPOCO funciona
+
+Sergi insistió en que los 10 tickers no estén "en el último periodo" del rally. Se
+probaron 29 formulaciones nuevas que NO se habían probado antes:
+
+- **Dos etapas** (coger los mejores N por momento y, entre ellos, los de más recorrido),
+  con 4 definiciones distintas de recorrido y 4 tamaños de grupo previo.
+- **Exclusión suave** de los agotados en tres niveles de dureza.
+- Definiciones alternativas: edad de la tendencia, sesiones desde el mínimo de 52
+  semanas, porcentaje del tramo ya recorrido, extensión sobre la media de 50.
+
+Un candidato pareció ganar (`grupo 15 → edad de tendencia`, peor semestre 32,8% frente
+a 31,9% de la base). **Se sometió a la prueba dura de repetir con tres cadencias de
+revisión (63, 84 y 105 sesiones) y se cayó**: 25,3% / 32,8% / 23,5%. Solo funcionaba a
+84 sesiones → **era ruido de selección**. Ninguna variante mejoró a la base en las tres.
+
+**Veredicto definitivo (segunda comprobación con método distinto): el ranking por
+momento no se mejora filtrando ni reordenando por recorrido.** El recorrido se queda
+como INFORMACIÓN por ticker, que sí está validada a nivel individual (§8).
+
+### RALLY — la mejora que SÍ es real: ponderar por convicción
+
+Única palanca que superó la prueba de las tres cadencias, y de forma **monótona**
+(cuanto más se inclina el reparto, mejor mide — señal de efecto real, no de ajuste):
+
+| Reparto del capital | rev63 | rev84 | rev105 | CAGR | Caída | MAR |
+|---|---|---|---|---|---|---|
+| **A partes iguales (lo anterior)** | 31,3% | 31,9% | 28,0% | 34,3% | 41,5% | 0,82 |
+| Convicción suave | 32,5% | 33,2% | 29,4% | 36,7% | 41,8% | 0,88 |
+| **Convicción media (elegida)** | **32,9%** | **33,7%** | **29,8%** | **37,5%** | 41,9% | **0,89** |
+| Convicción fuerte | 33,7% | 35,0% | 30,7% | 39,0% | 42,1% | 0,93 |
+
+*(las columnas rev son el PEOR de los dos semestres en cada cadencia)*
+
+**+3,2 puntos anuales con la misma caída máxima.** Se eligió la inclinación intermedia
+con **tope del 18% por posición**: la fuerte medía mejor (39,0%) pero llegaba al 21% en
+un solo valor — demasiada concentración para 10 valores de máximo momento. Suelo del 4%
+para que ninguna posición sea simbólica.
+
+Implementado como `assignSuggestedWeights()`; el panel muestra el % sugerido de cada
+posición. **Respetar esos pesos es parte de la estrategia**: a partes iguales se vuelve
+a 34,3%.

@@ -114,6 +114,7 @@ export function RallyPanel() {
           <div style={{ padding: "10px 16px 4px", fontSize: 10, color: "#94a3b8", display: "flex", gap: 14, flexWrap: "wrap" }}>
             <span>Metodología: <b style={{ color: "#cbd5e1" }}>{RALLY_BACKTEST.formula}</b></span>
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
+            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo.</span>
           </div>
 
           <div style={{ padding: "8px 16px 4px" }}>
@@ -129,6 +130,8 @@ export function RallyPanel() {
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.cagr * 100).toFixed(1)}%</b> anual con una caída máxima del{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.maxDD * 100).toFixed(0)}%</b> (MAR {RALLY_BACKTEST.strategy.mar.toFixed(2)}),
             frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(0)}% de comprar y mantener el S&amp;P 500.
+            Con reparto a partes iguales, en lugar de por convicción, la misma selección daba {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}%
+            (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}): respetar los pesos sugeridos es parte de la estrategia.
             ⚠ Caída máxima superior al índice: diez valores de máximo momento pueden caer a la vez. Rentabilidad pasada; no garantiza la futura.
             <br />
             <b style={{ color: SLATE }}>Zona de entrada</b> (badge junto a cada ticker): validada por separado con 260 episodios históricos de
@@ -198,6 +201,11 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
           </span>
         )}
         {flags.length > 0 && <span title={flags.map((f) => f.label).join(" · ")} style={{ fontSize: 11 }}>⚠</span>}
+        {asset.suggestedWeightPct != null && (
+          <span title="Porcentaje del capital del módulo sugerido para esta posición" style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 40, textAlign: "right" }}>
+            {asset.suggestedWeightPct.toFixed(1)}%
+          </span>
+        )}
         <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 34, textAlign: "right" }}>{asset.rallyScore}</span>
         <span style={{ fontSize: 9, color: "#64748b", width: 60, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
       </button>
