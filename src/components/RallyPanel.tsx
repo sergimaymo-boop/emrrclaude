@@ -142,11 +142,12 @@ export function RallyPanel() {
   );
 }
 
-const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string }> = {
-  IDEAL: { color: GREEN, label: "ENTRADA IDEAL" },
-  LEJOS: { color: SLATE, label: "LEJOS DEL MÁXIMO" },
-  EN_MAXIMOS: { color: "#eab308", label: "EN MÁXIMOS — CAUTELA" },
-  SIN_DATOS: { color: SLATE, label: "—" },
+/** `short` se usa en móvil: la zona de entrada NUNCA debe ocultarse, es el dato clave. */
+const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string; short: string }> = {
+  IDEAL: { color: GREEN, label: "ENTRADA IDEAL", short: "IDEAL" },
+  LEJOS: { color: SLATE, label: "LEJOS DEL MÁXIMO", short: "LEJOS" },
+  EN_MAXIMOS: { color: "#eab308", label: "EN MÁXIMOS — CAUTELA", short: "MÁX." },
+  SIN_DATOS: { color: SLATE, label: "—", short: "—" },
 };
 
 function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void }) {
@@ -166,9 +167,10 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
         <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{rank}</span>
         <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 70 : 90 }}>{asset.ticker}</span>
         {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
-        {!isNarrow && entry && (
+        {isNarrow && <span style={{ flex: 1 }} />}
+        {entry && (
           <span title={entry.label} style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: entryStyle.color, background: `${entryStyle.color}18`, border: `1px solid ${entryStyle.color}55`, whiteSpace: "nowrap" }}>
-            {entryStyle.label}
+            {isNarrow ? entryStyle.short : entryStyle.label}
           </span>
         )}
         {flags.length > 0 && <span title={flags.map((f) => f.label).join(" · ")} style={{ fontSize: 11 }}>⚠</span>}
