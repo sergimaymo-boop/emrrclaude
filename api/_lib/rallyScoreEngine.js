@@ -1,28 +1,39 @@
 /**
- * RALLY LEADERS ENGINE — Rally Score Engine v3.0 (validado con backtest, 9-ago-2026)
+ * RALLY LEADERS ENGINE — Rally Score Engine v4.0 (super-auditoría, 9-ago-2026)
  *
- * v2.0 usaba pesos de literatura (O'Neil CAN SLIM, Minervini, Weinstein) que NUNCA se
- * habían contrastado con datos. Auditoría con 10 años / 603 tickers (docs/RALLY-MODULE-AUDIT.md,
- * scripts/rally-backtest-*.mjs): v2.0 tal cual RENTABILIDAD 14,0%/año, caída 44,9% — PIERDE
- * contra comprar y mantener el S&P 500 (15,6%/33,7%). Validado en 3 pasos: equivalencia
- * réplica↔producción, partición fuera de muestra (elegir el mejor del entrenamiento NO se
- * transfiere, rho=0,03 → se eligió por robustez) y control contra selección al azar (supera
- * 30/30 sorteos en ambas mitades del periodo, p≈0,032 — descarta sesgo de supervivencia).
+ * HISTORIA DE VERSIONES (cada salto, validado con 10 años / 603 tickers):
+ *   v2.0 — 7 componentes de literatura (O'Neil/Minervini/Weinstein), nunca medidos.
+ *          Al medirlos: 14,0%/año con caída 44,9% — PERDÍA contra el S&P 500.
+ *   v3.0 — RS 50% + momento 50%: 34,3% (37,5% con pesos por convicción).
+ *   v4.0 — MOMENTO PURO A 9 MESES. La super-auditoría de familias de indicadores
+ *          (scripts/rally-super-audit*.mjs: momento 6/9/12m, 12-1 clásico, RSI(14),
+ *          RS a 3 ventanas, momento/volatilidad, combos por percentil) reveló que la
+ *          medición simple es sensible a la fecha de inicio, así que el criterio fue
+ *          DOMINANCIA EN MALLA: 3 fases de arranque × 3 cadencias de revisión, y en
+ *          cada celda el PEOR de los dos semestres. El momento a 9 meses ganó al
+ *          campeón v3 en las 9/9 celdas; con pesos por convicción mejora en 9/9 más:
  *
- *   Fuerza relativa   50% — RS 3M + RS 6M (normalización curva, sin techo artificial)
- *   Momento           50% — 3M principal (60%), 6M (30%), 1M filtrado de ruido (10%)
+ *            v3 (RS+mom, convicción) ... CAGR 37,5% · caída 41,9% · MAR 0,89
+ *            v4 (mom9, convicción) ..... CAGR 39,4% · caída 43,9% · MAR 0,90
+ *            v4 robustez: peor semestre mediana 32,8% · mínimo de las 9 celdas 24,2%
  *
- * Trend/Proximidad52s/RVOL/ATR/Liquidez SIGUEN CALCULÁNDOSE (se muestran en el panel para
- * contexto) pero YA NO puntúan: el backtest mostró que diluyen la señal.
+ *          CONVERGENCIA INDEPENDIENTE: 9 meses = 189 sesiones, el MISMO lookback que
+ *          OPTIMAL SUPREME encontró con sus 118 variantes en julio. Dos estudios
+ *          separados sobre el mismo universo apuntan a la misma ventana — la señal
+ *          de momento en este universo vive en ~9 meses.
  *
- * Las penalizaciones (extensión parabólica, precio bajo EMA50…) YA NO restan puntos del
- * ranking — el backtest mostró que recortaban justo a los líderes. Se devuelven como
- * `warningFlags` explícitos para que el panel las muestre sin distorsionar el orden.
+ *   score = clamp(50 + 50·tanh(mom9m / 75)) — transformación MONÓTONA del momento a
+ *   9 meses: el orden del ranking es EXACTAMENTE el del momento crudo (equivale al
+ *   percentil transversal con el que se auditó), y la escala 0-100 alimenta los pesos
+ *   por convicción igual que antes. RSI(14) como ranking: probado, de lo PEOR (6,8%).
+ *
+ * RS/tendencia/proximidad/RVOL/ATR siguen calculándose y mostrándose como contexto,
+ * pero NO puntúan. Las penalizaciones siguen siendo `warningFlags` informativos.
  */
 
 import { calculateEma, calculateAtr } from "./technicalEngine.js";
 
-export const RALLY_ENGINE_VERSION = "3.0.0";
+export const RALLY_ENGINE_VERSION = "4.0.0";
 
 const WEIGHTS = {
   relativeStrength: 0.50,
@@ -391,7 +402,9 @@ export function assignSuggestedWeights(assets) {
 }
 
 export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA" }) {
-  const MIN_BARS = 130;
+  // v4.0: el score necesita 189 sesiones de momento 9m + margen; con menos histórico
+  // el ticker queda DISCARD (sin 9 meses cotizando no hay señal comparable).
+  const MIN_BARS = 200;
 
   if (!Array.isArray(bars) || bars.length < MIN_BARS) {
     return {
@@ -427,6 +440,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const mom1m = returnPercent(closes, 20);
   const mom3m = returnPercent(closes, 63);
   const mom6m = returnPercent(closes, 126);
+  const mom9m = returnPercent(closes, 189);   // v4.0: LA señal del ranking
   const mom5d = returnPercent(closes, 5);
 
   // ─── ATR ───
@@ -460,19 +474,15 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const sAtr     = scoreAtr(atrPercent);
   const sLiq     = scoreLiquidity(avgValue20, spreadPercent, region);
 
-  const rawScore =
-    sRS      * WEIGHTS.relativeStrength +
-    sMom     * WEIGHTS.momentum +
-    sTrend   * WEIGHTS.trend +
-    sProx52w * WEIGHTS.proximity52w +
-    sRvol    * WEIGHTS.rvol +
-    sAtr     * WEIGHTS.atr +
-    sLiq     * WEIGHTS.liquiditySpread;
+  // v4.0: el momento a 9 meses ES el score. Sin 189 sesiones → DISCARD.
+  if (!isFiniteNum(mom9m)) {
+    return { ok: false, rallyScore: 0, label: "DISCARD", color: "#4b5563", blockedReasons: ["INSUFFICIENT_HISTORY_FOR_MOM9"], metrics: null };
+  }
 
   const warningFlags = computeWarningFlags({ price: lastClose, ema20, ema50, mom1m, mom3m, rvol, rs5d });
   const entryTiming = computeEntryTiming(high52w > 0 ? lastClose / high52w : null);
   const runway = computeRunway(lastClose, closes, emaSeries(closes, 50), ema50, high52w > 0 ? lastClose / high52w : null);
-  const finalScore = Math.round(clamp(rawScore));
+  const finalScore = Math.round(clamp(50 + 50 * Math.tanh(mom9m / 75)));
   const rangeInfo = getRallyLabel(finalScore);
   const trailingStop = calculateTrailingStop(atrPercent);
 
@@ -501,6 +511,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
       mom1m: Number.isFinite(mom1m) ? Math.round(mom1m * 100) / 100 : null,
       mom3m: Number.isFinite(mom3m) ? Math.round(mom3m * 100) / 100 : null,
       mom6m: Number.isFinite(mom6m) ? Math.round(mom6m * 100) / 100 : null,
+      mom9m: Number.isFinite(mom9m) ? Math.round(mom9m * 100) / 100 : null,
       rvol: Number.isFinite(rvol) ? Math.round(rvol * 100) / 100 : null,
       atrPercent: Number.isFinite(atrPercent) ? Math.round(atrPercent * 100) / 100 : null,
       trailingStop,

@@ -2,10 +2,10 @@
  * RallyPanel — "los 10 tickers con el rally alcista más sano" del universo completo.
  *
  * Reactivado y REVALIDADO 9-ago-2026 (ver docs/RALLY-MODULE-AUDIT.md): la fórmula v2.0
- * original perdía contra comprar y mantener el S&P 500. La v3.0 (fuerza relativa 50% +
- * momento 50%, sin penalizar en el ranking) sí bate al índice con backtest de 10 años,
- * validada contra sobreajuste (fuera de muestra) y contra sesgo de supervivencia (control
- * frente a selección aleatoria). Módulo independiente: usa su propio endpoint de scan.
+ * original perdía contra comprar y mantener el S&P 500. La v4.0 (momento puro a 9 meses,
+ * ganador de la super-auditoría de familias de indicadores: dominó en las 9 celdas de la
+ * malla fase×cadencia) bate al índice con backtest de 10 años, validada contra sobreajuste
+ * y contra sesgo de supervivencia. Módulo independiente: usa su propio endpoint de scan.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -88,7 +88,7 @@ export function RallyPanel() {
           🔥 Rally Leaders · los 10 con la tendencia más sana
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 8, fontWeight: 700, color: "#64748b" }}>v3.0 validada · módulo independiente</span>
+          <span style={{ fontSize: 8, fontWeight: 700, color: "#64748b" }}>v4.0 validada · módulo independiente</span>
           <button
             onClick={() => void runScan()}
             disabled={scanning}
@@ -102,7 +102,7 @@ export function RallyPanel() {
       {!hasData && !scanning && (
         <div style={{ padding: "16px", fontSize: 11.5, color: "#cbd5e1" }}>
           Sin escaneo reciente. Pulsa <b style={{ color: AMBER }}>Escanear universo</b> para puntuar los ~600 tickers y
-          obtener los 10 con la tendencia alcista más sana (fuerza relativa + momento, validado con 10 años de backtest).
+          obtener los 10 con la tendencia alcista más sana (momento a 9 meses, validado con 10 años de backtest).
         </div>
       )}
       {scanning && !hasData && (
@@ -132,6 +132,9 @@ export function RallyPanel() {
             frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(0)}% de comprar y mantener el S&amp;P 500.
             Con reparto a partes iguales, en lugar de por convicción, la misma selección daba {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}%
             (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}): respetar los pesos sugeridos es parte de la estrategia.
+            La señal del ranking es el <b style={{ color: SLATE }}>momento a 9 meses</b> (189 sesiones): en la super-auditoría de familias de
+            indicadores (momento a 4 plazos, RSI, fuerza relativa, momento/volatilidad y combos) fue la única que dominó en las 9 celdas de la
+            malla fase×cadencia — y coincide con la ventana que OPTIMAL SUPREME encontró por separado con sus 118 variantes.
             ⚠ Caída máxima superior al índice: diez valores de máximo momento pueden caer a la vez. Rentabilidad pasada; no garantiza la futura.
             <br />
             <b style={{ color: SLATE }}>Zona de entrada</b> (badge junto a cada ticker): validada por separado con 260 episodios históricos de
@@ -226,6 +229,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
           )}
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
             <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toFixed(2) : "—"} />
+            <Stat label="Momento 9m (señal)" value={pct(m?.mom9m)} tone={AMBER} />
             <Stat label="Momento 3m" value={pct(m?.mom3m)} tone={(m?.mom3m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Momento 6m" value={pct(m?.mom6m)} tone={(m?.mom6m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Fuerza rel. 3m vs S&P" value={pct(m?.rs3m)} tone={(m?.rs3m ?? 0) > 0 ? GREEN : RED} />

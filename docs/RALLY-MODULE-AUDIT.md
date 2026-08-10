@@ -276,3 +276,56 @@ para que ninguna posición sea simbólica.
 Implementado como `assignSuggestedWeights()`; el panel muestra el % sugerido de cada
 posición. **Respetar esos pesos es parte de la estrategia**: a partes iguales se vuelve
 a 34,3%.
+
+## 10. SUPER-AUDITORÍA de familias de indicadores → v4.0 (9-ago-2026, noche)
+
+Mandato de Sergi: cruzar los 600+ tickers con la mejor selección posible de indicadores
+(EMAs, RSI, los que sean), quitando y poniendo hasta quedarse con los óptimos, siempre
+con backtest de 10 años.
+
+### Método
+14 familias de ranking, todas puntuadas por PERCENTIL transversal del día (sin rangos
+ajustables a mano): momento a 6/9/12 meses, momento 12-1 clásico (Jegadeesh-Titman),
+RSI(14), fuerza relativa a 3/12 meses, momento/volatilidad a 2 plazos, y 4 combos.
+
+**Descubrimiento metodológico**: la medición simple es sensible a la FECHA DE INICIO
+(el campeón variaba 10 pp al desplazar el arranque 20 sesiones). Criterio definitivo:
+**malla de 9 celdas** (3 fases de arranque × 3 cadencias de revisión), y en cada celda
+el peor de los dos semestres. Un retador solo vale si **domina celda a celda**.
+
+### Resultado
+| Familia | Celdas ganadas al campeón v3 | Veredicto |
+|---|---|---|
+| **Momento 9 meses** | **9/9** | ✅ DOMINA → nueva señal |
+| Momento 6 meses | 7/9 | casi, pero no |
+| RS 3m | 4/9 | no |
+| Momento 12m / 12-1 | 2/9 | no |
+| RSI(14) como ranking | — | de lo PEOR (6,8% en peor celda) |
+| Momento/volatilidad | — | muy malo (2,9-10,3%) |
+
+**Convergencia independiente**: 9 meses = 189 sesiones — el MISMO lookback que OPTIMAL
+SUPREME encontró con sus 118 variantes en julio. Dos estudios separados, misma ventana:
+la señal de momento en este universo vive en ~9 meses. Esto da mucha más confianza que
+cualquier p-valor.
+
+### v4.0 final (fórmula exacta de producción, verificada con desvío 0)
+```
+score  = 50 + 50·tanh(momento_9m / 75)      (monótono → ranking idéntico al percentil)
+top 10 · pesos por convicción (score−50, tope 18%, suelo 4%)
+revisión ~cada 4 meses · stop de catástrofe ~30%
+```
+| | CAGR | Caída | MAR | Peor semestre (mediana 9 celdas) |
+|---|---|---|---|---|
+| v3 (RS+mom, convicción) | 37,5% | 41,9% | 0,89 | ~27% |
+| **v4 (mom9, convicción)** | **39,4%** | 43,9% | **0,90** | **32,8%** |
+
+La ganancia principal no es el CAGR: es la **robustez** (peor semestre mediano sube de
+~27% a 32,8%, y v4 ganó en TODAS las combinaciones fase×cadencia probadas).
+
+### Respuestas a las preguntas de Sergi
+- **¿Mercados cerrados o abiertos?** Para auditoría y scan da igual (cierres diarios);
+  con mercado abierto solo conviene EJECUTAR las órdenes en IBK.
+- **¿Varios agentes?** No hizo falta: el cuello de botella era cómputo determinista.
+- **¿Indicadores por ticker individual?** NO se hace: elegir indicadores distintos para
+  cada ticker multiplica las pruebas por 603 y garantiza sobreajuste (ya vimos rho=0,03
+  incluso a nivel global). La selección es global y validada fuera de muestra.

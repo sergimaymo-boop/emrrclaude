@@ -35,6 +35,8 @@ export interface RallyMetrics {
   mom1m: number | null;
   mom3m: number | null;
   mom6m: number | null;
+  /** v4.0: momento a 9 meses (189 sesiones) — LA señal del ranking. */
+  mom9m?: number | null;
   rvol: number | null;
   atrPercent: number | null;
   trailingStop: number | null;
@@ -77,12 +79,13 @@ export interface RallyAsset {
   scanId: string | null;
 }
 
-/** Calibración v3.0 (validada 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md) para mostrar en el panel. */
+/** Calibración v4.0 (super-auditoría 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md §10). */
 export const RALLY_BACKTEST = {
   period: "2017-08 → 2026-08 (10 años, 603 tickers)",
-  formula: "Fuerza relativa 50% + Momento 50% · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por convicción",
-  strategy: { cagr: 0.375, maxDD: 0.419, mar: 0.89, sharpe: 1.14 },
-  equalWeight: { cagr: 0.343, maxDD: 0.415, mar: 0.82 },
+  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por convicción",
+  strategy: { cagr: 0.394, maxDD: 0.439, mar: 0.90, sharpe: 1.14 },
+  equalWeight: { cagr: 0.374, maxDD: 0.437, mar: 0.86 },
+  v3: { cagr: 0.375, maxDD: 0.419, mar: 0.89 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
 } as const;
