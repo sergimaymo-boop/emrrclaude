@@ -329,3 +329,34 @@ La ganancia principal no es el CAGR: es la **robustez** (peor semestre mediano s
 - **¿Indicadores por ticker individual?** NO se hace: elegir indicadores distintos para
   cada ticker multiplica las pruebas por 603 y garantiza sobreajuste (ya vimos rho=0,03
   incluso a nivel global). La selección es global y validada fuera de muestra.
+
+## 11. La estrategia de salto de Sergi, medida tal cual (10-ago-2026)
+
+Mandato: "cuando salte el trailing stop, salta al ticket que en ese momento el scan
+diga que es el mejor, con recorrido ALTO y entrada IDEAL".
+
+Se simuló EXACTAMENTE eso sobre la v4 (malla 9 celdas, peor semestre por celda), con
+salto el mismo día del stop al sustituto elegido, heredando el peso de la posición:
+
+| Variante | Celdas ganadas | CAGR (260·84) | Caída |
+|---|---|---|---|
+| **Campeón v4 (sin trailing)** | — | **39,4%** | 43,9% |
+| Stop catástrofe → salto a "mejor con rec. ALTO **+ entrada IDEAL**" (la pedida) | 0/9 | 32,3% | 39,4% |
+| Stop catástrofe → salto a "mejor con rec. ALTO" | 4/9 | 37,0% | **38,0%** |
+| Stop catástrofe → salto al mejor score | 3/9 | 37,8% | 37,2% |
+| Stop 20% → salto IDEAL | 0/9 | 30,5% | 36,8% |
+| Stop ceñido ATR → salto IDEAL | 0/9 | 15,5% | 33,4% |
+
+**Conclusiones**:
+1. La versión estricta (exigir recorrido ALTO **y** entrada IDEAL en el salto) pierde
+   en TODAS las celdas: cuando pocos candidatos cumplen ambas condiciones, el filtro
+   obliga a comprar momentos más débiles. La zona "entrada IDEAL" está validada como
+   información al entrar en revisión — como FILTRO del salto, resta.
+2. La variante suave (saltar al mejor con recorrido ALTO, sin exigir entrada IDEAL)
+   es una **versión defensiva legítima**: −6 puntos de caída máxima (38,0% vs 43,9%)
+   a cambio de −2,4 puntos de CAGR. No domina (4/9), así que NO sustituye al campeón,
+   pero es la mecánica correcta si Sergi opera con stops: **stop de catástrofe 25-35%
+   y, al saltar, entrar en el mejor del ranking con recorrido ALTO**.
+3. El stop ceñido sigue siendo veneno incluso con salto inmediato (15,5%).
+
+El panel ahora incluye esta instrucción operativa exacta en el pie del módulo.

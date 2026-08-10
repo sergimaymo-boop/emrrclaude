@@ -146,10 +146,12 @@ export function RallyPanel() {
             desde la entrada. Tendencia joven y poco extendida sobre su media de 50 = más recorrido por delante; en máximos de 52 semanas = menos.
             Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
             <br />
-            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: el backtest demuestra que un trailing stop ceñido <b>destruye rentabilidad aquí</b>
-            (34,3% sin stop → 19,3% con stop ATR del 5-18%, incluso reinvirtiendo al instante). El número que se muestra es un
-            <b> stop ancho de catástrofe (~30%)</b>: cuesta unos 3 puntos anuales y a cambio acota la cola — sin ningún stop, la peor posición
-            del histórico fue −64%.
+            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido <b>destruye rentabilidad aquí</b> (probado también con salto
+            inmediato al mejor candidato: 15,5% frente a 39,4%). El número mostrado es un <b>stop ancho de catástrofe (25-35%)</b>.
+            <b style={{ color: SLATE }}> Si un stop te salta</b>: re-escanea y entra en el mejor del ranking <b>con recorrido ALTO</b> — esa
+            mecánica de salto mide una caída máxima ~6 puntos menor (38,0% frente a 43,9%) a cambio de ~2,4 puntos de rentabilidad anual
+            (37,0% frente a 39,4%). Exigir además "entrada IDEAL" al saltar se probó y <b>resta</b> (32,3%): con pocos candidatos que cumplan
+            ambas condiciones, el filtro te obliga a comprar momentos más débiles.
           </div>
         </>
       )}
