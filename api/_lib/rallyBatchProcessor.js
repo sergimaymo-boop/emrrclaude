@@ -20,7 +20,9 @@ export function mergeRallyCandidates(existing, newOnes) {
     if (!prev || c.rallyScore > prev.rallyScore) map.set(c.providerSymbol, c);
   }
   return [...map.values()]
-    .sort((a, b) => b.rallyScore - a.rallyScore)
+    // Desempate por el momento 9m CRUDO: el score satura en 100 con momentos >150%
+    // (tanh), y sin esto el orden entre los mega-líderes quedaba arbitrario.
+    .sort((a, b) => b.rallyScore - a.rallyScore || (b.metrics?.mom9m ?? 0) - (a.metrics?.mom9m ?? 0))
     .slice(0, MAX_TOP_CANDIDATES);
 }
 
