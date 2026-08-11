@@ -540,6 +540,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }
 
       if (!advanced) {
+        pausedScanRef.current = snapshot.snapshotToken
+          ? { snapshotToken: snapshot.snapshotToken, batch: expectedBatch ?? 0 }
+          : null;
         setScanState((current) => ({
           ...current,
           label: `Auto scan paused - continue manually from batch ${expectedBatch}/${snapshot.batchesTotal}`,
@@ -782,13 +785,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // Devuelve true/false para condicionar el toast final.
   async function runFull(): Promise<boolean> {
     clearSessionCacheForNewScan();
+    pausedScanRef.current = null;
     const startedAt = createTimestampPair();
     setScanState(c => ({ ...c, label: "SCAN FULL running...", isScanning: true,
       lastRun: startedAt, lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT" }));
     setSystemStatus(c => updateSystemStatusForDataMode(refreshSystemMarketStatus(c), "SCANNING", c.lastRealDataUpdate));
     try {
       await runAutoChainedScan(startedAt);
-      return true;
+      // Una pausa a mitad (3 reintentos de batch fallidos) NO es un éxito: cobertura
+      // parcial. El bloque de auto-reintento de handleScanAll intentará continuarlo.
+      return pausedScanRef.current === null;
     } catch (error) {
       setScanState(c => ({ ...c, label: "Scan snapshot failed - manual retry available",
         isScanning: false, scanExecutionMode: "ERROR" }));
@@ -805,6 +811,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // Mutex del scan de SUPREME/Amplitud — compartido entre el botón manual del panel
   // y la fase breadth de SCAN EMRR para que nunca corran dos runBreadthScan a la vez.
   const o26ScanActiveRef = useRef(false);
+
+  // Pausa del auto-scan registrada SÍNCRONAMENTE (audit 11-ago): el bloque de
+  // auto-reintento de handleScanAll leía scanStateRef justo tras el allSettled, pero
+  // el ref se sincroniza en un useEffect que aún no ha corrido en esa microtask — leía
+  // el estado COMMITTED viejo (isScanning:true) y el reintento no se disparaba nunca.
+  // Este ref se escribe con los valores LOCALES del punto de pausa, sin pasar por React.
+  const pausedScanRef = useRef<{ snapshotToken: string; batch: number } | null>(null);
 
   // Generación del run de SCAN EMRR: el timeout done→idle de un run viejo NO debe
   // pisar la fase de un run nuevo lanzado durante la ventana "done" (4s). Sin esto,
@@ -832,18 +845,20 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     const settled = await Promise.allSettled([flowsPromise, fullPromise]);
     let fullOk = settled[1].status === "fulfilled" && settled[1].value === true;
 
-    // AUDIT FIX: si el auto-scan quedó PAUSADO a mitad (3 reintentos de batch fallidos, snapshot
-    // parcial), el botón "Continuar scan" ya no existe en la UI consolidada — reintentar aquí la
-    // continuación una vez, automáticamente. Estado real vía ref (no closure).
-    const st = scanStateRef.current;
-    if (st.snapshotToken && st.coveragePercent !== 100 && !st.isScanning) {
+    // AUDIT FIX (11-ago, causa raíz): si el auto-scan quedó PAUSADO a mitad, reintentar la
+    // continuación una vez. La pausa se lee de pausedScanRef (escrito síncronamente en el
+    // punto de pausa con el token LOCAL) — scanStateRef aquí aún refleja el commit viejo
+    // (isScanning:true), por lo que la versión anterior de este bloque no se disparaba nunca.
+    const paused = pausedScanRef.current;
+    if (paused) {
       const startedAt = createTimestampPair();
       setScanState(c => ({ ...c, label: "CONTINUE SCAN running...", isScanning: true,
         lastScanClicked: startedAt, scanExecutionMode: "SCAN_SNAPSHOT" }));
       try {
-        await applySnapshotResult(continueScanSnapshot(st.snapshotToken), startedAt, {
+        await applySnapshotResult(continueScanSnapshot(paused.snapshotToken), startedAt, {
           keepScanning: false, suppressToast: true,
         });
+        pausedScanRef.current = null;
         fullOk = true;
       } catch {
         setScanState(c => ({ ...c, isScanning: false, label: "Scan parcial — pulsa SCAN EMRR para reintentar" }));
