@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { Optimal2026Result, Optimal2026Item, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
-import { parseIBKPortfolio, parseImagePortfolio, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage, clearPortfolioHistory, loadPortfolioHistory } from "../services/optimal2026Refresh";
+import { parseIBKPortfolio, parseImagePortfolio, parseOCRPortfolio, parseIBKAccountSummary, savePortfolioToStorage, loadPortfolioFromStorage, clearPortfolioFromStorage, clearPortfolioHistory, loadPortfolioHistory } from "../services/optimal2026Refresh";
 import { enrichWithIntradaySignals, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 

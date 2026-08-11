@@ -6,7 +6,8 @@ export type ScanPhase =
   | "flows"    // paso 1/3
   | "rally"    // legado — ya no se dispara, se mantiene por compatibilidad de tipo
   | "full"     // paso 2/3 — integridad de universo + indicadores maestros
-  | "breadth"  // paso 3/3 — amplitud + OPTIMAL SUPREME
+  | "breadth"  // paso 3/4 — amplitud + OPTIMAL SUPREME
+  | "modules"  // paso 4/4 — TODOS los módulos registrados en el scanBus (Rally, SP500, futuros)
   | "done";
 
 interface StickyMiniHeaderProps {
@@ -49,12 +50,13 @@ function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED
 
 // Button phase config
 const PHASE_CONFIG: Record<ScanPhase, { label: string; sub: string; progress: number }> = {
-  idle:    { label: "SCAN  EMRR",  sub: "Flujos  ·  Universo  ·  Amplitud  ·  ⚡ SUPREME", progress: 0 },
-  flows:   { label: "Flujos…",     sub: "Paso 1 / 3  —  Rotación sectorial",   progress: 15 },
+  idle:    { label: "SCAN  EMRR",  sub: "TODO el dashboard  ·  ⚡ SUPREME · 🔥 Rally · 📈 SP500", progress: 0 },
+  flows:   { label: "Flujos…",     sub: "Paso 1 / 4  —  Rotación sectorial",   progress: 12 },
   rally:   { label: "Escaneando…", sub: "Fase legado",                          progress: 30 },
-  full:    { label: "Universo…",   sub: "Paso 2 / 3  —  Integridad + indicadores", progress: 50 },
-  breadth: { label: "⚡ SUPREME…", sub: "Paso 3 / 3  —  Amplitud + Optimal Supreme", progress: 82 },
-  done:    { label: "✓  Listo",    sub: "OPTIMAL SUPREME + Amplitud actualizados", progress: 100 },
+  full:    { label: "Universo…",   sub: "Paso 2 / 4  —  Integridad + indicadores", progress: 40 },
+  breadth: { label: "⚡ SUPREME…", sub: "Paso 3 / 4  —  Amplitud + Optimal Supreme", progress: 68 },
+  modules: { label: "Módulos…",    sub: "Paso 4 / 4  —  🔥 Rally + 📈 SP500 (todos los registrados)", progress: 90 },
+  done:    { label: "✓  Listo",    sub: "Dashboard completo actualizado", progress: 100 },
 };
 
 export function StickyMiniHeader({

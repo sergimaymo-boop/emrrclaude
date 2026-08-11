@@ -583,3 +583,14 @@ Run this mental checklist before every deploy:
 □ If previous scan exists → TOP 8 loads from Redis
 □ Logout → returns to splash screen
 ```
+
+
+## Typecheck (IMPORTANTE)
+`npx tsc --noEmit` a secas es un NO-OP en este repo (tsconfig.json raíz solo tiene
+references y files:[]). El typecheck REAL es:
+```
+npx tsc -p tsconfig.app.json --noEmit
+```
+El 11-ago-2026 este no-op ocultó dos identificadores sin importar en la ruta de subida
+de fotos (Optimal2026Panel), rotos en producción durante ~1 semana. Vite build NO
+typechecka: no confiar en que "compila" signifique "tipos correctos".

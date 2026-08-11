@@ -29,7 +29,6 @@ import {
 import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair, Top8Asset } from "../types";
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
-import { getRegionalMarketStates } from "../utils/marketHours";
 import { createTimestampPair } from "../utils/time";
 import {
   type MarketBreadthResult,
@@ -48,6 +47,7 @@ import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
 import { RallyPanel } from "../components/RallyPanel";
 import { SP500Panel } from "../components/SP500Panel";
+import { runAllModuleScans } from "../services/scanBus";
 import {
   type Optimal2026Result,
   fetchOptimal2026,
@@ -258,7 +258,10 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // Ref de "scan en curso" para que los intervals (closures) sepan si hay un scan activo
   // sin depender de estado obsoleto (audit fix: no refrescar cotizaciones durante un scan).
   const scanActiveRef = useRef(false);
-  useEffect(() => { scanActiveRef.current = scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done"); }, [scanState.isScanning, scanPhase]);
+  // La fase "modules" NO bloquea el refresco de cotizaciones: el trabajo pesado de esa
+  // fase (scan de Rally) ocurre en el servidor, y con mercados abiertos un scan largo
+  // dejaba los precios >5 min sin refrescar y disparaba la alarma roja en falso.
+  useEffect(() => { scanActiveRef.current = scanState.isScanning || (scanPhase !== "idle" && scanPhase !== "done" && scanPhase !== "modules"); }, [scanState.isScanning, scanPhase]);
 
 
   // AUDIT FIX (DATA_UNAVAILABLE en el Top 8): el scan rankea por score con
@@ -803,9 +806,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   // y la fase breadth de SCAN EMRR para que nunca corran dos runBreadthScan a la vez.
   const o26ScanActiveRef = useRef(false);
 
+  // Generación del run de SCAN EMRR: el timeout done→idle de un run viejo NO debe
+  // pisar la fase de un run nuevo lanzado durante la ventana "done" (4s). Sin esto,
+  // el timeout obsoleto forzaba "idle" a mitad del scan siguiente, burlando la guarda
+  // de reentrada y reactivando el refresco de cotizaciones en plena fase de scan.
+  const scanRunIdRef = useRef(0);
+
   async function handleScanAll() {
     // Guarda cruzada: no arrancar si ya hay un SCAN/CONTINUE individual en curso (audit fix concurrencia).
     if ((scanPhase !== "idle" && scanPhase !== "done") || scanState.isScanning) return;
+    const runId = ++scanRunIdRef.current;
     const savedScroll = window.scrollY;
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
 
@@ -874,15 +884,26 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
     }
 
+    // Fase 4 — TODOS los módulos registrados en el scanBus (Rally, SP500 y los que se
+    // añadan en el futuro: un módulo nuevo solo tiene que registerModuleScan() y el
+    // botón grande lo incluye automáticamente). Corren en paralelo y aislados: el
+    // fallo de uno no afecta a los demás.
+    setScanPhase("modules");
+    const moduleResults = await runAllModuleScans();
+    const modulesFailed = moduleResults.filter((m) => !m.ok).map((m) => m.name);
+    const modulesOk = modulesFailed.length === 0;
+
     setScanPhase("done");
-    if (fullOk && breadthOk) {
-      showToast("✓ Análisis completo — Amplitud + OPTIMAL SUPREME actualizados", "success");
+    if (fullOk && breadthOk && modulesOk) {
+      showToast("✓ Dashboard completo — SUPREME + Amplitud + Rally + SP500 actualizados", "success");
     } else if (breadthOk) {
-      showToast("Análisis parcial — Amplitud/SUPREME OK, scan de universo con errores", "info");
+      const detail = modulesFailed.length ? ` · módulos con error: ${modulesFailed.join(", ")}` : " · scan de universo con errores";
+      showToast(`Análisis parcial — Amplitud/SUPREME OK${detail}`, "info");
     } else {
       showToast("Scan con errores — revisa conexión y reintenta", "error");
     }
-    setTimeout(() => setScanPhase("idle"), 4000);
+    // Solo vuelve a "idle" si este run sigue siendo el vigente (ver scanRunIdRef).
+    setTimeout(() => { if (scanRunIdRef.current === runId) setScanPhase("idle"); }, 4000);
   }
 
   // ─── OPTIMAL SUPREME scan dedicado (botón manual en el panel) ─────────────

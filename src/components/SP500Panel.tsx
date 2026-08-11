@@ -7,8 +7,9 @@
  *
  * Estética terminal ámbar, cifras tabulares, pensado para leerse de un vistazo.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { registerModuleScan } from "../services/scanBus";
 import {
   type Sp500Profile,
   type Sp500Settings,
@@ -41,18 +42,39 @@ export function SP500Panel() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  const load = useCallback(async (profile: Sp500Profile, force = false) => {
+  // Reentrada (botón pequeño + bus global a la vez): se reutiliza la petición en
+  // vuelo en lugar de lanzar dos recomputes forzados concurrentes al servidor.
+  const inflightRef = useRef<Promise<Sp500Signal> | null>(null);
+  const load = useCallback(async (profile: Sp500Profile, force = false): Promise<Sp500Signal> => {
+    if (inflightRef.current) return inflightRef.current;
     setLoading(true);
-    try {
-      setSignal(await fetchSp500Signal(profile, force));
-    } finally {
-      setLoading(false);
-    }
+    const p = (async () => {
+      try {
+        const s = await fetchSp500Signal(profile, force);
+        setSignal(s);
+        return s;
+      } finally {
+        inflightRef.current = null;
+        setLoading(false);
+      }
+    })();
+    inflightRef.current = p;
+    return p;
   }, []);
 
   useEffect(() => {
     void load(settings.profile);
   }, [load, settings.profile]);
+
+  // Registro en el bus global: el botón grande SCAN EMRR también recalcula este módulo.
+  // Ref al perfil vigente para que el bus no re-registre en cada cambio de perfil.
+  const profileRef = useRef(settings.profile);
+  profileRef.current = settings.profile;
+  // El wrapper relanza el fallo para que el toast global no anuncie un éxito falso.
+  useEffect(() => registerModuleScan("SP500", async () => {
+    const s = await load(profileRef.current, true);
+    if (!s.ok) throw new Error(s.error ?? "El módulo SP500 no pudo recalcular");
+  }), [load]);
 
   const update = useCallback((patch: Partial<Sp500Settings>) => {
     setSettings((prev) => {

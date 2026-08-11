@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { registerModuleScan } from "../services/scanBus";
 import {
   RALLY_BACKTEST,
   type RallyAsset,
@@ -48,18 +49,34 @@ export function RallyPanel() {
     return () => { mounted.current = false; };
   }, []);
 
-  const runScan = useCallback(async () => {
+  const scanningRef = useRef(false);
+  // Devuelve true si el scan terminó con datos, false si falló, null si se saltó por
+  // reentrada. El botón pequeño ignora el retorno; el bus global lo usa para informar.
+  const runScan = useCallback(async (): Promise<boolean | null> => {
+    if (scanningRef.current) return null;     // reentrada: ya hay un scan de Rally en curso
+    scanningRef.current = true;
     setScanning(true);
+    let ok = false;
     try {
       let res = await startRallyScan();
+      // Guarda de progreso: si el backend responde 200 con token pero sin avanzar
+      // batches, sin esto el bucle emitiría POSTs para siempre (y con el bus global,
+      // dejaría la fase "modules" del SCAN EMRR clavada indefinidamente).
+      let lastBatches = res.batchesCompleted ?? 0, stalls = 0, iterations = 0;
       while (mounted.current && !res.isRallyFinal && res.rallyToken) {
+        if (++iterations > 40) throw new Error("Rally: demasiadas iteraciones de continuación");
         setState((s) => ({ ...s, coveragePercent: res.coveragePercent ?? s.coveragePercent, batchesCompleted: res.batchesCompleted ?? s.batchesCompleted, batchesTotal: res.batchesTotal ?? s.batchesTotal }));
         res = await continueRallyScan(res.rallyToken);
+        const nb = res.batchesCompleted ?? lastBatches;
+        stalls = nb > lastBatches ? 0 : stalls + 1;
+        lastBatches = nb;
+        if (stalls >= 3) throw new Error("Rally: el backend no avanza batches");
       }
       if (mounted.current) {
         if (res.top10?.length) {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: res.top10 ?? [], coveragePercent: 100 } as RallyState));
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
+          ok = true;
         } else {
           setState((s) => ({ ...s, status: res.status ?? "RALLY_ERROR" } as RallyState));
         }
@@ -67,9 +84,19 @@ export function RallyPanel() {
     } catch {
       if (mounted.current) setState((s) => ({ ...s, status: "RALLY_ERROR" } as RallyState));
     } finally {
+      scanningRef.current = false;
       if (mounted.current) setScanning(false);
     }
+    return ok;
   }, []);
+
+  // Registro en el bus global: el botón grande SCAN EMRR también escanea este módulo.
+  // El wrapper RELANZA el fallo para que el toast global no anuncie un éxito falso
+  // (el bus aísla con allSettled, así que relanzar aquí es seguro para los demás).
+  useEffect(() => registerModuleScan("Rally", async () => {
+    const ok = await runScan();
+    if (ok === false) throw new Error("El scan de Rally terminó sin datos");
+  }), [runScan]);
 
   const top10 = state.top10 ?? [];
   const hasData = top10.length > 0;
@@ -113,11 +140,14 @@ export function RallyPanel() {
         <>
           <div style={{ padding: "10px 16px 4px", fontSize: 10, color: "#94a3b8", display: "flex", gap: 14, flexWrap: "wrap" }}>
             <span>Metodología: <b style={{ color: "#cbd5e1" }}>{RALLY_BACKTEST.formula}</b></span>
+            {lastScanCompletedAt && (
+              <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
+            )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
             <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo.</span>
           </div>
 
-          <div style={{ padding: "8px 16px 4px" }}>
+          <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
             {top10.map((a, i) => (
               <RallyRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow}
                 expanded={expanded === a.providerSymbol}
@@ -178,41 +208,50 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   const m = asset.metrics;
   const flags = asset.warningFlags ?? [];
   const entry = asset.entryTiming;
-  const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"];
+  const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"] ?? ENTRY_ZONE_STYLE.SIN_DATOS;
   const runway = asset.runway;
-  const runwayStyle = RUNWAY_STYLE[runway?.level ?? "MEDIO"];
+  const runwayStyle = RUNWAY_STYLE[runway?.level ?? "MEDIO"] ?? RUNWAY_STYLE.MEDIO;
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
         onClick={onToggle}
         style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 4px", cursor: "pointer",
+          width: "100%", display: "flex", alignItems: "center", gap: isNarrow ? 4 : 10, padding: "7px 2px", cursor: "pointer",
           background: "transparent", border: "none", textAlign: "left", color: "inherit",
         }}
       >
-        <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{rank}</span>
-        <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 70 : 90 }}>{asset.ticker}</span>
-        {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
-        {isNarrow && <span style={{ flex: 1 }} />}
-        {runway && (
-          <span title={`Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}`}
-            style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: runwayStyle.color, background: `${runwayStyle.color}18`, border: `1px solid ${runwayStyle.color}55`, whiteSpace: "nowrap" }}>
-            {isNarrow ? runwayStyle.short : runwayStyle.label}
-          </span>
-        )}
-        {entry && (
-          <span title={entry.label} style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 7px", borderRadius: 4, color: entryStyle.color, background: `${entryStyle.color}18`, border: `1px solid ${entryStyle.color}55`, whiteSpace: "nowrap" }}>
-            {isNarrow ? entryStyle.short : entryStyle.label}
-          </span>
-        )}
-        {flags.length > 0 && <span title={flags.map((f) => f.label).join(" · ")} style={{ fontSize: 11 }}>⚠</span>}
-        {asset.suggestedWeightPct != null && (
-          <span title="Porcentaje del capital del módulo sugerido para esta posición" style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 40, textAlign: "right" }}>
-            {asset.suggestedWeightPct.toFixed(1)}%
-          </span>
-        )}
-        <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 34, textAlign: "right" }}>{asset.rallyScore}</span>
-        <span style={{ fontSize: 9, color: "#64748b", width: 60, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
+        {/* COLUMNAS DE ANCHO FIJO (mandato 11-ago-2026): todos los datos deben quedar
+            alineados verticalmente con la fila inmediatamente inferior. Los badges se
+            renderizan SIEMPRE (aunque falte el dato) y el ⚠ tiene su hueco reservado,
+            para que ninguna columna se desplace según qué campos tenga cada ticker. */}
+        <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 52 : 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
+        {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
+        {isNarrow && <span style={{ flex: 1, minWidth: 0 }} />}
+        <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
+          style={{ width: isNarrow ? 52 : 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+            color: runway ? runwayStyle.color : "transparent",
+            background: runway ? `${runwayStyle.color}18` : "transparent",
+            border: `1px solid ${runway ? `${runwayStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+          {runway ? (isNarrow ? runwayStyle.short : runwayStyle.label) : "—"}
+        </span>
+        <span title={entry?.label}
+          style={{ width: isNarrow ? 48 : 118, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+            color: entry ? entryStyle.color : "transparent",
+            background: entry ? `${entryStyle.color}18` : "transparent",
+            border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+          {entry ? (isNarrow ? entryStyle.short : entryStyle.label) : "—"}
+        </span>
+        <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
+          style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
+          {flags.length > 0 ? "⚠" : ""}
+        </span>
+        <span title="Porcentaje del capital del módulo sugerido para esta posición"
+          style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 44, flexShrink: 0, textAlign: "right" }}>
+          {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 30, flexShrink: 0, textAlign: "right" }}>{asset.rallyScore}</span>
+        <span style={{ fontSize: 9, color: "#64748b", width: 14, flexShrink: 0, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
