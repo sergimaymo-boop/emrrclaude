@@ -408,12 +408,16 @@ export function assignSuggestedWeights(assets) {
  *
  * MEZCLA 70/30 del rally score con la puntuación de recorrido. De los siete
  * criterios de salto probados (mejor score, recorrido ALTO, entrada IDEAL,
- * ALTO+IDEAL, mezcla, excluir BAJO, aleatorio-top30 con semilla fija) fue el más
- * robusto: con stop fijo 30% gana 7/9 celdas de la malla fase×cadencia al campeón
- * sin trailing (CAGR 39,2% · caída máx 36,3% · MAR 1,08 frente a 39,1%/43,9%/0,89),
- * y elegido solo con la 1ª mitad del histórico aguantó en la 2ª (37,9% → 40,6%).
- * Con el stop de catástrofe del panel gana 6/9 con la mejor mediana de peor
- * semestre del estudio (33,4%).
+ * ALTO+IDEAL, mezcla, excluir BAJO, aleatorio-top30 con semilla fija) es LA
+ * VARIANTE MÁS ROBUSTA — no "la ganadora": gana 7/9 celdas de la malla
+ * fase×cadencia al campeón sin trailing, no domina 9/9. Con stop fijo 30% al
+ * cierre: CAGR 39,2% · caída máx 36,3% · MAR 1,08 frente a 39,1%/43,9%/0,89 del
+ * campeón; elegida solo con la 1ª mitad del histórico aguantó en la 2ª
+ * (37,9% → 40,6%). El salto por score puro mide más CAGR canónico (40,8%) pero
+ * con peor cola de robustez (celda mínima 18,0% frente a 24,6%). Con el stop de
+ * catástrofe del panel gana 6/9 con la mejor mediana de peor semestre (33,4%).
+ * Cifras de backtest (universo superviviente, ejecución al cierre): valen para
+ * comparar variantes entre sí, no como rentabilidad esperada.
  *
  * Lecciones que NO cambiar sin re-medir:
  *   · Exigir "entrada IDEAL" al saltar DESTRUYE rentabilidad (0/9 celdas,

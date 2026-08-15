@@ -10,7 +10,20 @@
  *   · convicción = assignSuggestedWeights (score−50, [4,18]%) — pesos del top-10
  *
  * Todo sin lookahead: los rasgos del día k usan solo barras ≤ k. Señales sobre el
- * precio SIN ajustar (como producción), rentabilidad sobre el ajustado.
+ * precio SIN ajustar (convención de los estudios rally previos); rentabilidad
+ * sobre el ajustado.
+ *
+ * ⚠ DIVERGENCIAS CON PRODUCCIÓN (verificación adversarial 15-ago-2026):
+ *   1. PRODUCCIÓN calcula las señales sobre adjusted_close (historicalDataProvider:
+ *      close = adjusted_close ?? close), NO sobre el cierre sin ajustar de aquí.
+ *      Impacto medido re-ejecutando el estudio con señales ajustadas: campeón v4
+ *      38,34%/43,82% (antes 39,1%/43,9%) y fijo30+mezcla 39,12%/36,25% (antes
+ *      39,2%/36,3%) — las conclusiones RELATIVAS no cambian (la mezcla incluso
+ *      mejora frente al campeón).
+ *   2. El ATR de aquí es Wilder(14) suavizado; producción usa la media simple de
+ *      los últimos 14 TR (technicalEngine.calculateAtr). Solo afecta a las
+ *      variantes catATR y queda amortiguado por el clamp de la banda 25-35.
+ *
  * Determinista: sin aleatoriedad salvo mulberry32 con semilla fija.
  */
 import fs from "node:fs";

@@ -177,15 +177,21 @@ export function RallyPanel() {
             Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
             <br />
             <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido <b>destruye rentabilidad aquí</b> (probado también con salto
-            inmediato al mejor candidato: 15,5% frente a 39,4%). El número mostrado es un <b>stop ancho de catástrofe (25-35%)</b>.
+            inmediato al mejor candidato: 15,5% frente a 39,4%). El número mostrado es un <b>stop ancho de catástrofe (25-35%)</b>, evaluado
+            sobre <b>cierres diarios</b>: salta si el CIERRE cae ese % desde su máximo de cierre. No es una orden trailing intradía en el
+            broker — una orden intradía saltaría más a menudo que lo backtesteado.
             <b style={{ color: SLATE }}> Si un stop te salta</b> (estudio de rotación 15-ago-2026): re-escanea y entra en el mejor por{" "}
-            <b>mezcla 70/30 de score y recorrido</b> ({RALLY_BACKTEST.withStops.jumpRule}) — con stop fijo del {RALLY_BACKTEST.withStops.stopPct}%
-            esa mecánica midió <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
-            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)}):
-            la misma rentabilidad que el campeón sin stops con ~7,6 puntos menos de caída, y fue el más robusto de los siete criterios de salto
-            probados (elegido solo con la 1ª mitad del histórico, aguantó en la 2ª). Saltar al mejor "con recorrido ALTO" (la instrucción
-            anterior) sigue siendo válido pero mide peor mediana de robustez. Exigir "entrada IDEAL" al saltar se re-probó y <b>resta</b>{" "}
-            (~29-30% anual, pierde en todas las celdas): con pocos candidatos que cumplan, el filtro te obliga a comprar momentos más débiles.
+            <b>mezcla 70/30 de score y recorrido</b> ({RALLY_BACKTEST.withStops.jumpRule}). Con stop fijo del {RALLY_BACKTEST.withStops.stopPct}%
+            al cierre es <b>la variante más robusta</b> de los siete criterios de salto probados (gana 7/9 celdas de la malla fase×cadencia;
+            no domina 9/9): midió <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
+            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)}),
+            elegida solo con la 1ª mitad del histórico y confirmada en la 2ª. Saltar al mejor score puro mide algo más de rentabilidad (40,8%)
+            pero con peor cola de robustez; saltar "con recorrido ALTO" (la instrucción anterior) sigue siendo válido con peor mediana. Exigir
+            "entrada IDEAL" al saltar se re-probó y <b>resta</b> (~29-30% anual, pierde en todas las celdas): con pocos candidatos que cumplan,
+            el filtro te obliga a comprar momentos más débiles.
+            ⚠ Todas estas cifras son de backtest con el universo superviviente actual y ejecución ideal al cierre (20 pb de costes):{" "}
+            <b>sirven para comparar variantes entre sí, no como rentabilidad esperada</b>. Lo sólido es la comparación: la misma rentabilidad
+            que el campeón sin stops con ~7,6 puntos menos de caída máxima.
           </div>
         </>
       )}
