@@ -401,6 +401,36 @@ export function assignSuggestedWeights(assets) {
   return assets.map((a, i) => ({ ...a, suggestedWeightPct: Math.round((clamped[i] / sum) * 1000) / 10 }));
 }
 
+/**
+ * RANKING DE ROTACIÓN — ¿a qué ticker saltar cuando salta un trailing stop?
+ * (estudio 15-ago-2026: scripts/rally-rotation-strategy.mjs,
+ *  backtests/rally-rotation-strategy.json).
+ *
+ * MEZCLA 70/30 del rally score con la puntuación de recorrido. De los siete
+ * criterios de salto probados (mejor score, recorrido ALTO, entrada IDEAL,
+ * ALTO+IDEAL, mezcla, excluir BAJO, aleatorio-top30 con semilla fija) fue el más
+ * robusto: con stop fijo 30% gana 7/9 celdas de la malla fase×cadencia al campeón
+ * sin trailing (CAGR 39,2% · caída máx 36,3% · MAR 1,08 frente a 39,1%/43,9%/0,89),
+ * y elegido solo con la 1ª mitad del histórico aguantó en la 2ª (37,9% → 40,6%).
+ * Con el stop de catástrofe del panel gana 6/9 con la mejor mediana de peor
+ * semestre del estudio (33,4%).
+ *
+ * Lecciones que NO cambiar sin re-medir:
+ *   · Exigir "entrada IDEAL" al saltar DESTRUYE rentabilidad (0/9 celdas,
+ *     CAGR ~29-30%) — segunda confirmación tras el §11 del audit doc. Ponderar
+ *     el recorrido sí; filtrar por estado, no.
+ *   · El control aleatorio dentro del top-30 dio 31,3%: el criterio aporta
+ *     ~8-9 puntos reales, no es ruido de selección.
+ *
+ * Es INFORMATIVO-OPERATIVO (guía del salto manual): no reordena el top-10 del
+ * scanner ni toca score, runway, entryTiming ni pesos por convicción.
+ */
+export function rotationRank(rallyScore, runwayScore) {
+  const s = isFiniteNum(rallyScore) ? rallyScore : 0;
+  const r = isFiniteNum(runwayScore) ? runwayScore : 50; // sin dato de recorrido: neutro
+  return Math.round((0.7 * s + 0.3 * r) * 10) / 10;
+}
+
 export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA" }) {
   // v4.0: el score necesita 189 sesiones de momento 9m + margen; con menos histórico
   // el ticker queda DISCARD (sin 9 meses cotizando no hay señal comparable).

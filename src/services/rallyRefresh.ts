@@ -88,6 +88,15 @@ export const RALLY_BACKTEST = {
   v3: { cagr: 0.375, maxDD: 0.419, mar: 0.89 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
+  /**
+   * Variante operada CON stops (estudio de rotación 15-ago-2026,
+   * scripts/rally-rotation-strategy.mjs): stop fijo 30% desde el pico de cierre y,
+   * al saltar, reinversión el mismo día en el mejor por MEZCLA 0,7·score +
+   * 0,3·recorrido (rotationRank en rallyScoreEngine). Misma rentabilidad que el
+   * campeón con 7,6 puntos menos de caída máxima; gana 7/9 celdas de la malla.
+   * Exigir "entrada IDEAL" al saltar se re-probó y destruye (~29-30%, 0/9).
+   */
+  withStops: { cagr: 0.392, maxDD: 0.363, mar: 1.08, sharpe: 1.20, stopPct: 30, jumpRule: "0,7·score + 0,3·recorrido" },
 } as const;
 
 /** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */

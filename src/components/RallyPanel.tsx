@@ -178,10 +178,14 @@ export function RallyPanel() {
             <br />
             <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido <b>destruye rentabilidad aquí</b> (probado también con salto
             inmediato al mejor candidato: 15,5% frente a 39,4%). El número mostrado es un <b>stop ancho de catástrofe (25-35%)</b>.
-            <b style={{ color: SLATE }}> Si un stop te salta</b>: re-escanea y entra en el mejor del ranking <b>con recorrido ALTO</b> — esa
-            mecánica de salto mide una caída máxima ~6 puntos menor (38,0% frente a 43,9%) a cambio de ~2,4 puntos de rentabilidad anual
-            (37,0% frente a 39,4%). Exigir además "entrada IDEAL" al saltar se probó y <b>resta</b> (32,3%): con pocos candidatos que cumplan
-            ambas condiciones, el filtro te obliga a comprar momentos más débiles.
+            <b style={{ color: SLATE }}> Si un stop te salta</b> (estudio de rotación 15-ago-2026): re-escanea y entra en el mejor por{" "}
+            <b>mezcla 70/30 de score y recorrido</b> ({RALLY_BACKTEST.withStops.jumpRule}) — con stop fijo del {RALLY_BACKTEST.withStops.stopPct}%
+            esa mecánica midió <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
+            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)}):
+            la misma rentabilidad que el campeón sin stops con ~7,6 puntos menos de caída, y fue el más robusto de los siete criterios de salto
+            probados (elegido solo con la 1ª mitad del histórico, aguantó en la 2ª). Saltar al mejor "con recorrido ALTO" (la instrucción
+            anterior) sigue siendo válido pero mide peor mediana de robustez. Exigir "entrada IDEAL" al saltar se re-probó y <b>resta</b>{" "}
+            (~29-30% anual, pierde en todas las celdas): con pocos candidatos que cumplan, el filtro te obliga a comprar momentos más débiles.
           </div>
         </>
       )}
