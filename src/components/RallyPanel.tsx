@@ -176,22 +176,22 @@ export function RallyPanel() {
             desde la entrada. Tendencia joven y poco extendida sobre su media de 50 = más recorrido por delante; en máximos de 52 semanas = menos.
             Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
             <br />
-            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido <b>destruye rentabilidad aquí</b> (probado también con salto
-            inmediato al mejor candidato: 15,5% frente a 39,4%). El número mostrado es un <b>stop ancho de catástrofe (25-35%)</b>, evaluado
-            sobre <b>cierres diarios</b>: salta si el CIERRE cae ese % desde su máximo de cierre. No es una orden trailing intradía en el
-            broker — una orden intradía saltaría más a menudo que lo backtesteado.
-            <b style={{ color: SLATE }}> Si un stop te salta</b> (estudio de rotación 15-ago-2026): re-escanea y entra en el mejor por{" "}
-            <b>mezcla 70/30 de score y recorrido</b> ({RALLY_BACKTEST.withStops.jumpRule}). Con stop fijo del {RALLY_BACKTEST.withStops.stopPct}%
-            al cierre es <b>la variante más robusta</b> de los siete criterios de salto probados (gana 7/9 celdas de la malla fase×cadencia;
-            no domina 9/9): midió <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
-            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)}),
-            elegida solo con la 1ª mitad del histórico y confirmada en la 2ª. Saltar al mejor score puro mide algo más de rentabilidad (40,8%)
-            pero con peor cola de robustez; saltar "con recorrido ALTO" (la instrucción anterior) sigue siendo válido con peor mediana. Exigir
-            "entrada IDEAL" al saltar se re-probó y <b>resta</b> (~29-30% anual, pierde en todas las celdas): con pocos candidatos que cumplan,
-            el filtro te obliga a comprar momentos más débiles.
+            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido uniforme <b>destruye rentabilidad aquí</b> (probado también
+            con salto inmediato al mejor candidato: 15,5% frente a 39,4%). El <b>STOP de cada fila es ADAPTATIVO POR TICKER</b> (estudio
+            15-ago-2026): anchura = <b>{RALLY_BACKTEST.withStops.stopRule}</b> — recorrido alto (tendencia joven, poco estirada, sin agotar)
+            → stop <b style={{ color: GREEN }}>AMPLIO</b> para dejar correr; recorrido bajo → <b style={{ color: "#eab308" }}>CEÑIDO</b> para
+            ceder poco en el pullback y rotar. Se evalúa sobre <b>cierres diarios</b> (salta si el CIERRE cae ese % desde su máximo de cierre);
+            no es una orden trailing intradía en el broker — una orden intradía saltaría más a menudo que lo backtesteado.
+            <b style={{ color: SLATE }}> Si un stop te salta</b>: re-escanea y entra en el mejor por <b>mezcla 70/30 de score y recorrido</b>{" "}
+            ({RALLY_BACKTEST.withStops.jumpRule}). La mecánica completa midió{" "}
+            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
+            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)},
+            aciertos {(RALLY_BACKTEST.withStops.winRate * 100).toFixed(0)}%), elegida solo con la 1ª mitad del histórico y confirmada en la 2ª;
+            gana 7/9 celdas de la malla al campeón sin stops (no domina 9/9) y 6/9 al fijo 30%. Probados y <b>descartados con números</b>:
+            stop por k·ATR (satura y pierde robustez), modulación por "salud" compuesta, parámetros por ticker incluso con shrinkage (los
+            óptimos individuales no son estables), ratchets de beneficio, y exigir "entrada IDEAL" al saltar (pierde en todas las celdas).
             ⚠ Todas estas cifras son de backtest con el universo superviviente actual y ejecución ideal al cierre (20 pb de costes):{" "}
-            <b>sirven para comparar variantes entre sí, no como rentabilidad esperada</b>. Lo sólido es la comparación: la misma rentabilidad
-            que el campeón sin stops con ~7,6 puntos menos de caída máxima.
+            <b>sirven para comparar variantes entre sí, no como rentabilidad esperada</b>.
           </div>
         </>
       )}
@@ -221,6 +221,13 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"] ?? ENTRY_ZONE_STYLE.SIN_DATOS;
   const runway = asset.runway;
   const runwayStyle = RUNWAY_STYLE[runway?.level ?? "MEDIO"] ?? RUNWAY_STYLE.MEDIO;
+  // Stop sugerido ADAPTATIVO por ticker (12 + 0,35·recorrido, acotado 15-45%).
+  const stop = asset.trailingStop ?? m?.trailingStop ?? null;
+  const stopStyle = stop == null
+    ? { color: SLATE, band: "—" }
+    : stop >= 36 ? { color: GREEN, band: "AMPLIO" }
+    : stop >= 25 ? { color: SLATE, band: "MEDIO" }
+    : { color: "#eab308", band: "CEÑIDO" };
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
@@ -251,6 +258,13 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
             background: entry ? `${entryStyle.color}18` : "transparent",
             border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
           {entry ? (isNarrow ? entryStyle.short : entryStyle.label) : "—"}
+        </span>
+        <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
+          style={{ width: isNarrow ? 40 : 62, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+            color: stop != null ? stopStyle.color : "transparent",
+            background: stop != null ? `${stopStyle.color}18` : "transparent",
+            border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+          {stop != null ? (isNarrow ? `${stop}%` : `STOP ${stop}%`) : "—"}
         </span>
         <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
           style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
@@ -285,7 +299,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
             <Stat label="Momento 6m" value={pct(m?.mom6m)} tone={(m?.mom6m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Fuerza rel. 3m vs S&P" value={pct(m?.rs3m)} tone={(m?.rs3m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Fuerza rel. 6m vs S&P" value={pct(m?.rs6m)} tone={(m?.rs6m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Stop de catástrofe" value={m?.trailingStop != null ? `${m.trailingStop}%` : "—"} tone="#eab308" />
+            <Stat label="Stop sugerido (fase)" value={stop != null ? `${stop}% · ${stopStyle.band}` : "—"} tone={stopStyle.color} />
             <Stat label="ATR" value={m?.atrPercent != null ? `${m.atrPercent.toFixed(1)}%` : "—"} />
             <Stat label="Volumen relativo" value={m?.rvol != null ? `${m.rvol.toFixed(2)}x` : "—"} />
           </div>

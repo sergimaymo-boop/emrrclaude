@@ -257,6 +257,11 @@ function scoreAtr(atrPercent) {
  * que llegaron a caer más del 25%, solo el 10% acabó recuperándose en positivo.
  * Se mantiene un ajuste leve por volatilidad para que los valores más nerviosos
  * tengan algo más de margen, pero SIEMPRE en la banda ancha.
+ *
+ * ⚠ LEGACY desde 15-ago-2026: ya NO es el stop que se muestra. El estudio de
+ * stops adaptativos (ver suggestedStopPct más abajo) la sustituyó por la anchura
+ * por FASE del ticker; esta banda 25-35 midió celda mínima 21,5% (por debajo del
+ * suelo de robustez) frente a 25,0% de la adaptativa. Se conserva como referencia.
  */
 function calculateTrailingStop(atrPercent) {
   if (!isFiniteNum(atrPercent) || atrPercent <= 0) return 30;
@@ -264,6 +269,39 @@ function calculateTrailingStop(atrPercent) {
   // Banda ancha 25-35%: solo salta ante un derrumbe real, no ante un retroceso.
   const raw = 25 + atp * 2;
   return Math.round(clamp(raw, 25, 35) * 10) / 10;
+}
+
+/**
+ * STOP SUGERIDO POR TICKER — adaptativo por FASE (estudio 15-ago-2026 ronda 2:
+ * scripts/rally-adaptive-stop-study.mjs + rally-adaptive-stop-round2.mjs,
+ * backtests/rally-adaptive-stop-round2.json). Sustituye a la banda fija 25-35
+ * como stop mostrado: cada ticker recibe SU anchura según su recorrido.
+ *
+ *   stop% = clamp(12 + 0,35 · runwayScore, 15, 45)
+ *
+ * runwayScore (0-100, computeRunway) resume la FASE del ticker: edad de la
+ * tendencia, extensión sobre la media de 50 y cercanía al máximo de 52 semanas.
+ * Recorrido alto → stop amplio (dejar correr); recorrido bajo → ceñido (ceder
+ * poco en el pullback y rotar). Señales sobre cierre ajustado, protocolo malla
+ * 9 celdas, salto por mezcla 0,7·score+0,3·recorrido:
+ *
+ *   · elegida por WALK-FORWARD honesto: mejor 1ª mitad de todas las políticas
+ *     elegibles (42,0%) y confirmada en la 2ª (40,2%) — no elegida en test
+ *   · CAGR 41,1% · caída máx 36,9% · MAR 1,11 · winrate 65% · gana 7/9 celdas
+ *     al campeón sin stops y 6/9 al fijo 30%; celda mínima 25,0% ≥ 23,3% (suelo)
+ *   · probadas y DESCARTADAS con números: k·ATR puro (satura y pierde mediana),
+ *     salud compuesta (IC≈0 out-of-sample), k por ticker incluso con shrinkage
+ *     (rho 0,02 con n=17; captura 30,6% frente a 38,8% del global), ratchets
+ *   · el clasificador de pullback (15 rasgos + combos OLS) NO predice el
+ *     drawdown forward out-of-sample (mejor Spearman 0,16, signos inestables):
+ *     la adaptación por fase es la única con soporte robusto
+ *
+ * Cifras de backtest (universo superviviente, cierres diarios, 20 pb): valen
+ * para comparar variantes entre sí, no como rentabilidad esperada.
+ */
+export function suggestedStopPct(runwayScoreValue) {
+  if (!isFiniteNum(runwayScoreValue)) return 30; // sin dato de recorrido: neutro
+  return Math.round(clamp(12 + 0.35 * runwayScoreValue, 15, 45));
 }
 
 /**
@@ -518,7 +556,9 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const runway = computeRunway(lastClose, closes, emaSeries(closes, 50), ema50, high52w > 0 ? lastClose / high52w : null);
   const finalScore = Math.round(clamp(50 + 50 * Math.tanh(mom9m / 75)));
   const rangeInfo = getRallyLabel(finalScore);
-  const trailingStop = calculateTrailingStop(atrPercent);
+  // 15-ago-2026: el stop sugerido pasa a ser ADAPTATIVO POR FASE (ver suggestedStopPct).
+  // La banda fija 25-35 por ATR (calculateTrailingStop) queda como referencia legacy.
+  const trailingStop = suggestedStopPct(runway?.score);
 
   return {
     ok: true,

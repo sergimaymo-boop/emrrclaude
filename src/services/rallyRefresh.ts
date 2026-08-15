@@ -89,14 +89,18 @@ export const RALLY_BACKTEST = {
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
   /**
-   * Variante operada CON stops (estudio de rotación 15-ago-2026,
-   * scripts/rally-rotation-strategy.mjs): stop fijo 30% desde el pico de cierre y,
-   * al saltar, reinversión el mismo día en el mejor por MEZCLA 0,7·score +
-   * 0,3·recorrido (rotationRank en rallyScoreEngine). Misma rentabilidad que el
-   * campeón con 7,6 puntos menos de caída máxima; gana 7/9 celdas de la malla.
-   * Exigir "entrada IDEAL" al saltar se re-probó y destruye (~29-30%, 0/9).
+   * Variante operada CON stops — ADAPTATIVOS POR TICKER (estudio 15-ago-2026,
+   * scripts/rally-adaptive-stop-study.mjs + rally-adaptive-stop-round2.mjs):
+   * cada ticker lleva SU stop según su fase — stop% = clamp(12 + 0,35·recorrido,
+   * 15, 45), evaluado sobre cierres diarios — y al saltar, reinversión el mismo
+   * día en el mejor por MEZCLA 0,7·score + 0,3·recorrido (rotationRank).
+   * Elegida por walk-forward honesto (mejor 1ª mitad 42,0%, confirmada 2ª 40,2%);
+   * gana 7/9 celdas al campeón sin stops y 6/9 al fijo 30%. Probados y
+   * descartados con números: k·ATR puro, salud compuesta, k por ticker con
+   * shrinkage, ratchets, y el clasificador de pullback (no predice OOS).
+   * Cifras de backtest (universo superviviente): comparan variantes, no prometen.
    */
-  withStops: { cagr: 0.392, maxDD: 0.363, mar: 1.08, sharpe: 1.20, stopPct: 30, jumpRule: "0,7·score + 0,3·recorrido" },
+  withStops: { cagr: 0.411, maxDD: 0.369, mar: 1.11, sharpe: 1.27, winRate: 0.65, stopRule: "12 + 0,35·recorrido, acotado 15-45%", jumpRule: "0,7·score + 0,3·recorrido" },
 } as const;
 
 /** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */
