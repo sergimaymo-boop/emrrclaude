@@ -75,6 +75,9 @@ export interface IBKPortfolio {
   /** "VAL. MDO." de la cabecera IBK: Σ posiciones YA convertido a divisa base (EUR).
    *  Es la fuente MÁS fiable del invertido (regla dictada 15-ago) — más que NAV−efectivo. */
   investedValue?: number | null;
+  /** Auditoría de la carga (mandato 15-ago "primero auditoría, luego análisis"):
+   *  una línea por archivo — qué se leyó (posiciones/totales) o el motivo exacto del fallo. */
+  loadAudit?: string[];
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
@@ -135,7 +138,11 @@ export function loadPortfolioFromStorage(): IBKPortfolio | null {
     const raw = localStorage.getItem(IBK_STORAGE_KEY);
     if (!raw) return null;
     const p = JSON.parse(raw) as IBKPortfolio;
-    if (!Array.isArray(p.positions) || p.positions.length === 0) return null;
+    if (!Array.isArray(p.positions)) return null;
+    // Válida con posiciones O con los totales de la cabecera (diseño simplificado 15-ago:
+    // la foto de cabecera por sí sola ya da INVERTIDO/EFECTIVO/TOTAL).
+    const hasTotals = p.investedValue != null || p.cashBalance != null || p.accountTotal != null;
+    if (p.positions.length === 0 && !hasTotals) return null;
     return p;
   } catch { return null; }
 }
@@ -346,11 +353,13 @@ const OCR_EXCHANGES = new Set([
 const OCR_COL_MATCHERS: Array<[string, RegExp]> = [
   ["pnl", /^(pyg|p&l|pnl)/i],
   ["qty", /^(posici|position|pos$|cantidad|qty)/i],
-  ["price", /^(ultimo|último|last|precio|price)/i],
-  ["value", /^(vlr|valor|mrcd|market|value)/i],
+  ["price", /^([uú]lt[i1]mo|last|precio|price)/i],
+  // FUZZY (e2e OCR 15-ago): tesseract lee "Vlr"→"Vir", "mrcd"→"mred" en la tabla apretada
+  ["value", /^(v[l1i]r|valor|mr[ce]d|market|value)/i],
   // "Bs d cst" (base de coste) — fix 15-ago: sin mapearla, su número desplazaba el
   // mapeo posicional y el PyG leía la base de coste. Se captura → avgCost = coste/cantidad.
-  ["cost", /^(b[s5]\.?$|cst\.?$|coste|cost$|basis)/i],
+  // El OCR también la FUSIONA en un token ("Bsdcst").
+  ["cost", /^(b[s5]\.?$|b[s5]\.?d\.?c[s5]t\.?$|cst\.?$|coste|cost$|basis)/i],
 ];
 // Columnas PORCENTUALES de la cabecera ("%netliq", "% vrcón"): sus VALORES de fila
 // terminan en "%" y ya se excluyen de rawNums — por eso tampoco entran en el colMap
@@ -422,9 +431,30 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
         const range = t.match(/^([\d.,]+)-([\d.,]+)$/);
         return range ? [range[1], range[2]] : [t];
       })
-      .map((t) => ({ v: parseOcrNumber(t), dec: /[.,]\d{1,4}$/.test(t.replace(/[$€£+%—–−]/g, "")) }))
+      .map((t) => ({
+        v: parseOcrNumber(t),
+        dec: /[.,]\d{1,4}$/.test(t.replace(/[$€£+%—–−]/g, "")),
+        raw: t.replace(/[$€£+%—–−]/g, ""),
+      }))
       .filter((n) => isFinite(n.v));
     if (rawNums.length === 0) continue;
+
+    // ── Candidatos por token con SEPARADORES PERDIDOS (fix 15-ago, fotos reales) ──
+    // El OCR de la tabla apretada pierde puntos/comas: "5.0101"→"50101",
+    // "1,948.93"→"194893", "972.98"→"97298". Cada token genera interpretaciones
+    // (directa, dígitos/10, /100, /10⁴) y la REDUNDANCIA mv ≈ precio×cantidad
+    // elige la combinación que CUADRA — verificado end-to-end con OCR real.
+    const candidatesOf = (n: { v: number; raw: string }): number[] => {
+      const out = [n.v];
+      const digits = n.raw.replace(/[^\d]/g, "");
+      if (digits.length >= 1) {
+        const d = parseInt(digits, 10);
+        for (const c of [d, d / 10, d / 100, d / 10_000]) {
+          if (Number.isFinite(c) && c > 0 && !out.includes(c)) out.push(c);
+        }
+      }
+      return out;
+    };
 
     let quantity: number, currentPrice: number | null = null, unrealizedPnL: number | null = null;
     let mappedValue: number | null = null;
@@ -437,24 +467,66 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
       // El OCR puede perder o colar un número y desplazar el mapeo posicional en silencio.
       // Defensa: se prueban offsets 0/−1/+1 y se explota la REDUNDANCIA de IBK
       // (Vlr mrcd ≈ precio × cantidad) para elegir la asignación que CUADRA; si ninguna
-      // cuadra, se repara la cantidad desde valor/precio antes de rendirse.
-      const tryAt = (offset: number) => {
-        const at = (key: string): number | null => {
-          const idx = colMap.indexOf(key);
-          const j = idx >= 0 ? idx + offset : -1;
-          return j >= 0 && j < rawNums.length ? rawNums[j].v : null;
-        };
-        return { q: at("qty"), p: at("price"), pnl: at("pnl"), mv: at("value"), cb: at("cost") };
+      // cuadra, se prueban las combinaciones de candidatos con separadores perdidos.
+      const numAt = (key: string, offset: number) => {
+        const idx = colMap.indexOf(key);
+        const j = idx >= 0 ? idx + offset : -1;
+        return j >= 0 && j < rawNums.length ? rawNums[j] : null;
       };
+      const tryAt = (offset: number) => ({
+        q: numAt("qty", offset)?.v ?? null,
+        p: numAt("price", offset)?.v ?? null,
+        pnl: numAt("pnl", offset)?.v ?? null,
+        mv: numAt("value", offset)?.v ?? null,
+        cb: numAt("cost", offset)?.v ?? null,
+      });
       type Cand = ReturnType<typeof tryAt>;
       const verifiable = (c: Cand) => c.mv != null && c.p != null && c.p > 0 && c.q != null && c.q > 0;
-      const consistent = (c: Cand) =>
-        verifiable(c) ? Math.abs((c.mv as number) - (c.p as number) * (c.q as number)) / (c.mv as number) < 0.2 : true;
+      const relErr = (c: Cand) =>
+        Math.abs((c.mv as number) - (c.p as number) * (c.q as number)) / (c.mv as number);
+      const consistent = (c: Cand) => (verifiable(c) ? relErr(c) < 0.02 : true);
+      // Candidatos MONETARIOS puntuados (precio y valor SIEMPRE llevan céntimos en IBK):
+      // con decimal explícito, la lectura directa manda; sin él, lo más probable es que
+      // el OCR haya perdido el separador → dígitos/100 es la interpretación preferida.
+      const moneyCands = (n: { v: number; raw: string }): { v: number; pen: number }[] => {
+        const expl = /[.,]\d{1,2}$/.test(n.raw);
+        const digits = n.raw.replace(/\D/g, "");
+        const d = digits ? parseInt(digits, 10) : NaN;
+        const out: { v: number; pen: number }[] = [];
+        const push = (v: number, pen: number) => {
+          if (Number.isFinite(v) && v > 0 && !out.some((x) => x.v === v)) out.push({ v, pen });
+        };
+        if (expl) { push(n.v, 0); push(d / 100, 0.75); }
+        else { push(d / 100, 0); push(n.v, 0.5); push(d / 10, 1); }
+        return out;
+      };
       let pick: Cand | null = null;
-      for (const off of [0, -1, 1]) {
-        const c = tryAt(off);
-        if (c.q == null || c.q <= 0 || c.q > 1_000_000) continue;
-        if (consistent(c)) { pick = c; break; }
+      // ── Fila VERIFICABLE (hay columna de valor): resolución por candidatos ──
+      // La cantidad se DERIVA de valor/precio (identidad IBK) y se "ancla" al
+      // candidato leído si cuadra <2% — inmune a separadores perdidos por el OCR.
+      const qTok = numAt("qty", 0), pTok = numAt("price", 0), mvTok = numAt("value", 0);
+      if (qTok && pTok && mvTok) {
+        const qtyCands = candidatesOf(qTok);
+        let best: { q: number; p: number; mv: number; pen: number } | null = null;
+        for (const pc of moneyCands(pTok)) {
+          for (const mc of moneyCands(mvTok)) {
+            const qDer = mc.v / pc.v;
+            if (!(qDer > 0 && qDer <= 1_000_000)) continue;
+            const snap = qtyCands.find((c) => Math.abs(c - qDer) / qDer < 0.02);
+            const q = snap ?? Math.round(qDer * 10_000) / 10_000;
+            const pen = pc.pen + mc.pen + (snap != null ? 0 : 0.75);
+            if (!best || pen < best.pen) best = { q, p: pc.v, mv: mc.v, pen };
+          }
+        }
+        if (best && best.pen <= 2) pick = { ...tryAt(0), q: best.q, p: best.p, mv: best.mv };
+      }
+      // ── Fila NO verificable o incompleta: offsets directos 0/−1/+1 (comportamiento 31-jul) ──
+      if (!pick) {
+        for (const off of [0, -1, 1]) {
+          const c = tryAt(off);
+          if (c.q == null || c.q <= 0 || c.q > 1_000_000) continue;
+          if (consistent(c)) { pick = c; break; }
+        }
       }
       if (!pick) {
         // Reparación por redundancia: cantidad = valor / precio (si plausible)
@@ -465,11 +537,22 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
         }
       }
       if (!pick || pick.q == null) continue;
+      // Fila NO verificable (sin columna de valor): una cantidad enorme suele ser un
+      // decimal con separador perdido que no podemos comprobar → mejor descartar la
+      // fila que inventar (norma "nunca dato incorrecto"). Las fotos-tabla con
+      // "Vlr d mrcd" sí se verifican y no entran aquí.
+      if (!verifiable(pick) && pick.q > 10_000) continue;
       quantity = pick.q;
       currentPrice = pick.p != null && pick.p > 0 ? pick.p : null;
-      unrealizedPnL = pick.pnl != null && Math.abs(pick.pnl) < 10_000_000 ? pick.pnl : null;
       mappedValue = pick.mv != null && pick.mv > 0 ? pick.mv : null;
-      mappedCostBasis = pick.cb != null && pick.cb > 0 ? pick.cb : null;
+      // PyG plausible: acotado por el tamaño real de la posición (no por 10M fijos)
+      const posScale = mappedValue ?? (currentPrice != null ? currentPrice * quantity : null);
+      unrealizedPnL = pick.pnl != null && (posScale == null ? Math.abs(pick.pnl) < 10_000_000 : Math.abs(pick.pnl) < posScale * 2)
+        ? pick.pnl : null;
+      // Base de coste plausible: coste/acción dentro de ×5 del precio actual
+      const avgFromCost = pick.cb != null && pick.cb > 0 ? pick.cb / quantity : null;
+      mappedCostBasis = avgFromCost != null && (currentPrice == null || (avgFromCost > currentPrice / 5 && avgFromCost < currentPrice * 5))
+        ? (pick.cb as number) : null;
     } else if (b == null) {
       // Un solo número: si es decimal ("180.50" suelto en una línea de nombre) es un
       // precio huérfano, no una posición → descartar. Entero = cantidad sin precio.
@@ -517,106 +600,202 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 
 /**
  * Resumen de CUENTA leído de la cabecera de la foto de la app IBK:
- *   • accountTotal — el número grande arriba (NAV, ej. "22.110")
- *   • marketValue  — "VAL. MDO." (Σ posiciones YA en divisa base EUR, ej. "7.010,12")
- *   • totalCash    — "EXCESO LIQ." (ej. "15.102,24") > "Total efectivo 15,1K" >
+ *   • accountTotal — el número grande arriba (NAV, ej. "22,110" / "22.110")
+ *   • marketValue  — "VAL. MDO." (Σ posiciones YA en divisa base EUR)
+ *   • totalCash    — "EXCESO LIQ." > "PODER ADQUISITIVO" > "Total efectivo 15.1K" >
  *                    suma de "EUR/USD Efectivo" (último recurso: mezcla divisas)
  * SEMÁNTICA (regla dictada 15-ago): INVERTIDO = VAL. MDO. · EFECTIVO = EXCESO LIQ. ·
  * TOTAL = NAV = invertido + efectivo. Esta foto de cabecera es la fuente del FX
  * implícito, POR SÍ SOLA VALE aunque no contenga tabla de posiciones completa.
+ * `missing` enumera las etiquetas NO encontradas (para avisos exactos en la UI).
  */
 export interface IBKAccountSummary {
   accountTotal: number | null;
   totalCash: number | null;
   marketValue: number | null;
+  missing?: string[];
 }
 
-// AUDIT FIX (26-jul): locale-aware — "16,9K" español y "16.9K" US son ambos 16.900;
-// "16.857" (miles europeos) es 16.857, no 17. Regla: el ÚLTIMO separador seguido de
-// 1-2 dígitos es decimal; separadores seguidos de 3 dígitos son de miles.
-function parseKNumber(raw: string): number | null {
-  const m = raw.trim().match(/^([\d.,]+)\s*([KM])?$/i);
-  if (!m) return null;
-  let num = m[1];
-  const lastSep = Math.max(num.lastIndexOf("."), num.lastIndexOf(","));
-  if (lastSep >= 0) {
-    const tail = num.slice(lastSep + 1);
-    if (tail.length >= 1 && tail.length <= 2 && !tail.includes(".") && !tail.includes(",")) {
-      num = `${num.slice(0, lastSep).replace(/[.,]/g, "")}.${tail}`;
-    } else {
-      num = num.replace(/[.,]/g, "");
-    }
-  }
-  let v = parseFloat(num);
-  if (/^k$/i.test(m[2] ?? "")) v *= 1_000;
-  if (/^m$/i.test(m[2] ?? "")) v *= 1_000_000;
-  return Number.isFinite(v) && v > 0 ? Math.round(v) : null;
+// ── Parser v2 de la cabecera de totales (fix 15-ago, fotos REALES) ────────────
+// La causa raíz del fallo en producción: en la app IBK las tiles muestran la
+// ETIQUETA ARRIBA y el VALOR DEBAJO — el OCR emite "VAL. MDO. EXCESO LIQ." en una
+// línea y "7,010.12 15,102.24" en la SIGUIENTE; el parser v1 exigía etiqueta y
+// número en el mismo renglón y devolvía null. v2: asociación etiqueta→valor en
+// mismo renglón O renglón(es) siguientes por ORDEN, formatos EN (7,010.12) y ES
+// (7.010,12), sufijos K/M, confusiones O↔0/l↔1, y reparación por la identidad
+// NAV = VAL.MDO. + EXCESO LIQ. (±3%).
+
+/** Sanea confusiones típicas de OCR dentro de un token NUMÉRICO (O→0, l/I→1, S→5). */
+function sanitizeOcrDigits(raw: string): string {
+  if (!/\d/.test(raw)) return raw; // sin ningún dígito no es un número — no tocar
+  return raw.replace(/[OoQ]/g, "0").replace(/[Il|]/g, "1").replace(/S/g, "5");
 }
+
+/**
+ * Parsea un importe monetario con locale ambiguo (EN "7,010.12" / ES "7.010,12"),
+ * sufijo K/M y ruido OCR. Regla de separadores: grupos de EXACTAMENTE 3 dígitos =
+ * miles (en ambos locales); último separador con 1-2 dígitos detrás = decimal.
+ */
+function parseMoneyToken(raw: string): number | null {
+  let t = sanitizeOcrDigits(raw.trim()).replace(/[€$£\s]/g, "");
+  const suffix = t.match(/([KM])$/i)?.[1]?.toUpperCase() ?? null;
+  if (suffix) t = t.slice(0, -1);
+  t = t.replace(/[^\d.,-]/g, "");
+  const neg = t.startsWith("-");
+  if (neg) t = t.slice(1);
+  if (!/^\d/.test(t)) return null;
+  if (/^\d{1,3}([.,]\d{3})+([.,]\d{1,2})?$/.test(t)) {
+    // Miles agrupados (EN o ES), con decimal opcional al final: 22,110 · 15.102,24 · 7,010.12
+    const m = t.match(/^(\d{1,3}(?:[.,]\d{3})+)(?:[.,](\d{1,2}))?$/);
+    if (!m) return null;
+    t = m[1].replace(/[.,]/g, "") + (m[2] ? `.${m[2]}` : "");
+  } else if (/^\d+[.,]\d{1,2}$/.test(t)) {
+    // Decimal simple en cualquiera de los dos locales: 0.00 · 15,1 · 9.59
+    t = t.replace(",", ".");
+  } else if (/^\d+[.,]\d{4,}$/.test(t)) {
+    t = t.replace(",", "."); // decimal largo (5,0101)
+  } else if (/^\d+$/.test(t)) {
+    // entero puro
+  } else {
+    return null; // patrón raro (varios separadores incoherentes) — mejor null que inventar
+  }
+  let v = parseFloat(t);
+  if (!Number.isFinite(v)) return null;
+  // REGLA MONETARIA (hallazgo e2e OCR 15-ago): un importe con >2 decimales es
+  // imposible en dinero — significa que el OCR PERDIÓ un separador ("7.010,12"
+  // leído "7.01012"). Reinterpretar como dígitos/100 (céntimos): 701012→7010.12.
+  const frac = t.split(".")[1];
+  if (frac && frac.length > 2) {
+    v = parseInt(t.replace(".", ""), 10) / 100;
+  }
+  if (suffix === "K") v *= 1_000;
+  if (suffix === "M") v *= 1_000_000;
+  return neg ? -v : v;
+}
+
+/** Todos los importes de una línea, en orden, con su posición (para asociar a etiquetas). */
+function moneyTokensOf(line: string): { v: number; idx: number }[] {
+  const out: { v: number; idx: number }[] = [];
+  const re = /[0-9OoQIl|][0-9OoQIl|.,]*\s?[KM]?(?=[\s%€$)]|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    const v = parseMoneyToken(m[0]);
+    if (v != null && v >= 0 && v < 100_000_000) out.push({ v, idx: m.index });
+  }
+  return out;
+}
+
+// Detectores FUZZY de las etiquetas de la cabecera IBK (tolerantes a ruido OCR)
+const HEADER_LABELS: Array<{ key: "mdo" | "liq" | "margen" | "poder"; re: RegExp; name: string }> = [
+  { key: "mdo", re: /VA[LI1]\.?,?\s*M[DO0]{1,3}\.?/i, name: "VAL. MDO." },
+  { key: "liq", re: /E[XK]CE[S5][O0Q]?\s*L[I1][QO0]?\.?/i, name: "EXCESO LIQ." },
+  { key: "margen", re: /MARGEN/i, name: "MARGEN" },
+  { key: "poder", re: /P[O0Q]DER\s*ADQ|BUYING\s*POWER/i, name: "PODER ADQUISITIVO" },
+];
 
 export function parseIBKAccountSummary(text: string): IBKAccountSummary {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  let accountTotal: number | null = null;
-  let totalCash: number | null = null;
-  let marketValue: number | null = null;
-  const perCurrencyCash: number[] = [];
-  const plausibleMoney = (v: number | null): v is number =>
+  const plausible = (v: number | null): v is number =>
     v != null && Number.isFinite(v) && v >= 0 && v < 100_000_000;
 
-  for (const l of lines) {
-    // "VAL. MDO. 7.010,12" — Σ posiciones en divisa BASE (tolerante a OCR: VAL MDO, VAL.MD0.)
-    if (marketValue == null) {
-      const mVm = l.match(/VAL\.?\s*M[DO0][DO0]?\.?\s*:?\s+([\d.,]+)/i);
-      if (mVm) { const v = parseOcrNumber(mVm[1]); if (plausibleMoney(v) && v > 0) marketValue = v; }
+  // ── 1) Etiquetas de la rejilla de totales: mismo renglón o renglones siguientes ──
+  const found: Partial<Record<"mdo" | "liq" | "margen" | "poder", number>> = {};
+  let pending: Array<"mdo" | "liq" | "margen" | "poder"> = [];
+  let pendingAge = 0;
+  for (const line of lines) {
+    const labels: Array<{ key: (typeof HEADER_LABELS)[number]["key"]; at: number; end: number }> = [];
+    for (const { key, re } of HEADER_LABELS) {
+      const m = line.match(re);
+      if (m && m.index != null && found[key] == null) labels.push({ key, at: m.index, end: m.index + m[0].length });
     }
-    // "EXCESO LIQ. 15.102,24" — EFECTIVO POR INVERTIR (regla 15-ago; decimales exactos,
-    // preferido sobre el "Total 15,1K" redondeado). Tolerante a OCR: L1Q, LIO.
-    if (totalCash == null) {
-      const mEx = l.match(/EXCESO\s+L[I1][QO0]?\.?\s*:?\s+([\d.,]+)/i);
-      if (mEx) { const v = parseOcrNumber(mEx[1]); if (plausibleMoney(v)) totalCash = v; }
+    labels.sort((a, b) => a.at - b.at);
+    const nums = moneyTokensOf(line);
+
+    if (labels.length > 0) {
+      // Asociación en el MISMO renglón: primer número tras la etiqueta y antes de la siguiente
+      const unresolved: typeof pending = [];
+      for (let i = 0; i < labels.length; i++) {
+        const next = labels[i + 1]?.at ?? Infinity;
+        const n = nums.find((x) => x.idx >= labels[i].end && x.idx < next);
+        if (n) found[labels[i].key] = n.v;
+        else unresolved.push(labels[i].key);
+      }
+      pending = unresolved; // etiqueta(s) sin valor → el valor viene en el/los renglones de DEBAJO
+      pendingAge = 0;
+      continue;
     }
-    const mTotal = l.match(/total\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
-    if (mTotal && totalCash == null) totalCash = parseKNumber(mTotal[1]);
-    const mCur = l.match(/^(?:EUR|USD|GBP|CHF)\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
-    if (mCur) { const v = parseKNumber(mCur[1]); if (v != null) perCurrencyCash.push(v); }
+    // Renglón sin etiquetas: si hay etiquetas pendientes y este renglón trae números, asociar en orden
+    if (pending.length > 0 && nums.length > 0) {
+      for (let i = 0; i < pending.length && i < nums.length; i++) {
+        if (found[pending[i]] == null) found[pending[i]] = nums[i].v;
+      }
+      pending = pending.slice(nums.length);
+      pendingAge = 0;
+      continue;
+    }
+    if (pending.length > 0 && ++pendingAge > 2) pending = []; // caducidad: 2 renglones
   }
 
-  // Bloque "Saldos en efectivo": el "Total 15,1K" (ya en divisa base) va sin la palabra
-  // "efectivo" — se busca SOLO dentro del bloque para no confundirlo con otros totales.
-  if (totalCash == null) {
+  let marketValue = plausible(found.mdo ?? null) ? (found.mdo as number) : null;
+  let totalCash = plausible(found.liq ?? null) ? (found.liq as number) : null;
+
+  // ── 2) Fallbacks de efectivo: PODER ADQUISITIVO → "Total efectivo 15.1K" → por divisa ──
+  const perCurrencyCash: number[] = [];
+  let totalEfectivo: number | null = null;
+  for (const l of lines) {
+    const mTotal = l.match(/total\s+(?:efectivo|cash)\s+([\dOoQIl|.,]+\s*[KM]?)/i);
+    if (mTotal && totalEfectivo == null) totalEfectivo = parseMoneyToken(mTotal[1]);
+    const mCur = l.match(/^(?:EUR|USD|GBP|CHF)\s+(?:efectivo|cash)\s+([\dOoQIl|.,]+\s*[KM]?)/i);
+    if (mCur) { const v = parseMoneyToken(mCur[1]); if (v != null) perCurrencyCash.push(v); }
+  }
+  if (totalEfectivo == null) {
     const cashAnchor = lines.findIndex((l) => /saldos?\s+en\s+efectivo|cash\s+balances/i.test(l));
     if (cashAnchor >= 0) {
       for (let i = cashAnchor + 1; i < Math.min(lines.length, cashAnchor + 7); i++) {
-        const m = lines[i].match(/^total\s+([\d.,]+\s*[KM]?)$/i);
-        if (m) { totalCash = parseKNumber(m[1]); break; }
+        const m = lines[i].match(/^total\s+([\dOoQIl|.,]+\s*[KM]?)$/i);
+        if (m) { totalEfectivo = parseMoneyToken(m[1]); break; }
       }
     }
   }
-  // Último recurso: suma de saldos POR DIVISA (mezcla divisas sin FX — solo mejor que nada)
+  if (totalCash == null && plausible(found.poder ?? null)) totalCash = found.poder as number;
+  if (totalCash == null && plausible(totalEfectivo)) totalCash = totalEfectivo;
   if (totalCash == null && perCurrencyCash.length > 0) {
-    totalCash = perCurrencyCash.reduce((a, b) => a + b, 0);
+    totalCash = perCurrencyCash.reduce((a, b) => a + b, 0); // mezcla divisas — último recurso
   }
 
-  // Total de cuenta (NAV): número grande con separador de miles ("22.110") en las primeras
-  // líneas tras "Cartera"/"Portfolio" (cabecera de la app IBK) o al inicio del texto.
-  const anchor = lines.findIndex((l) => /^(cartera|portfolio)$/i.test(l));
+  // ── 3) NAV: número grande AGRUPADO en miles, solo (o casi) en su renglón, zona alta ──
+  let accountTotal: number | null = null;
+  const navCandidates: number[] = [];
+  const anchor = lines.findIndex((l) => /^(cartera|portfolio)\b/i.test(l));
   const from = anchor >= 0 ? anchor : 0;
-  for (let i = from; i < Math.min(lines.length, from + 8); i++) {
-    const m = lines[i].match(/^([\d]{1,3}(?:[.,]\d{3})+)$/);
-    if (m) {
-      const v = parseFloat(m[1].replace(/[.,]/g, ""));
-      if (Number.isFinite(v) && v >= 1000 && v < 100_000_000) { accountTotal = v; break; }
+  for (let i = from; i < Math.min(lines.length, from + 12); i++) {
+    for (const m of lines[i].matchAll(/(?:^|\s)([\dOoQIl|]{1,3}(?:[.,][\dOoQIl|]{3})+)(?=\s|$)/g)) {
+      const v = parseMoneyToken(m[1]);
+      if (v != null && v >= 1000 && v < 100_000_000) navCandidates.push(v);
     }
+  }
+  // Preferir el candidato que cumpla la identidad NAV = VAL.MDO. + EXCESO LIQ. (±3%)
+  if (marketValue != null && totalCash != null) {
+    const derived = marketValue + totalCash;
+    accountTotal = navCandidates.find((v) => Math.abs(v - derived) / derived <= 0.03) ?? Math.round(derived);
+  } else {
+    accountTotal = navCandidates[0] ?? null;
   }
 
-  // VERIFICACIÓN CRUZADA (regla 15-ago): NAV debe ≈ VAL.MDO. + EXCESO LIQ. Si el NAV
-  // leído se desvía >3% (dígito perdido por OCR) — o falta — se reconstruye de la suma.
-  if (marketValue != null && totalCash != null) {
-    const derived = Math.round(marketValue + totalCash);
-    if (accountTotal == null || Math.abs(accountTotal - derived) / derived > 0.03) {
-      accountTotal = derived;
-    }
+  // ── 4) Reparación por identidad: si falta UNA pieza, se deriva de las otras dos ──
+  if (marketValue == null && accountTotal != null && totalCash != null && accountTotal >= totalCash) {
+    marketValue = Math.round((accountTotal - totalCash) * 100) / 100;
   }
-  return { accountTotal, totalCash, marketValue };
+  if (totalCash == null && accountTotal != null && marketValue != null && accountTotal >= marketValue) {
+    totalCash = Math.round((accountTotal - marketValue) * 100) / 100;
+  }
+
+  // ── 5) Diagnóstico exacto para la UI: qué etiqueta NO se pudo leer ──
+  const missing: string[] = [];
+  if (marketValue == null) missing.push("VAL. MDO.");
+  if (totalCash == null) missing.push("EXCESO LIQ. / Total efectivo");
+  if (accountTotal == null) missing.push("NAV (número grande)");
+  return { accountTotal, totalCash, marketValue, missing: missing.length ? missing : undefined };
 }
 
 // ── Robustez de imagen ANTES del OCR (fix 15-ago, fallo real IMG_9360.jpeg) ──
