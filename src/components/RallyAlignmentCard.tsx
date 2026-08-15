@@ -189,6 +189,8 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
   const investedPctReal = total > 0 ? (invested / total) * 100 : 0;
   const cashPctReal = total > 0 && cash != null ? (cash / total) * 100 : null;
   const fmtEur = (v: number) => `${Math.round(v).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}${fxNormalized ? " €" : ""}`;
+  // % de cabecera en formato es-ES ("31,7%") — literal dictado 15-ago
+  const fmtPctEs = (v: number) => `${v.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   // Alineación global = Σ mín(real, objetivo) por ticker del top-10 (0-100, simple y explicable).
   const alignmentPct = rows
     .filter((r) => r.kind === "top10")
@@ -237,8 +239,8 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
             display: "flex", alignItems: "center", justifyContent: "space-around", gap: 10, flexWrap: "wrap",
             padding: "8px 12px 5px",
           }}>
-            <HeaderStat label="Invertido" value={fmtEur(invested)} sub={`${fmt1(investedPctReal)}%`} color={TEXT} />
-            <HeaderStat label="Efectivo" value={cash != null ? fmtEur(cash) : "—"} sub={cashPctReal != null ? `${fmt1(cashPctReal)}%` : undefined} color={GREEN} />
+            <HeaderStat label="Invertido" value={fmtEur(invested)} sub={fmtPctEs(investedPctReal)} color={TEXT} />
+            <HeaderStat label="Efectivo" value={cash != null ? fmtEur(cash) : "—"} sub={cashPctReal != null ? fmtPctEs(cashPctReal) : undefined} color={GREEN} />
             <HeaderStat label="Total cartera" value={fmtEur(total)} color={AMBER} />
           </div>
           {/* Línea de transparencia del FX implícito */}
