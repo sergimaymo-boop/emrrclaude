@@ -21,6 +21,19 @@
  *
  * CRITERIO FINAL: máxima rentabilidad OOS sujeta a robustez (peor celda de la malla
  * no inferior a la del fijo 30%). Empate → gana la variante ADAPTATIVA por ticker.
+ * ⚠ El ranking "por 2ª mitad" que imprime este script se sustituyó en la ronda 2
+ * por el walk-forward correcto (elegir con la 1ª mitad, confirmar con la 2ª): ver
+ * la nota de honestidad en rally-adaptive-stop-round2.mjs.
+ *
+ * ⚠ NOTAS DE LA VERIFICACIÓN ADVERSARIAL sobre la parte A (clasificador):
+ *   · El combo OLS de 15 rasgos NUNCA llegó a ajustarse: dd52 = prox − 1 son
+ *     colineales EXACTOS → matriz singular → ols() devuelve null y el combo se
+ *     descarta en silencio (por eso no aparece su fila en la salida).
+ *   · m9 y slope200 SÍ tienen IC estable moderado (0,24-0,30 en train y test):
+ *     "más momento/extensión → más drawdown forward". No se usa para ceñir
+ *     porque TODAS las políticas que ciñen a los fuertes pierden en la malla
+ *     (control inverso, salud, parabólico): la justificación es la evidencia a
+ *     nivel de política, no la afirmación "nada predice".
  *
  * Salida: backtests/rally-adaptive-stop-study.json
  */

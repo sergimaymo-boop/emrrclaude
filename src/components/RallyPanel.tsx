@@ -176,18 +176,21 @@ export function RallyPanel() {
             desde la entrada. Tendencia joven y poco extendida sobre su media de 50 = más recorrido por delante; en máximos de 52 semanas = menos.
             Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
             <br />
-            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido uniforme <b>destruye rentabilidad aquí</b> (probado también
-            con salto inmediato al mejor candidato: 15,5% frente a 39,4%). El <b>STOP de cada fila es ADAPTATIVO POR TICKER</b> (estudio
-            15-ago-2026): anchura = <b>{RALLY_BACKTEST.withStops.stopRule}</b> — recorrido alto (tendencia joven, poco estirada, sin agotar)
-            → stop <b style={{ color: GREEN }}>AMPLIO</b> para dejar correr; recorrido bajo → <b style={{ color: "#eab308" }}>CEÑIDO</b> para
+            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido uniforme <b>destruye rentabilidad aquí</b> (re-medido con la
+            base ajustada y salto inmediato al mejor candidato: 30,3% frente a 38,3% del campeón sin stops). El <b>STOP de cada fila es
+            ADAPTATIVO POR TICKER</b> (estudio 15-ago-2026): anchura = <b>{RALLY_BACKTEST.withStops.stopRule}</b>, fijada a la entrada y
+            re-fijada en cada revisión (~84 sesiones) — recorrido alto (tendencia joven, poco estirada, sin agotar) → stop{" "}
+            <b style={{ color: GREEN }}>AMPLIO</b> para dejar correr; recorrido bajo → <b style={{ color: "#eab308" }}>CEÑIDO</b> para
             ceder poco en el pullback y rotar. Se evalúa sobre <b>cierres diarios</b> (salta si el CIERRE cae ese % desde su máximo de cierre);
             no es una orden trailing intradía en el broker — una orden intradía saltaría más a menudo que lo backtesteado.
             <b style={{ color: SLATE }}> Si un stop te salta</b>: re-escanea y entra en el mejor por <b>mezcla 70/30 de score y recorrido</b>{" "}
-            ({RALLY_BACKTEST.withStops.jumpRule}). La mecánica completa midió{" "}
+            ({RALLY_BACKTEST.withStops.jumpRule}). Qué compra esta política frente al stop fijo 30%: <b>igual robustez con mejor suelo</b>{" "}
+            (peor celda de la malla 25,0% frente a 23,3%) <b>y un stop propio por ticker según su fase</b> — NO más rentabilidad esperada:
+            en la mitad de confirmación rindió 40,2% frente a 41,4% del fijo 30% (empate estadístico). En el backtest completo midió{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)},
             aciertos {(RALLY_BACKTEST.withStops.winRate * 100).toFixed(0)}%), elegida solo con la 1ª mitad del histórico y confirmada en la 2ª;
-            gana 7/9 celdas de la malla al campeón sin stops (no domina 9/9) y 6/9 al fijo 30%. Probados y <b>descartados con números</b>:
+            gana 7/9 celdas al campeón sin stops (no domina 9/9) y 6/9 al fijo 30%. Probados y <b>descartados con números</b>:
             stop por k·ATR (satura y pierde robustez), modulación por "salud" compuesta, parámetros por ticker incluso con shrinkage (los
             óptimos individuales no son estables), ratchets de beneficio, y exigir "entrada IDEAL" al saltar (pierde en todas las celdas).
             ⚠ Todas estas cifras son de backtest con el universo superviviente actual y ejecución ideal al cierre (20 pb de costes):{" "}

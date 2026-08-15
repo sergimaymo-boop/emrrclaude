@@ -10,6 +10,15 @@
  * 0-100) combinado con el ATR de producción.
  *
  * Mismo protocolo: señales ajustadas, malla 9 celdas, salto mezcla, 20 pb, determinista.
+ *
+ * ⚠ NOTA DE HONESTIDAD (verificación adversarial 15-ago-2026): el CRITERIO DE
+ * SELECCIÓN cambió entre rondas y el pivote queda documentado aquí. La ronda 1
+ * ordenaba las elegibles por CAGR de la 2ª mitad (el criterio literal del mandato,
+ * "máxima rentabilidad OOS"); con ese criterio habría ganado el FIJO 20% (2ª mitad
+ * 48,3%) — pero elegir mirando la mitad de test es seleccionar sobre el test.
+ * Esta ronda usa el criterio correcto: ELEGIR con la 1ª mitad, CONFIRMAR con la 2ª
+ * (walk-forward). Bajo ese criterio gana H4 (1ª mitad 42,0% → 2ª 40,2%); el fijo
+ * 20% queda retratado como frágil (1ª mitad 33,7%, mediana de malla 28,2%).
  * Salida: backtests/rally-adaptive-stop-round2.json
  */
 import fs from "node:fs";

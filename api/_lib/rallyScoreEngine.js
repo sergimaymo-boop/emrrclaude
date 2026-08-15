@@ -278,6 +278,8 @@ function calculateTrailingStop(atrPercent) {
  * como stop mostrado: cada ticker recibe SU anchura según su recorrido.
  *
  *   stop% = clamp(12 + 0,35 · runwayScore, 15, 45)
+ *   (fijado a la entrada y RE-FIJADO en cada revisión, ~84 sesiones — es lo que
+ *    hace la simulación y lo que muestra el panel en cada scan)
  *
  * runwayScore (0-100, computeRunway) resume la FASE del ticker: edad de la
  * tendencia, extensión sobre la media de 50 y cercanía al máximo de 52 semanas.
@@ -287,14 +289,19 @@ function calculateTrailingStop(atrPercent) {
  *
  *   · elegida por WALK-FORWARD honesto: mejor 1ª mitad de todas las políticas
  *     elegibles (42,0%) y confirmada en la 2ª (40,2%) — no elegida en test
- *   · CAGR 41,1% · caída máx 36,9% · MAR 1,11 · winrate 65% · gana 7/9 celdas
- *     al campeón sin stops y 6/9 al fijo 30%; celda mínima 25,0% ≥ 23,3% (suelo)
+ *   · QUÉ COMPRA frente al fijo 30%: igual robustez con mejor suelo (peor celda
+ *     25,0% frente a 23,3%) y stop propio por ticker — NO más rentabilidad
+ *     esperada (mitad de confirmación: 40,2% frente a 41,4% del fijo 30%,
+ *     empate estadístico; el mérito es robustez + adaptividad)
+ *   · backtest completo: CAGR 41,1% · caída máx 36,9% · MAR 1,11 · winrate 65%
+ *     · gana 7/9 celdas al campeón sin stops y 6/9 al fijo 30%
  *   · probadas y DESCARTADAS con números: k·ATR puro (satura y pierde mediana),
- *     salud compuesta (IC≈0 out-of-sample), k por ticker incluso con shrinkage
- *     (rho 0,02 con n=17; captura 30,6% frente a 38,8% del global), ratchets
- *   · el clasificador de pullback (15 rasgos + combos OLS) NO predice el
- *     drawdown forward out-of-sample (mejor Spearman 0,16, signos inestables):
- *     la adaptación por fase es la única con soporte robusto
+ *     salud compuesta, k por ticker incluso con shrinkage (rho 0,02 con n=17;
+ *     captura 30,6% frente a 38,8% del global), ratchets de beneficio
+ *   · clasificador de pullback: ninguna COMBINACIÓN explotable out-of-sample
+ *     (mejor combo OLS 0,16); m9 y slope200 sí muestran IC estable moderado
+ *     (0,24-0,30) — lo que justifica no ceñir es la evidencia a NIVEL DE
+ *     POLÍTICA (todas las variantes ceñidas pierden), no "nada predice"
  *
  * Cifras de backtest (universo superviviente, cierres diarios, 20 pb): valen
  * para comparar variantes entre sí, no como rentabilidad esperada.

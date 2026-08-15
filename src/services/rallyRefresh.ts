@@ -92,13 +92,18 @@ export const RALLY_BACKTEST = {
    * Variante operada CON stops — ADAPTATIVOS POR TICKER (estudio 15-ago-2026,
    * scripts/rally-adaptive-stop-study.mjs + rally-adaptive-stop-round2.mjs):
    * cada ticker lleva SU stop según su fase — stop% = clamp(12 + 0,35·recorrido,
-   * 15, 45), evaluado sobre cierres diarios — y al saltar, reinversión el mismo
-   * día en el mejor por MEZCLA 0,7·score + 0,3·recorrido (rotationRank).
+   * 15, 45), evaluado sobre cierres diarios, fijado a la entrada y RE-FIJADO en
+   * cada revisión (~84 sesiones) — y al saltar, reinversión el mismo día en el
+   * mejor por MEZCLA 0,7·score + 0,3·recorrido (rotationRank).
    * Elegida por walk-forward honesto (mejor 1ª mitad 42,0%, confirmada 2ª 40,2%);
-   * gana 7/9 celdas al campeón sin stops y 6/9 al fijo 30%. Probados y
-   * descartados con números: k·ATR puro, salud compuesta, k por ticker con
-   * shrinkage, ratchets, y el clasificador de pullback (no predice OOS).
-   * Cifras de backtest (universo superviviente): comparan variantes, no prometen.
+   * gana 7/9 celdas al campeón sin stops y 6/9 al fijo 30%. QUÉ COMPRA frente al
+   * fijo 30%: igual robustez con mejor suelo (peor celda 25,0% vs 23,3%) y stop
+   * propio por ticker — NO más rentabilidad esperada (confirmación: 40,2% vs
+   * 41,4% del fijo 30%, empate estadístico). Probados y descartados con números:
+   * k·ATR puro, salud compuesta, k por ticker con shrinkage, ratchets; el
+   * clasificador de pullback no halló combinación explotable OOS (la evidencia
+   * decisiva es a nivel de política). Cifras del backtest completo (universo
+   * superviviente): comparan variantes, no prometen rentabilidad.
    */
   withStops: { cagr: 0.411, maxDD: 0.369, mar: 1.11, sharpe: 1.27, winRate: 0.65, stopRule: "12 + 0,35·recorrido, acotado 15-45%", jumpRule: "0,7·score + 0,3·recorrido" },
 } as const;
