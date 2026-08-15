@@ -78,12 +78,24 @@ function emaSeriesOf(v, p) {
 /**
  * Carga el universo y precomputa por ticker, proyectado al calendario maestro (SPY):
  *   adj[k]  — cierre ajustado (rentabilidad real)
- *   feat[k] — { m3, m6, m9, m12, atr, age, ext50, prox, regAge, inRegime }
+ *   feat[k] — { m1, m3, m6, m9, m12, atr, age, ext50, prox, regAge, inRegime }
  * Régimen (hipótesis 1): SMA200 con pendiente positiva y cierre por encima, SOSTENIDO
  * (≥45 de las últimas 50 sesiones cumplen cierre>SMA200 y SMA200 subiendo a 20 vistas).
  * regAge = sesiones consecutivas con el régimen activo (0 = fuera de régimen).
+ *
+ * opts:
+ *   adjustedSignals — true: las SEÑALES se calculan sobre el cierre AJUSTADO, la
+ *     convención real de producción (historicalDataProvider: close = adjusted_close).
+ *     false (por defecto): cierre sin ajustar, la convención de los estudios previos.
+ *   rich — true: añade a feat los rasgos del estudio de stops adaptativos:
+ *     atrProd (ATR de producción: MEDIA SIMPLE de los últimos 14 TR, con high/low
+ *     crudos y cierre-señal previo, en % — réplica de technicalEngine.calculateAtr),
+ *     rsi14, sma50, sma200, dist50, dist200, slope50 (10 sesiones), slope200 (20),
+ *     dd52 (= prox − 1 ≤ 0), ddVel10 (Δ del dd52 en 10 sesiones; negativo = cayendo),
+ *     vol20, vol60, vol2060 (régimen de volatilidad).
  */
-export function loadUniverse() {
+export function loadUniverse(opts = {}) {
+  const { adjustedSignals = false, rich = false } = opts;
   const raw = JSON.parse(fs.readFileSync(DATA, "utf8"));
   const series = raw.series;
   const spyRaw = series["SPY.US"].bars;
@@ -100,30 +112,50 @@ export function loadUniverse() {
     const n = bars.length;
     const closes = bars.map((b) => b.c);
     const adj = bars.map((b) => b.a);
+    const sig = adjustedSignals ? adj : closes;   // serie sobre la que se calculan las SEÑALES
     const highs = bars.map((b) => b.h), lows = bars.map((b) => b.l);
-    const e50 = emaSeriesOf(closes, 50);
+    const e50 = emaSeriesOf(sig, 50);
 
-    // ATR de Wilder 14 (misma réplica que los estudios previos)
+    // ATR de Wilder 14 (la réplica de los estudios previos)
     const atrPct = new Array(n).fill(null);
     { let atr = null;
       for (let i = 1; i < n; i++) {
-        const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1]));
-        if (i === 14) { let s0 = 0; for (let q = 1; q <= 14; q++) s0 += Math.max(highs[q] - lows[q], Math.abs(highs[q] - closes[q - 1]), Math.abs(lows[q] - closes[q - 1])); atr = s0 / 14; }
+        const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - sig[i - 1]), Math.abs(lows[i] - sig[i - 1]));
+        if (i === 14) { let s0 = 0; for (let q = 1; q <= 14; q++) s0 += Math.max(highs[q] - lows[q], Math.abs(highs[q] - sig[q - 1]), Math.abs(lows[q] - sig[q - 1])); atr = s0 / 14; }
         else if (i > 14) atr = (atr * 13 + tr) / 14;
-        if (atr != null && closes[i] > 0) atrPct[i] = (atr / closes[i]) * 100;
+        if (atr != null && sig[i] > 0) atrPct[i] = (atr / sig[i]) * 100;
       } }
+
+    // ATR de PRODUCCIÓN (technicalEngine.calculateAtr): media SIMPLE de los últimos 14 TR
+    let atrProdPct = null;
+    if (rich) {
+      atrProdPct = new Array(n).fill(null);
+      const trArr = new Array(n).fill(0);
+      let sTr = 0;
+      for (let i = 1; i < n; i++) {
+        trArr[i] = Math.max(highs[i] - lows[i], Math.abs(highs[i] - sig[i - 1]), Math.abs(lows[i] - sig[i - 1]));
+        sTr += trArr[i]; if (i > 14) sTr -= trArr[i - 14];
+        if (i >= 14 && sig[i] > 0) atrProdPct[i] = (sTr / 14 / sig[i]) * 100;
+      }
+    }
 
     // edad de la tendencia: sesiones consecutivas cerrando sobre la EMA50 (réplica producción)
     const ageArr = new Array(n).fill(0);
     { let cnt = 0;
-      for (let i = 0; i < n; i++) { cnt = isNum(e50[i]) && closes[i] >= e50[i] ? cnt + 1 : 0; ageArr[i] = cnt; } }
+      for (let i = 0; i < n; i++) { cnt = isNum(e50[i]) && sig[i] >= e50[i] ? cnt + 1 : 0; ageArr[i] = cnt; } }
 
-    // SMA200 + régimen sostenido (hipótesis 1)
+    // SMA50/SMA200 + régimen sostenido
     const sma200 = new Array(n).fill(null);
     { let s = 0;
-      for (let i = 0; i < n; i++) { s += closes[i]; if (i >= 200) s -= closes[i - 200]; if (i >= 199) sma200[i] = s / 200; } }
+      for (let i = 0; i < n; i++) { s += sig[i]; if (i >= 200) s -= sig[i - 200]; if (i >= 199) sma200[i] = s / 200; } }
+    let sma50 = null;
+    if (rich) {
+      sma50 = new Array(n).fill(null);
+      let s = 0;
+      for (let i = 0; i < n; i++) { s += sig[i]; if (i >= 50) s -= sig[i - 50]; if (i >= 49) sma50[i] = s / 50; }
+    }
     const dayOK = new Array(n).fill(0);
-    for (let i = 220; i < n; i++) dayOK[i] = isNum(sma200[i]) && isNum(sma200[i - 20]) && closes[i] > sma200[i] && sma200[i] > sma200[i - 20] ? 1 : 0;
+    for (let i = 220; i < n; i++) dayOK[i] = isNum(sma200[i]) && isNum(sma200[i - 20]) && sig[i] > sma200[i] && sma200[i] > sma200[i - 20] ? 1 : 0;
     const regAgeArr = new Array(n).fill(0);
     { let sum50 = 0, age = 0;
       for (let i = 0; i < n; i++) {
@@ -133,24 +165,74 @@ export function loadUniverse() {
         regAgeArr[i] = age;
       } }
 
+    // máximo de 252 sesiones (incluye hoy) sobre la serie de señales → prox / dd52
+    const hiArr = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      const lookback = Math.min(i, 252);
+      let hi = 0; for (let q = i - lookback + 1; q <= i; q++) if (sig[q] > hi) hi = sig[q];
+      hiArr[i] = hi;
+    }
+
+    // rasgos "rich": RSI14 y volatilidad realizada 20/60 (sobre retornos ajustados)
+    let rsi14 = null, vol20Arr = null, vol60Arr = null;
+    if (rich) {
+      rsi14 = new Array(n).fill(null);
+      { let ag = 0, al = 0;
+        for (let i = 1; i < n; i++) {
+          const d = sig[i] - sig[i - 1], g = Math.max(d, 0), l = Math.max(-d, 0);
+          if (i <= 14) { ag += g / 14; al += l / 14; if (i === 14) rsi14[i] = al === 0 ? 100 : 100 - 100 / (1 + ag / al); }
+          else { ag = (ag * 13 + g) / 14; al = (al * 13 + l) / 14; rsi14[i] = al === 0 ? 100 : 100 - 100 / (1 + ag / al); }
+        } }
+      const ret = new Array(n).fill(0);
+      for (let i = 1; i < n; i++) ret[i] = adj[i - 1] > 0 ? adj[i] / adj[i - 1] - 1 : 0;
+      const rollSd = (win) => {
+        const out = new Array(n).fill(null);
+        let s = 0, s2 = 0;
+        for (let i = 1; i < n; i++) {
+          s += ret[i]; s2 += ret[i] * ret[i];
+          if (i > win) { s -= ret[i - win]; s2 -= ret[i - win] * ret[i - win]; }
+          if (i >= win) { const m = s / win; out[i] = Math.sqrt(Math.max(0, s2 / win - m * m)); }
+        }
+        return out;
+      };
+      vol20Arr = rollSd(20); vol60Arr = rollSd(60);
+    }
+
     const mAdj = new Array(D).fill(null);
     const feat = new Array(D).fill(null);
-    const rp = (i, lb) => (i - lb >= 0 && closes[i - lb] > 0 ? (closes[i] / closes[i - lb] - 1) * 100 : null);
+    const rp = (i, lb) => (i - lb >= 0 && sig[i - lb] > 0 ? (sig[i] / sig[i - lb] - 1) * 100 : null);
 
     for (let i = 0; i < n; i++) {
       const k = dateIdx.get(bars[i].d);
       if (k === undefined) continue;
       mAdj[k] = adj[i];
       if (i < 200) continue;
-      const lookback = Math.min(i, 252);
-      let hi = 0; for (let q = i - lookback + 1; q <= i; q++) if (closes[q] > hi) hi = closes[q];
-      feat[k] = {
-        m3: rp(i, 63), m6: rp(i, 126), m9: rp(i, 189), m12: rp(i, 252),
+      const hi = hiArr[i];
+      const f = {
+        m1: rp(i, 20), m3: rp(i, 63), m6: rp(i, 126), m9: rp(i, 189), m12: rp(i, 252),
         atr: atrPct[i], age: ageArr[i],
-        ext50: isNum(e50[i]) && e50[i] > 0 ? (closes[i] - e50[i]) / e50[i] : null,
-        prox: hi > 0 ? closes[i] / hi : null,
+        ext50: isNum(e50[i]) && e50[i] > 0 ? (sig[i] - e50[i]) / e50[i] : null,
+        prox: hi > 0 ? sig[i] / hi : null,
         regAge: regAgeArr[i], inRegime: regAgeArr[i] > 0,
       };
+      if (rich) {
+        const p = sig[i];
+        const dd52 = f.prox != null ? f.prox - 1 : null;
+        const hi10 = i >= 10 ? hiArr[i - 10] : 0;
+        const dd52Prev = i >= 10 && hi10 > 0 ? sig[i - 10] / hi10 - 1 : null;
+        f.atrProd = atrProdPct[i];
+        f.rsi14 = rsi14[i];
+        f.sma50 = sma50[i]; f.sma200 = sma200[i];
+        f.dist50 = isNum(sma50[i]) && sma50[i] > 0 ? (p - sma50[i]) / sma50[i] : null;
+        f.dist200 = isNum(sma200[i]) && sma200[i] > 0 ? (p - sma200[i]) / sma200[i] : null;
+        f.slope50 = i >= 10 && isNum(sma50[i]) && isNum(sma50[i - 10]) && sma50[i - 10] > 0 ? sma50[i] / sma50[i - 10] - 1 : null;
+        f.slope200 = i >= 20 && isNum(sma200[i]) && isNum(sma200[i - 20]) && sma200[i - 20] > 0 ? sma200[i] / sma200[i - 20] - 1 : null;
+        f.dd52 = dd52;
+        f.ddVel10 = dd52 != null && dd52Prev != null ? dd52 - dd52Prev : null;
+        f.vol20 = vol20Arr[i]; f.vol60 = vol60Arr[i];
+        f.vol2060 = isNum(vol20Arr[i]) && isNum(vol60Arr[i]) && vol60Arr[i] > 0 ? vol20Arr[i] / vol60Arr[i] : null;
+      }
+      feat[k] = f;
     }
     T.push({ sym, name: obj.name, adj: mAdj, feat });
   }
@@ -247,7 +329,11 @@ export function simulate(T, D, opts) {
           if (dailyWidth) {
             const f = t.feat[i];
             if (f) {
-              const w = widthOf(f);
+              // ctx para políticas ratchet/chandelier: ganancia acumulada y pico
+              const ctx = { entryPx: h.entryPx, px, peak: h.peak,
+                gain: isNum(h.entryPx) && h.entryPx > 0 ? px / h.entryPx - 1 : 0,
+                peakGain: isNum(h.entryPx) && h.entryPx > 0 ? h.peak / h.entryPx - 1 : 0 };
+              const w = widthOf(f, ctx);
               if (isNum(w)) h.trailPct = ratchet ? Math.min(h.trailPct, w) : w;
             }
           }
@@ -260,7 +346,7 @@ export function simulate(T, D, opts) {
               const rep = pickJump(i, heldSet);
               if (rep != null) {
                 const f = T[rep].feat[i];
-                const w0 = f ? widthOf(f) : null;
+                const w0 = f ? widthOf(f, { gain: 0, peakGain: 0 }) : null;
                 eq *= 1 - COST_BPS * (h.w / wsum);      // compra del sustituto
                 trades++; jumpCount++;
                 const epx = T[rep].adj[i];
@@ -298,7 +384,7 @@ export function simulate(T, D, opts) {
     if (turn) { eq *= 1 - COST_BPS * (turn / Math.max(topN, 1)); trades += turn; }
     held = top.map((c, j) => {
       const old = prev.get(c.ti);
-      const w0 = widthOf ? widthOf(c.f) : null;
+      const w0 = widthOf ? widthOf(c.f, { gain: 0, peakGain: 0 }) : null;
       return {
         ti: c.ti, w: ws[j],
         peak: Math.max(old?.peak ?? 0, T[c.ti].adj[i]),
