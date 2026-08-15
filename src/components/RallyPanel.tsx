@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { registerModuleScan } from "../services/scanBus";
+import { RALLY_SCAN_UPDATED_EVENT } from "./RallyAlignmentCard";
 import {
   RALLY_BACKTEST,
   type RallyAsset,
@@ -77,6 +78,9 @@ export function RallyPanel() {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: res.top10 ?? [], coveragePercent: 100 } as RallyState));
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
           ok = true;
+          // Aviso a la tarjeta de alineación cartera↔Rally: hay un scan nuevo persistido.
+          // Solo notifica — el módulo Rally no cambia nada de su cálculo ni de su estado.
+          window.dispatchEvent(new Event(RALLY_SCAN_UPDATED_EVENT));
         } else {
           setState((s) => ({ ...s, status: res.status ?? "RALLY_ERROR" } as RallyState));
         }

@@ -24,6 +24,7 @@ import {
 } from "../services/optimal2026Refresh";
 import { deriveOptimal2026Display, type Optimal2026ItemWithSignal } from "../services/optimal2026IntradayEngine";
 import { ACCENT, ACCENT_GLOW, ACCENT_BORDER, GREEN, RED, ORANGE, YELLOW, GRAY, TEXT, pctColor, ActionBadge } from "./Optimal2026Panel";
+import { RallyAlignmentSection } from "./RallyAlignmentCard";
 
 // ── Tabla de cartera estilo terminal (rediseño 26-jul) ────────────────────────
 // Columnas fijas alineadas: TICKER+NOMBRE · ACCIONES · PRECIO · INVERTIDO · P&L · SEÑAL
@@ -437,15 +438,18 @@ function PortfolioSection({
         {/* AUDIT FIX: los chips "Valor:"/"P&L:" duplicaban (y podían contradecir) la fila
             TOTAL de la tabla — eliminados; la fila TOTAL es la única fuente. */}
         <span style={{ flex: 1 }} />
+        {/* Botón CLARO de borrado (mandato ago-2026): elimina fotos/datos de localStorage
+            para poder subir capturas nuevas — la subida acepta cualquier archivo del iPhone. */}
         <button
           onClick={onClear}
+          title="Borra la cartera cargada (fotos/CSV) de este dispositivo para subir otra nueva"
           style={{
-            fontSize: 8, color: GRAY, background: "transparent",
-            border: "1px solid rgba(100,116,139,0.3)", borderRadius: 3, padding: "2px 6px",
-            cursor: "pointer",
+            fontSize: 9, fontWeight: 700, color: "#f87171", background: "rgba(248,113,113,0.08)",
+            border: "1px solid rgba(248,113,113,0.35)", borderRadius: 4, padding: "3px 8px",
+            cursor: "pointer", whiteSpace: "nowrap",
           }}
         >
-          Limpiar
+          🗑 Limpiar cartera
         </button>
         <span style={{ fontSize: 7, color: "#475569" }}>
           {new Date(portfolio.loadedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -705,6 +709,12 @@ export function PortfolioCard({ data, onScanAfterLoad }: { data: Optimal2026Resu
       ) : (
         <PortfolioUpload onLoad={handlePortfolioLoad} onScanAfterLoad={onScanAfterLoad} />
       )}
+
+      {/* ── ⚖ Alineación cartera real ↔ Rally Leaders (banda inferior de ESTA tarjeta,
+          mandato ago-2026): informativa, solo lee el último scan persistido de Rally.
+          Al vivir dentro de la misma tarjeta comparte el estado de cartera sin lecturas
+          duplicadas de localStorage, y queda pegada al módulo Rally que referencia. ── */}
+      <RallyAlignmentSection portfolio={portfolio} />
     </section>
   );
 }

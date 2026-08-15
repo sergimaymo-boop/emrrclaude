@@ -1054,10 +1054,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       <ScanSummaryBar systemStatus={systemStatus} />
 
       {/* ══════════════════════════════════════════════════════════════════════
-          ORDEN DE MÓDULOS (mandato ago-2026): Fear&Greed → Riesgo → Amplitud →
-          SP500 → Rally → Cartera IBK → Optimal Supreme → Flujos → System status.
-          La Cartera IBK va justo ENCIMA de Optimal Supreme porque es la cartera
-          que Supreme evalúa (acoplamiento funcional, no solo visual).
+          ORDEN DE MÓDULOS (mandato ago-2026, revisado): Fear&Greed → Riesgo →
+          Amplitud → SP500 → Cartera IBK (carga + alineación↔Rally) → Rally →
+          Optimal Supreme → Flujos → System status. La tarjeta de Cartera IBK va
+          justo ENCIMA de Rally Leaders: incluye la banda "⚖ alineación cartera
+          real ↔ Rally" (informativa) pegada al módulo que referencia. Supreme
+          sigue leyendo la MISMA cartera (localStorage único compartido).
           ══════════════════════════════════════════════════════════════════════ */}
 
       {/* ── MÓDULO 1 — FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
@@ -1083,21 +1085,22 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         <SP500Panel />
       </ErrorBoundary>
 
-      {/* ── MÓDULO 5 — RALLY LEADERS: los 10 con la tendencia alcista más sana ──
+      {/* ── MÓDULO 5 — CARGA DE CARTERA IBK (CSV/fotos) + banda ⚖ ALINEACIÓN
+          CARTERA ↔ RALLY LEADERS — justo encima de Rally (mandato ago-2026).
+          Extraída de Optimal2026Panel en la reordenación anterior; comparte
+          items/deployPct/isPricesStale con Optimal Supreme vía
+          deriveOptimal2026Display() para que las tarjetas nunca diverjan, y la
+          banda de alineación solo LEE el último scan persistido de Rally. ── */}
+      <ErrorBoundary inline label="Cartera IBK">
+        <PortfolioCard data={optimal2026} onScanAfterLoad={handleOptimal2026Scan} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 6 — RALLY LEADERS: los 10 con la tendencia alcista más sana ──
           Reactivado y REVALIDADO 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md): v2.0 perdía
           contra el S&P500; v3.0 (RS 50% + momento 50%, sin penalizar el ranking) bate
           al índice con backtest de 10 años, validado contra sobreajuste y azar. */}
       <ErrorBoundary inline label="Rally Leaders">
         <RallyPanel />
-      </ErrorBoundary>
-
-      {/* ── MÓDULO 6 — CARGA DE CARTERA IBK (CSV/fotos) — justo encima de Optimal
-          Supreme: es la cartera real que Supreme evalúa. Extraída de Optimal2026Panel
-          en la reordenación (antes vivía embebida dentro del panel de señales);
-          comparte items/deployPct/isPricesStale con Optimal Supreme vía
-          deriveOptimal2026Display() para que ambas tarjetas nunca diverjan. ── */}
-      <ErrorBoundary inline label="Cartera IBK">
-        <PortfolioCard data={optimal2026} onScanAfterLoad={handleOptimal2026Scan} />
       </ErrorBoundary>
 
       {/* ── MÓDULO 7 — OPTIMAL SUPREME — el ÚNICO módulo de estrategia (consolidación 24-jul-2026) ──
