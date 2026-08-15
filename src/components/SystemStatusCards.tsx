@@ -38,7 +38,7 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
   const disp = (v: string) => (closedOk && CLOSED_MASKABLE.has(v) ? "CIERRE" : v);
 
   return (
-    <section className="section-block" style={{ marginTop: 12 }}>
+    <section className="section-block" style={{ marginTop: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>System Status</h2>
         <span style={{ fontSize: 10, color: color(disp(systemStatus.dashboardDataMode)), fontWeight: 700 }}>

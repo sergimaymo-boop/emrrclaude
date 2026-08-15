@@ -15,7 +15,7 @@ export function TechnicalHeader({ systemStatus }: TechnicalHeaderProps) {
       justifyContent: "space-between",
       padding: "12px 0 10px",
       borderBottom: "1px solid rgba(255,255,255,0.06)",
-      marginBottom: 12,
+      marginBottom: 14,
     }}>
       {/* Left: brand */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

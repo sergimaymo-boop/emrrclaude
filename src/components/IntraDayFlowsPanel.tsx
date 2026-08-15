@@ -233,7 +233,7 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
   const isError    = status === "ERROR";
 
   return (
-    <section className="section-block" style={{ marginTop: 16, border: "1px solid rgba(255,255,255,0.06)" }}>
+    <section className="section-block" style={{ marginTop: 0, marginBottom: 14, border: "1px solid rgba(255,255,255,0.06)" }}>
 
       {/* ── Header ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>

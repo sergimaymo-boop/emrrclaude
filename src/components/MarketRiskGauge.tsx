@@ -16,7 +16,7 @@ export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
 
   return (
     <section style={{
-      marginBottom: 12, borderRadius: 12, overflow: "hidden",
+      marginBottom: 14, borderRadius: 12, overflow: "hidden",
       border: `1px solid ${accent}66`, background: `${accent}12`,
       boxShadow: `0 0 20px ${accent}22, 0 2px 8px rgba(0,0,0,0.3)`,
     }}>

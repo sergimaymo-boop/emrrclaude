@@ -45,6 +45,7 @@ import { type ScanPhase } from "../components/StickyMiniHeader";
 import { pushNotifications } from "../services/pushNotifications";
 import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
+import { PortfolioCard } from "../components/PortfolioCard";
 import { RallyPanel } from "../components/RallyPanel";
 import { SP500Panel } from "../components/SP500Panel";
 import { runAllModuleScans } from "../services/scanBus";
@@ -1040,6 +1041,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   return (
     <main className="dashboard-shell">
+      {/* ══ CABECERA + SCAN EMRR — quedan arriba del todo, tal cual (mandato ago-2026) ══ */}
       <ErrorBoundary inline label="Cabecera">
         <StickyMiniHeader
           systemStatus={systemStatus}
@@ -1050,7 +1052,55 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       </ErrorBoundary>
       {/* ── SUMMARY BAR — universo + integridad + cobertura (siempre visible) ── */}
       <ScanSummaryBar systemStatus={systemStatus} />
-      {/* ══ OPTIMAL SUPREME — el ÚNICO módulo de estrategia (consolidación 24-jul-2026) ══
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          ORDEN DE MÓDULOS (mandato ago-2026): Fear&Greed → Riesgo → Amplitud →
+          SP500 → Rally → Cartera IBK → Optimal Supreme → Flujos → System status.
+          La Cartera IBK va justo ENCIMA de Optimal Supreme porque es la cartera
+          que Supreme evalúa (acoplamiento funcional, no solo visual).
+          ══════════════════════════════════════════════════════════════════════ */}
+
+      {/* ── MÓDULO 1 — FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
+      <ErrorBoundary inline label="Fear & Greed">
+        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 2 — RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
+      <ErrorBoundary inline label="Market Risk">
+        <MarketRiskGauge risk={marketRisk} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 3 — AMPLITUD DE MERCADO — veredicto agregado (timing 1-2 meses) ── */}
+      <ErrorBoundary inline label="Market Breadth">
+        <MarketBreadthPanel breadth={marketBreadth} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 4 — SP500: INDEPENDIENTE del SUPREME y del Rally (mandato 8-ago-2026) ──
+          Analiza SOLO el S&P 500: cuándo entrar, cuándo salir y con cuánto capital.
+          Endpoint propio (/api/sp500), motor propio (sp500Engine) y almacenamiento
+          propio (sp500_*). Envuelto en su ErrorBoundary: si falla, el resto sigue. */}
+      <ErrorBoundary inline label="SP500">
+        <SP500Panel />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 5 — RALLY LEADERS: los 10 con la tendencia alcista más sana ──
+          Reactivado y REVALIDADO 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md): v2.0 perdía
+          contra el S&P500; v3.0 (RS 50% + momento 50%, sin penalizar el ranking) bate
+          al índice con backtest de 10 años, validado contra sobreajuste y azar. */}
+      <ErrorBoundary inline label="Rally Leaders">
+        <RallyPanel />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 6 — CARGA DE CARTERA IBK (CSV/fotos) — justo encima de Optimal
+          Supreme: es la cartera real que Supreme evalúa. Extraída de Optimal2026Panel
+          en la reordenación (antes vivía embebida dentro del panel de señales);
+          comparte items/deployPct/isPricesStale con Optimal Supreme vía
+          deriveOptimal2026Display() para que ambas tarjetas nunca diverjan. ── */}
+      <ErrorBoundary inline label="Cartera IBK">
+        <PortfolioCard data={optimal2026} onScanAfterLoad={handleOptimal2026Scan} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 7 — OPTIMAL SUPREME — el ÚNICO módulo de estrategia (consolidación 24-jul-2026) ──
           Ganador de 118 variantes de backtest (10 años, 603 tickers). Los módulos CLAUDE01,
           FABLE01, Señal Óptima y TOP8 quedan DESACTIVADOS (no borrados): la concentración
           top-2 + trailing con rotación + VT30 los superó a todos en MAR. */}
@@ -1062,38 +1112,20 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           scanProgress={o26ScanProgress}
         />
       </ErrorBoundary>
-      {/* ══ MÓDULO 2 — RALLY LEADERS: los 10 con la tendencia alcista más sana ══
-          Reactivado y REVALIDADO 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md): v2.0 perdía
-          contra el S&P500; v3.0 (RS 50% + momento 50%, sin penalizar el ranking) bate
-          al índice con backtest de 10 años, validado contra sobreajuste y azar. */}
-      <ErrorBoundary inline label="Rally Leaders">
-        <RallyPanel />
-      </ErrorBoundary>
-      {/* ══ MÓDULO 3 — SP500: INDEPENDIENTE del SUPREME y del Rally (mandato 8-ago-2026) ══
-          Analiza SOLO el S&P 500: cuándo entrar, cuándo salir y con cuánto capital.
-          Endpoint propio (/api/sp500), motor propio (sp500Engine) y almacenamiento
-          propio (sp500_*). Envuelto en su ErrorBoundary: si falla, el resto sigue. */}
-      <ErrorBoundary inline label="SP500">
-        <SP500Panel />
-      </ErrorBoundary>
-      {/* ── FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
-      <ErrorBoundary inline label="Fear & Greed">
-        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
-      </ErrorBoundary>
-      {/* ── RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}
-      <ErrorBoundary inline label="Market Risk">
-        <MarketRiskGauge risk={marketRisk} />
-      </ErrorBoundary>
-      {/* ── AMPLITUD DE MERCADO — veredicto agregado (timing 1-2 meses) ── */}
-      <ErrorBoundary inline label="Market Breadth">
-        <MarketBreadthPanel breadth={marketBreadth} />
-      </ErrorBoundary>
-      <ErrorBoundary inline label="Cabecera técnica">
-        <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
-      </ErrorBoundary>
+
+      {/* ── MÓDULO 8 — FLUJOS DE CAPITAL (rotación sectorial intradía) ── */}
       <ErrorBoundary inline label="Flujos de Capital">
         <IntraDayFlowsPanel flowsState={flowsState} onRefresh={handleScanFlows} />
       </ErrorBoundary>
+
+      {/* ── MÓDULO EXTRA (no listado explícitamente por el usuario) — cabecera de marca
+          "EMRR / INSTITUTIONAL" + contador de universo. Colocada justo encima de System
+          Status por instrucción explícita para cualquier módulo no mencionado. ── */}
+      <ErrorBoundary inline label="Cabecera técnica">
+        <TechnicalHeader systemStatus={systemStatus} onLogout={onLogout} />
+      </ErrorBoundary>
+
+      {/* ── MÓDULO 9 (siempre el último) — ESTADO DEL SISTEMA ── */}
       <ErrorBoundary inline label="Estado del sistema">
         <SystemStatusCards systemStatus={systemStatus} />
       </ErrorBoundary>

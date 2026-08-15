@@ -16,7 +16,8 @@
  * Las señales de este engine se aplican en tiempo real sobre los datos del scan.
  */
 
-import type { Optimal2026Item } from "./optimal2026Refresh";
+import type { Optimal2026Item, Optimal2026Result } from "./optimal2026Refresh";
+import { getRegionalMarketStates } from "../utils/marketHours";
 
 export type ActionRec = "HOLD" | "TIGHTEN" | "ROTATE" | "EXIT";
 export type RiskLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
@@ -191,6 +192,39 @@ export function enrichWithIntradaySignals(
     const action = computeActionRec(item, items, pullbackRisk);
     return { ...item, pullbackRisk, riskLevel, factors, ...action };
   });
+}
+
+// ── Derived display state (compartido entre Optimal2026Panel y PortfolioCard) ──
+// Extraído tal cual (mismo cálculo, mismos inputs/outputs) para que el panel de
+// señales y la tarjeta de Cartera IBK — ahora piezas separadas del layout tras la
+// reordenación de módulos — nunca puedan divergir en "isPricesStale"/"deployPct".
+export interface Optimal2026Derived {
+  items: Optimal2026ItemWithSignal[];
+  isLive: boolean;
+  isPricesStale: boolean;
+  deployPct: number;
+}
+
+export function deriveOptimal2026Display(data: Optimal2026Result): Optimal2026Derived {
+  const rawItems = data.items ?? [];
+  const items = enrichWithIntradaySignals(rawItems);
+  const mkt = getRegionalMarketStates();
+  const isLive = mkt.marketHours === "OPEN";
+
+  // Staleness: mercado abierto pero precio sin actualizar >5min (~3 ciclos de
+  // enriquecimiento de 90s) — misma regla que ya usaba Optimal2026Panel.
+  const latestRefreshMs = rawItems.reduce((max, it) => {
+    if (!it.priceRefreshedAt) return max;
+    const t = new Date(it.priceRefreshedAt).getTime();
+    return t > max ? t : max;
+  }, 0);
+  const STALE_MS = 5 * 60 * 1000;
+  const isPricesStale = isLive && rawItems.length > 0
+    && (latestRefreshMs === 0 || Date.now() - latestRefreshMs > STALE_MS);
+
+  const deployPct = data.deployPct ?? 30;
+
+  return { items, isLive, isPricesStale, deployPct };
 }
 
 // ── Backtest comparison (resultados REALES del sweep propio) ──────────────────

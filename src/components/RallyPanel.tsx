@@ -231,54 +231,117 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
     : stop >= 36 ? { color: GREEN, band: "AMPLIO" }
     : stop >= 25 ? { color: SLATE, band: "MEDIO" }
     : { color: "#eab308", band: "CEÑIDO" };
+  // BUG FIX (móvil 375-430px, ago-2026): la fila colapsada vivía en una única línea
+  // flex con 9-10 elementos de ancho fijo (~350px de mínimo) dentro de una sección con
+  // overflow:hidden. En 375px el chevron ▼ quedaba COMPLETAMENTE fuera del recorte
+  // (invisible, no solo "apretado") y en 390px sobrevivía por 1px. En isNarrow ahora la
+  // fila se reparte en DOS líneas — 1) identidad + peso + score + chevron, SIEMPRE
+  // visibles; 2) badges de recorrido/entrada/stop/aviso, con margen de sobra — en vez de
+  // forzarlo todo en una sola línea que no cabía en ningún iPhone actual. Desktop/tablet
+  // (isNarrow=false, ≥680px) no cambia: ahí la fila de una línea ya cabía sin problema.
+  const badgeRow = (
+    <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
+        style={{ width: 60, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+          color: runway ? runwayStyle.color : "transparent",
+          background: runway ? `${runwayStyle.color}18` : "transparent",
+          border: `1px solid ${runway ? `${runwayStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+        {runway ? runwayStyle.short : "—"}
+      </span>
+      <span title={entry?.label}
+        style={{ width: 54, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+          color: entry ? entryStyle.color : "transparent",
+          background: entry ? `${entryStyle.color}18` : "transparent",
+          border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+        {entry ? entryStyle.short : "—"}
+      </span>
+      <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
+        style={{ width: 54, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+          color: stop != null ? stopStyle.color : "transparent",
+          background: stop != null ? `${stopStyle.color}18` : "transparent",
+          border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+        {stop != null ? `STOP ${stop}%` : "—"}
+      </span>
+      <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
+        style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
+        {flags.length > 0 ? "⚠" : ""}
+      </span>
+    </span>
+  );
+
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
         onClick={onToggle}
         style={{
-          width: "100%", display: "flex", alignItems: "center", gap: isNarrow ? 4 : 10, padding: "7px 2px", cursor: "pointer",
+          width: "100%", display: "flex",
+          flexDirection: isNarrow ? "column" : "row",
+          alignItems: isNarrow ? "stretch" : "center",
+          gap: isNarrow ? 6 : 10, padding: "7px 2px", cursor: "pointer",
           background: "transparent", border: "none", textAlign: "left", color: "inherit",
         }}
       >
-        {/* COLUMNAS DE ANCHO FIJO (mandato 11-ago-2026): todos los datos deben quedar
-            alineados verticalmente con la fila inmediatamente inferior. Los badges se
-            renderizan SIEMPRE (aunque falte el dato) y el ⚠ tiene su hueco reservado,
-            para que ninguna columna se desplace según qué campos tenga cada ticker. */}
-        <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
-        <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: isNarrow ? 52 : 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
-        {!isNarrow && <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>}
-        {isNarrow && <span style={{ flex: 1, minWidth: 0 }} />}
-        <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
-          style={{ width: isNarrow ? 52 : 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
-            color: runway ? runwayStyle.color : "transparent",
-            background: runway ? `${runwayStyle.color}18` : "transparent",
-            border: `1px solid ${runway ? `${runwayStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
-          {runway ? (isNarrow ? runwayStyle.short : runwayStyle.label) : "—"}
-        </span>
-        <span title={entry?.label}
-          style={{ width: isNarrow ? 48 : 118, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
-            color: entry ? entryStyle.color : "transparent",
-            background: entry ? `${entryStyle.color}18` : "transparent",
-            border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
-          {entry ? (isNarrow ? entryStyle.short : entryStyle.label) : "—"}
-        </span>
-        <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
-          style={{ width: isNarrow ? 40 : 62, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
-            color: stop != null ? stopStyle.color : "transparent",
-            background: stop != null ? `${stopStyle.color}18` : "transparent",
-            border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
-          {stop != null ? (isNarrow ? `${stop}%` : `STOP ${stop}%`) : "—"}
-        </span>
-        <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
-          style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
-          {flags.length > 0 ? "⚠" : ""}
-        </span>
-        <span title="Porcentaje del capital del módulo sugerido para esta posición"
-          style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 44, flexShrink: 0, textAlign: "right" }}>
-          {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
-        </span>
-        <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 30, flexShrink: 0, textAlign: "right" }}>{asset.rallyScore}</span>
-        <span style={{ fontSize: 9, color: "#64748b", width: 14, flexShrink: 0, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
+        {isNarrow ? (
+          <>
+            {/* Línea 1 — identidad + peso + score + chevron: nunca se cortan, van SIEMPRE
+                por encima del recorte del panel, sea cual sea el ancho del móvil. */}
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
+              <span style={{ flex: 1, minWidth: 6 }} />
+              <span title="Porcentaje del capital del módulo sugerido para esta posición"
+                style={{ fontSize: 10, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right" }}>
+                {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right", minWidth: 24 }}>{asset.rallyScore}</span>
+              <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
+            </span>
+            {/* Línea 2 — badges de recorrido/entrada/stop/aviso, con hueco de sobra en
+                cualquier iPhone (375-430px); ya no comparten línea con rank/ticker/score. */}
+            {badgeRow}
+          </>
+        ) : (
+          <>
+            {/* COLUMNAS DE ANCHO FIJO (mandato 11-ago-2026): todos los datos deben quedar
+                alineados verticalmente con la fila inmediatamente inferior. Los badges se
+                renderizan SIEMPRE (aunque falte el dato) y el ⚠ tiene su hueco reservado,
+                para que ninguna columna se desplace según qué campos tenga cada ticker. */}
+            <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
+            <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>
+            <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
+              style={{ width: 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+                color: runway ? runwayStyle.color : "transparent",
+                background: runway ? `${runwayStyle.color}18` : "transparent",
+                border: `1px solid ${runway ? `${runwayStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+              {runway ? runwayStyle.label : "—"}
+            </span>
+            <span title={entry?.label}
+              style={{ width: 118, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+                color: entry ? entryStyle.color : "transparent",
+                background: entry ? `${entryStyle.color}18` : "transparent",
+                border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+              {entry ? entryStyle.label : "—"}
+            </span>
+            <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
+              style={{ width: 62, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+                color: stop != null ? stopStyle.color : "transparent",
+                background: stop != null ? `${stopStyle.color}18` : "transparent",
+                border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
+              {stop != null ? `STOP ${stop}%` : "—"}
+            </span>
+            <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
+              style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
+              {flags.length > 0 ? "⚠" : ""}
+            </span>
+            <span title="Porcentaje del capital del módulo sugerido para esta posición"
+              style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 44, flexShrink: 0, textAlign: "right" }}>
+              {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 30, flexShrink: 0, textAlign: "right" }}>{asset.rallyScore}</span>
+            <span style={{ fontSize: 9, color: "#64748b", width: 14, flexShrink: 0, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
+          </>
+        )}
       </button>
 
       {expanded && (

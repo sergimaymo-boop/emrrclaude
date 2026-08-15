@@ -66,7 +66,7 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
     // Fear & Greed unavailable — waiting for /api/fear-greed response
     // DATA UNAVAILABLE: not used for Score, Ranking or EXEC
     return (
-      <section className="section-block priority-block">
+      <section className="section-block priority-block" style={{ marginBottom: 14 }}>
         <div className="section-title-row">
           <h2>Fear &amp; Greed unavailable</h2>
         </div>
@@ -88,7 +88,7 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
   const dashOffset = circumference * (1 - fgData.score / 100);
 
   return (
-    <section className="section-block">
+    <section className="section-block" style={{ marginBottom: 14 }}>
       <div className="section-title-row" style={{ marginBottom: 12 }}>
         <h2>Fear &amp; Greed</h2>
         <span style={{ fontSize: 10, color: "#64748b" }}>
