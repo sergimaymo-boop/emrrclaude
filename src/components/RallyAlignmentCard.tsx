@@ -11,16 +11,19 @@
  * justo antes del módulo Rally Leaders en el dashboard.
  *
  * NORMALIZACIÓN FX (clave para que los % cuadren con los de la app IBK): los
- * marketValue parseados de las fotos vienen en su divisa cruda (USD…), pero el
- * NAV total y el "Total efectivo" de la cabecera de IBK vienen YA convertidos a
- * la divisa base (EUR). Sin corregirlo, una posición USD inflaría su % real.
- * Factor implícito k = (NAV − efectivo) / Σ marketValue crudos — reparte la
- * conversión proporcionalmente y hace que posiciones + efectivo sumen exactamente
- * el NAV de la foto (verificado con cartera real: MU 12,17%, WDC 11,91%, HUM
- * 7,62%, efectivo 68,3% — idénticos a los % que muestra la propia app IBK).
+ * marketValue parseados de las fotos vienen en su divisa cruda (USD…), pero los
+ * totales de la cabecera de IBK vienen YA convertidos a la divisa base (EUR).
+ * SEMÁNTICA dictada 15-ago (derivePortfolioTotals, fuente única): INVERTIDO =
+ * "VAL. MDO." · EFECTIVO = "EXCESO LIQ." · TOTAL = NAV = invertido + efectivo.
+ * Factor implícito k = VAL.MDO. / Σ marketValue crudos (con verificación cruzada
+ * contra NAV − efectivo) — reparte la conversión proporcionalmente y hace que
+ * posiciones + efectivo sumen exactamente el NAV de la foto (verificado con
+ * cartera real: MU 12,17%, WDC 11,91%, HUM 7,62%, efectivo 68,3%, invertido
+ * 31,7% — idénticos a los %netliq que muestra la propia app IBK).
  */
 import { useEffect, useState } from "react";
 import type { IBKPortfolio } from "../services/optimal2026Refresh";
+import { derivePortfolioTotals } from "../services/optimal2026Refresh";
 import { type RallyAsset, fetchLastRallyScan } from "../services/rallyRefresh";
 
 const AMBER = "#f59e0b";
@@ -62,11 +65,12 @@ function DeltaChip({ delta }: { delta: number }) {
   );
 }
 
-function HeaderStat({ label, value, color }: { label: string; value: string; color: string }) {
+function HeaderStat({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
     <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
       <span style={{ fontSize: 7, color: GRAY, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
       <span style={{ fontSize: 15, fontWeight: 900, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      {sub && <span style={{ fontSize: 8.5, fontWeight: 800, color: GRAY, fontVariantNumeric: "tabular-nums" }}>{sub}</span>}
     </span>
   );
 }
@@ -145,22 +149,14 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
 
   if (!portfolio || portfolio.positions.length === 0) return null;
 
-  // ── Totales + normalización FX (ver doc-comment de cabecera) ──────────────
-  const posValueRaw = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
-  // Mismos guards que el resto de la tarjeta: accountTotal < posiciones es incoherente.
-  const acct = portfolio.accountTotal != null && portfolio.accountTotal >= posValueRaw * 0.98
-    ? portfolio.accountTotal : null;
-  const cash = portfolio.cashBalance
-    ?? (acct != null && posValueRaw > 0 ? Math.max(0, Math.round(acct - posValueRaw)) : null);
-  const total = acct ?? (cash != null ? posValueRaw + cash : posValueRaw);
-
-  let fxK = 1;
-  let fxNormalized = false;
-  if (acct != null && cash != null && posValueRaw > 0) {
-    const ratio = (acct - cash) / posValueRaw;
-    // Rango sano de un factor FX implícito (EUR/USD y similares); fuera de él, crudo.
-    if (ratio > 0.5 && ratio < 1.6) { fxK = ratio; fxNormalized = true; }
-  }
+  // ── Totales + normalización FX — FUENTE ÚNICA derivePortfolioTotals (regla 15-ago):
+  // INVERTIDO = "VAL. MDO." de la foto (EUR) · EFECTIVO = "EXCESO LIQ." · TOTAL = NAV.
+  // Se comprueba además que VAL.MDO. y NAV−efectivo coinciden (methodsAgree).
+  const totals = derivePortfolioTotals(portfolio);
+  const { posValueRaw, fxK, fxNormalized, fxRate, methodsAgree } = totals;
+  const cash = totals.cash;
+  const total = totals.total ?? posValueRaw;
+  const invested = totals.invested ?? posValueRaw;
 
   const realPctOf = (marketValue: number | null | undefined) =>
     total > 0 ? ((marketValue ?? 0) * fxK / total) * 100 : 0;
@@ -190,7 +186,9 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
     rows.push({ key: "cash", label: "EFECTIVO", realPct: (cash / total) * 100, targetPct: 0, kind: "cash" });
   }
 
-  const investedPctReal = total > 0 ? (posValueRaw * fxK / total) * 100 : 0;
+  const investedPctReal = total > 0 ? (invested / total) * 100 : 0;
+  const cashPctReal = total > 0 && cash != null ? (cash / total) * 100 : null;
+  const fmtEur = (v: number) => `${Math.round(v).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".")}${fxNormalized ? " €" : ""}`;
   // Alineación global = Σ mín(real, objetivo) por ticker del top-10 (0-100, simple y explicable).
   const alignmentPct = rows
     .filter((r) => r.kind === "top10")
@@ -214,6 +212,15 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
           ⚖ ALINEACIÓN CARTERA ↔ RALLY LEADERS
         </span>
         <span style={{ fontSize: 8, fontWeight: 600, color: GRAY }}>informativo · no afecta al análisis</span>
+        {hasScan && (
+          <span style={{
+            fontSize: 8, fontWeight: 800, borderRadius: 3, padding: "1px 6px",
+            color: alignmentPct >= 66 ? GREEN : alignmentPct >= 33 ? "#fbbf24" : RED,
+            background: "rgba(255,255,255,0.04)", fontVariantNumeric: "tabular-nums",
+          }}>
+            Alineación {fmt1(alignmentPct)}%
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {scanLabel && <span style={{ fontSize: 7.5, color: "#475569" }}>scan Rally {scanLabel}</span>}
       </div>
@@ -225,15 +232,26 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
         </div>
       ) : (
         <>
-          {/* ── Cifras grandes de cabecera ── */}
+          {/* ── Cabecera del módulo (regla dictada 15-ago): INVERTIDO · EFECTIVO · TOTAL en EUR ── */}
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-around", gap: 10, flexWrap: "wrap",
-            padding: "8px 12px",
-            borderBottom: "1px solid rgba(255,255,255,0.05)",
+            padding: "8px 12px 5px",
           }}>
-            <HeaderStat label="Invertido real" value={`${fmt1(investedPctReal)}%`} color={TEXT} />
-            <HeaderStat label="Objetivo módulo" value="100%" color={AMBER} />
-            <HeaderStat label="Alineación" value={`${fmt1(alignmentPct)}%`} color={alignmentPct >= 66 ? GREEN : alignmentPct >= 33 ? "#fbbf24" : RED} />
+            <HeaderStat label="Invertido" value={fmtEur(invested)} sub={`${fmt1(investedPctReal)}%`} color={TEXT} />
+            <HeaderStat label="Efectivo" value={cash != null ? fmtEur(cash) : "—"} sub={cashPctReal != null ? `${fmt1(cashPctReal)}%` : undefined} color={GREEN} />
+            <HeaderStat label="Total cartera" value={fmtEur(total)} color={AMBER} />
+          </div>
+          {/* Línea de transparencia del FX implícito */}
+          <div style={{ fontSize: 7.5, color: GRAY, textAlign: "center", padding: "0 12px 6px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            {fxNormalized && fxRate != null ? (
+              <>
+                posiciones USD→EUR al FX implícito {fxRate.toLocaleString("es-ES", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                {methodsAgree === true && <span style={{ color: GREEN }}> · VAL. MDO. ↔ NAV−efectivo ✓</span>}
+                {methodsAgree === false && <span style={{ color: RED }}> · ⚠ VAL. MDO. y NAV−efectivo difieren &gt;2% — revisa la foto de cabecera</span>}
+              </>
+            ) : (
+              <>importes ≈ sin conversión FX — sube la captura de cabecera IBK (NAV · VAL. MDO. · EXCESO LIQ.) para normalizar</>
+            )}
           </div>
 
           {/* ── Leyenda de barras ── */}
@@ -252,8 +270,8 @@ export function RallyAlignmentSection({ portfolio }: { portfolio: IBKPortfolio |
             puntos porcentuales: <span style={{ color: GREEN }}>✓ verde</span> alineado (±1pp) ·{" "}
             <span style={{ color: "#fbbf24" }}>ámbar</span> infraponderado · <span style={{ color: RED }}>rojo</span> sobreponderado.
             {fxNormalized
-              ? " Los % reales se normalizan con el NAV y el efectivo de la propia foto IBK (absorbe la conversión de divisa): posiciones + efectivo suman exactamente el NAV."
-              : " Importes ≈ sin conversión de divisa (falta NAV o efectivo en la foto para normalizar)."}
+              ? " Los % reales se normalizan con el VAL. MDO. y el efectivo (EXCESO LIQ.) de la propia foto IBK — absorbe la conversión USD→EUR y cuadra con los %netliq de la app; posiciones + efectivo suman exactamente el NAV."
+              : " Importes ≈ sin conversión de divisa (falta la captura de cabecera con NAV/VAL. MDO./EXCESO LIQ.)."}
             {" "}Solo compara contra Rally Leaders. Ideas, no asesoramiento.
           </div>
         </>

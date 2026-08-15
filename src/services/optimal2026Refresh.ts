@@ -70,8 +70,11 @@ export interface IBKPortfolio {
   positions: IBKPosition[];
   loadedAt: string;     // ISO timestamp de la carga
   source: "IBK_CSV" | "IBK_PHOTO" | "MANUAL"; // IBK_PHOTO = OCR (números aproximados, verificar)
-  cashBalance?: number | null;  // efectivo pendiente de invertir — AUTO desde la foto ("Total efectivo") o manual
+  cashBalance?: number | null;  // efectivo pendiente de invertir — AUTO desde la foto ("EXCESO LIQ."/"Total efectivo") o manual
   accountTotal?: number | null; // valor TOTAL de la cuenta — AUTO desde la cabecera de la foto de IBK
+  /** "VAL. MDO." de la cabecera IBK: Σ posiciones YA convertido a divisa base (EUR).
+   *  Es la fuente MÁS fiable del invertido (regla dictada 15-ago) — más que NAV−efectivo. */
+  investedValue?: number | null;
 }
 
 const IBK_STORAGE_KEY = "optimal2026_ibk_portfolio_v1";
@@ -270,6 +273,12 @@ function parseOcrNumber(token: string): number {
   if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) {
     // Formato europeo: 1.234,56 (también con signo: −1.136,00)
     t = t.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d+,\d{1,2}$/.test(t) || /^\d+,\d{4,}$/.test(t)) {
+    // FIX 15-ago (app IBK en español): coma DECIMAL — "3,2" acciones, "5,0101" acciones
+    // fraccionadas, "972,98" precio. Antes se trataba la coma como separador de miles US
+    // y "3,2" se convertía en 32 acciones. Los miles US van SIEMPRE en grupos de 3
+    // ("1,949"), así que coma+1-2 dígitos o coma+4+ dígitos solo puede ser decimal.
+    t = t.replace(/\./g, "").replace(",", ".");
   } else {
     // Formato US: 1,234.56
     t = t.replace(/,/g, "");
@@ -297,6 +306,10 @@ const OCR_NOT_TICKERS = new Set([
   // y "TRAIL" se parseó como ticker fantasma con importes de la orden)
   "TRAIL", "VENTA", "COMPRA", "BUY", "SELL", "LMT", "MKT", "STP", "GTC",
   "ORDEN", "ORDENES", "VLR", "MRCD",
+  // Palabras de la CABECERA DE TOTALES de la app IBK (fix 15-ago: "MARGEN 0,00 PODER
+  // ADQUISITIVO 15.102,24" creaba una posición fantasma "MARGEN" con 15.102 acciones)
+  "MARGEN", "MARGIN", "PODER", "POWER", "EXCESO", "EXCESS", "VAL", "MDO",
+  "LIQ", "SALDOS", "SALDO", "NAV", "PYG", "CST",
 ]);
 
 /**
@@ -335,7 +348,13 @@ const OCR_COL_MATCHERS: Array<[string, RegExp]> = [
   ["qty", /^(posici|position|pos$|cantidad|qty)/i],
   ["price", /^(ultimo|último|last|precio|price)/i],
   ["value", /^(vlr|valor|mrcd|market|value)/i],
+  // "Bs d cst" (base de coste) — fix 15-ago: sin mapearla, su número desplazaba el
+  // mapeo posicional y el PyG leía la base de coste. Se captura → avgCost = coste/cantidad.
+  ["cost", /^(b[s5]\.?$|cst\.?$|coste|cost$|basis)/i],
 ];
+// Columnas PORCENTUALES de la cabecera ("%netliq", "% vrcón"): sus VALORES de fila
+// terminan en "%" y ya se excluyen de rawNums — por eso tampoco entran en el colMap
+// (así cabecera y fila excluyen las MISMAS columnas y la alineación posicional cuadra).
 
 // AUDIT FIX (31-jul, adversarial): (a) ya no exige el literal "instrument" — tesseract
 // confunde la I mayúscula con l/1 ("lnstrumento") y sin ancla secundaria se volvía en
@@ -409,6 +428,7 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 
     let quantity: number, currentPrice: number | null = null, unrealizedPnL: number | null = null;
     let mappedValue: number | null = null;
+    let mappedCostBasis: number | null = null;
     const [a, b] = [rawNums[0], rawNums[1]];
     const pnlCandidate = rawNums.length > 2 ? rawNums[2].v : null;
 
@@ -424,7 +444,7 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
           const j = idx >= 0 ? idx + offset : -1;
           return j >= 0 && j < rawNums.length ? rawNums[j].v : null;
         };
-        return { q: at("qty"), p: at("price"), pnl: at("pnl"), mv: at("value") };
+        return { q: at("qty"), p: at("price"), pnl: at("pnl"), mv: at("value"), cb: at("cost") };
       };
       type Cand = ReturnType<typeof tryAt>;
       const verifiable = (c: Cand) => c.mv != null && c.p != null && c.p > 0 && c.q != null && c.q > 0;
@@ -449,6 +469,7 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
       currentPrice = pick.p != null && pick.p > 0 ? pick.p : null;
       unrealizedPnL = pick.pnl != null && Math.abs(pick.pnl) < 10_000_000 ? pick.pnl : null;
       mappedValue = pick.mv != null && pick.mv > 0 ? pick.mv : null;
+      mappedCostBasis = pick.cb != null && pick.cb > 0 ? pick.cb : null;
     } else if (b == null) {
       // Un solo número: si es decimal ("180.50" suelto en una línea de nombre) es un
       // precio huérfano, no una posición → descartar. Entero = cantidad sin precio.
@@ -479,7 +500,10 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
     positions.push({
       symbol,
       quantity,
-      avgCost: null, // la app IBK no muestra coste medio en esta vista — no inventarlo
+      // Coste medio SOLO si la foto trae columna "Bs d cst" (base de coste ÷ acciones);
+      // en las vistas sin esa columna no se inventa (regla 25-jul).
+      avgCost: mappedCostBasis != null && quantity > 0
+        ? Math.round((mappedCostBasis / quantity) * 100) / 100 : null,
       currentPrice,
       // Con cabecera, la columna "Vlr mrcd" de IBK manda (exacta); si no, precio × cantidad
       marketValue: mappedValue
@@ -493,13 +517,18 @@ export function parseOCRPortfolio(text: string): IBKPosition[] {
 
 /**
  * Resumen de CUENTA leído de la cabecera de la foto de la app IBK:
- *   • accountTotal — el número grande bajo "Cartera" (ej. "22,245")
- *   • totalCash    — la línea "Total efectivo 16.9K" (o suma de "EUR/USD Efectivo")
- * Permite calcular lo PENDIENTE DE INVERTIR sin que Sergi teclee nada.
+ *   • accountTotal — el número grande arriba (NAV, ej. "22.110")
+ *   • marketValue  — "VAL. MDO." (Σ posiciones YA en divisa base EUR, ej. "7.010,12")
+ *   • totalCash    — "EXCESO LIQ." (ej. "15.102,24") > "Total efectivo 15,1K" >
+ *                    suma de "EUR/USD Efectivo" (último recurso: mezcla divisas)
+ * SEMÁNTICA (regla dictada 15-ago): INVERTIDO = VAL. MDO. · EFECTIVO = EXCESO LIQ. ·
+ * TOTAL = NAV = invertido + efectivo. Esta foto de cabecera es la fuente del FX
+ * implícito, POR SÍ SOLA VALE aunque no contenga tabla de posiciones completa.
  */
 export interface IBKAccountSummary {
   accountTotal: number | null;
   totalCash: number | null;
+  marketValue: number | null;
 }
 
 // AUDIT FIX (26-jul): locale-aware — "16,9K" español y "16.9K" US son ambos 16.900;
@@ -528,20 +557,47 @@ export function parseIBKAccountSummary(text: string): IBKAccountSummary {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   let accountTotal: number | null = null;
   let totalCash: number | null = null;
+  let marketValue: number | null = null;
   const perCurrencyCash: number[] = [];
+  const plausibleMoney = (v: number | null): v is number =>
+    v != null && Number.isFinite(v) && v >= 0 && v < 100_000_000;
 
   for (const l of lines) {
+    // "VAL. MDO. 7.010,12" — Σ posiciones en divisa BASE (tolerante a OCR: VAL MDO, VAL.MD0.)
+    if (marketValue == null) {
+      const mVm = l.match(/VAL\.?\s*M[DO0][DO0]?\.?\s*:?\s+([\d.,]+)/i);
+      if (mVm) { const v = parseOcrNumber(mVm[1]); if (plausibleMoney(v) && v > 0) marketValue = v; }
+    }
+    // "EXCESO LIQ. 15.102,24" — EFECTIVO POR INVERTIR (regla 15-ago; decimales exactos,
+    // preferido sobre el "Total 15,1K" redondeado). Tolerante a OCR: L1Q, LIO.
+    if (totalCash == null) {
+      const mEx = l.match(/EXCESO\s+L[I1][QO0]?\.?\s*:?\s+([\d.,]+)/i);
+      if (mEx) { const v = parseOcrNumber(mEx[1]); if (plausibleMoney(v)) totalCash = v; }
+    }
     const mTotal = l.match(/total\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
     if (mTotal && totalCash == null) totalCash = parseKNumber(mTotal[1]);
     const mCur = l.match(/^(?:EUR|USD|GBP|CHF)\s+(?:efectivo|cash)\s+([\d.,]+\s*[KM]?)/i);
     if (mCur) { const v = parseKNumber(mCur[1]); if (v != null) perCurrencyCash.push(v); }
   }
+
+  // Bloque "Saldos en efectivo": el "Total 15,1K" (ya en divisa base) va sin la palabra
+  // "efectivo" — se busca SOLO dentro del bloque para no confundirlo con otros totales.
+  if (totalCash == null) {
+    const cashAnchor = lines.findIndex((l) => /saldos?\s+en\s+efectivo|cash\s+balances/i.test(l));
+    if (cashAnchor >= 0) {
+      for (let i = cashAnchor + 1; i < Math.min(lines.length, cashAnchor + 7); i++) {
+        const m = lines[i].match(/^total\s+([\d.,]+\s*[KM]?)$/i);
+        if (m) { totalCash = parseKNumber(m[1]); break; }
+      }
+    }
+  }
+  // Último recurso: suma de saldos POR DIVISA (mezcla divisas sin FX — solo mejor que nada)
   if (totalCash == null && perCurrencyCash.length > 0) {
     totalCash = perCurrencyCash.reduce((a, b) => a + b, 0);
   }
 
-  // Total de cuenta: número grande con separador de miles ("22,245") en las primeras
-  // líneas tras "Cartera"/"Portfolio" (cabecera de la app IBK).
+  // Total de cuenta (NAV): número grande con separador de miles ("22.110") en las primeras
+  // líneas tras "Cartera"/"Portfolio" (cabecera de la app IBK) o al inicio del texto.
   const anchor = lines.findIndex((l) => /^(cartera|portfolio)$/i.test(l));
   const from = anchor >= 0 ? anchor : 0;
   for (let i = from; i < Math.min(lines.length, from + 8); i++) {
@@ -551,27 +607,121 @@ export function parseIBKAccountSummary(text: string): IBKAccountSummary {
       if (Number.isFinite(v) && v >= 1000 && v < 100_000_000) { accountTotal = v; break; }
     }
   }
-  return { accountTotal, totalCash };
+
+  // VERIFICACIÓN CRUZADA (regla 15-ago): NAV debe ≈ VAL.MDO. + EXCESO LIQ. Si el NAV
+  // leído se desvía >3% (dígito perdido por OCR) — o falta — se reconstruye de la suma.
+  if (marketValue != null && totalCash != null) {
+    const derived = Math.round(marketValue + totalCash);
+    if (accountTotal == null || Math.abs(accountTotal - derived) / derived > 0.03) {
+      accountTotal = derived;
+    }
+  }
+  return { accountTotal, totalCash, marketValue };
+}
+
+// ── Robustez de imagen ANTES del OCR (fix 15-ago, fallo real IMG_9360.jpeg) ──
+// Las fotos de iPhone (4032×3024, 3-8 MB) agotaban memoria/tiempo del worker de
+// tesseract y los HEIC renombrados .jpeg fallaban en silencio. Ahora: decodificar
+// respetando la orientación EXIF, reducir a máx 2200px y re-codificar a PNG.
+
+const OCR_MAX_DIM = 2200;      // px: de sobra para leer texto de una captura
+const OCR_TIMEOUT_MS = 120_000;
+
+/** ¿Es un contenedor HEIC/HEIF aunque venga renombrado a .jpeg? (firma 'ftyp' + marca). */
+async function sniffHeic(file: File): Promise<boolean> {
+  try {
+    const buf = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    let ascii = "";
+    for (const b of buf) ascii += String.fromCharCode(b);
+    return ascii.includes("ftyp") && /heic|heix|hevc|heim|heis|hevm|hevs|mif1|msf1/i.test(ascii);
+  } catch { return false; }
+}
+
+/** Decodifica + orienta (EXIF) + reduce + re-codifica a PNG. null = navegador no puede decodificarla. */
+async function preprocessImageForOCR(file: File): Promise<Blob | null> {
+  let bmp: ImageBitmap;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    // Fallback vía <img> (Safaris viejos sin opciones de createImageBitmap)
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("decode"));
+        el.src = url;
+      });
+      bmp = await createImageBitmap(img);
+    } catch {
+      return null;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  try {
+    const scale = Math.min(1, OCR_MAX_DIM / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return blob;
+  } finally {
+    bmp.close?.();
+  }
 }
 
 /**
  * Lee una FOTO (captura de pantalla del carrete del iPhone, Archivos, etc.)
  * con OCR (tesseract.js, lazy-loaded — no infla el bundle principal) y
  * extrae posiciones + resumen de cuenta. Todo en el dispositivo, nada se sube.
+ * Lanza Error con MOTIVO legible (HEIC no soportado, imagen indecodificable,
+ * timeout) para que la UI pueda explicar el fallo y ofrecer reintento.
  */
 export async function ocrImageToText(
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<string> {
+  const pre = await preprocessImageForOCR(file);
+  if (!pre) {
+    if (await sniffHeic(file)) {
+      throw new Error(
+        "es un HEIC (aunque se llame .jpeg) y este navegador no lo decodifica — haz captura de pantalla (PNG) o exporta como JPEG real y reintenta",
+      );
+    }
+    throw new Error("imagen no decodificable (¿archivo dañado o formato raro?) — vuelve a hacer la captura y reintenta");
+  }
   const Tesseract = await import("tesseract.js");
-  const result = await Tesseract.recognize(file, "eng", {
-    logger: (m: { status: string; progress: number }) => {
-      if (m.status === "recognizing text" && onProgress) {
-        onProgress(Math.round(m.progress * 100));
-      }
-    },
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`el OCR superó ${OCR_TIMEOUT_MS / 1000}s — recorta la captura a la zona de la tabla y reintenta`)),
+      OCR_TIMEOUT_MS,
+    );
   });
-  return result.data.text;
+  try {
+    const result = await Promise.race([
+      Tesseract.recognize(pre, "eng", {
+        logger: (m: { status: string; progress: number }) => {
+          if (m.status === "recognizing text" && onProgress) {
+            onProgress(Math.round(m.progress * 100));
+          }
+        },
+      }),
+      timeout,
+    ]);
+    return result.data.text;
+  } catch (err) {
+    if (err instanceof Error && /superó/.test(err.message)) throw err;
+    throw new Error("el motor OCR falló al procesarla — reintenta (si se repite, recorta la captura o usa PNG)");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function parseImagePortfolio(
@@ -583,6 +733,74 @@ export async function parseImagePortfolio(
     positions: parseOCRPortfolio(text),
     summary: parseIBKAccountSummary(text),
     text,
+  };
+}
+
+// ── Totales de cartera — FUENTE ÚNICA (regla dictada 15-ago) ──────────────────
+// INVERTIDO = "VAL. MDO." de la cabecera IBK (Σ pos×último ya en EUR base; más
+// fiable que NAV−efectivo, y se comprueba que ambos métodos coinciden).
+// EFECTIVO = "EXCESO LIQ." · TOTAL = NAV = invertido + efectivo.
+// FX implícito por posición: k = invertido(EUR) / Σ marketValue crudos (USD…) —
+// hace que los % por posición cuadren EXACTOS con los %netliq de la app IBK.
+// La usan TODAS las secciones de la tarjeta (tabla, SUPREME, banda Rally) para
+// que jamás muestren números distintos entre sí.
+
+export interface PortfolioTotals {
+  posValueRaw: number;          // Σ marketValue crudos (divisa de cotización, p.ej. USD)
+  invested: number | null;      // invertido en divisa base (EUR)
+  cash: number | null;          // efectivo por invertir (EUR)
+  total: number | null;         // total cartera (EUR)
+  fxK: number;                  // factor crudo→EUR aplicado a cada posición (1 = sin conversión)
+  fxNormalized: boolean;        // true = los % son EUR reales (cuadran con %netliq de IBK)
+  fxRate: number | null;        // FX implícito, p.ej. EURUSD ≈ 1,157 (crudo por 1 EUR)
+  investedFromHeader: boolean;  // true = invertido leído de "VAL. MDO." (no derivado)
+  methodsAgree: boolean | null; // VAL.MDO. vs NAV−efectivo dentro del 2% (null = no comparable)
+}
+
+export function derivePortfolioTotals(p: IBKPortfolio): PortfolioTotals {
+  const posValueRaw = p.positions.reduce((s, x) => s + (x.marketValue ?? 0), 0);
+  const headerInvested = p.investedValue != null && p.investedValue > 0 ? p.investedValue : null;
+  // NAV plausible: con VAL.MDO. debe cubrirlo; sin él, margen amplio (0.5×) porque el
+  // Σ crudo puede ser USD y el NAV EUR (el viejo guard 0.98× descartaba NAV válidos).
+  const acct = p.accountTotal != null && p.accountTotal > 0 && p.accountTotal < 100_000_000
+    && (headerInvested != null ? p.accountTotal >= headerInvested * 0.98 : p.accountTotal >= posValueRaw * 0.5)
+    ? p.accountTotal : null;
+  const cash = p.cashBalance != null && p.cashBalance >= 0
+    ? p.cashBalance
+    : acct != null && headerInvested != null
+      ? Math.max(0, Math.round((acct - headerInvested) * 100) / 100)
+      : acct != null && posValueRaw > 0
+        ? Math.max(0, Math.round(acct - posValueRaw))
+        : null;
+  const investedNav = acct != null && cash != null ? Math.max(0, acct - cash) : null;
+  const invested = headerInvested ?? investedNav ?? (posValueRaw > 0 ? posValueRaw : null);
+  const methodsAgree = headerInvested != null && investedNav != null && headerInvested > 0
+    ? Math.abs(headerInvested - investedNav) / headerInvested < 0.02
+    : null;
+  const total = acct ?? (invested != null && cash != null ? invested + cash : invested);
+
+  let fxK = 1;
+  let fxNormalized = false;
+  let fxRate: number | null = null;
+  if (invested != null && posValueRaw > 0 && (headerInvested != null || investedNav != null)) {
+    const ratio = invested / posValueRaw;
+    // Rango sano de un factor FX implícito (EUR/USD y similares); fuera de él, crudo.
+    if (ratio > 0.5 && ratio < 1.6) {
+      fxK = ratio;
+      fxNormalized = true;
+      fxRate = posValueRaw / invested;
+    }
+  }
+  return {
+    posValueRaw,
+    invested,
+    cash,
+    total,
+    fxK,
+    fxNormalized,
+    fxRate,
+    investedFromHeader: headerInvested != null,
+    methodsAgree,
   };
 }
 

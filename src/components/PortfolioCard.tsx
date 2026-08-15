@@ -10,12 +10,19 @@
  * para no poder divergir en isPricesStale/deployPct/items.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Optimal2026Result, IBKPosition, IBKPortfolio } from "../services/optimal2026Refresh";
+import type {
+  Optimal2026Result,
+  IBKPosition,
+  IBKPortfolio,
+  IBKAccountSummary,
+  PortfolioTotals,
+} from "../services/optimal2026Refresh";
 import {
   parseIBKPortfolio,
   parseImagePortfolio,
   parseOCRPortfolio,
   parseIBKAccountSummary,
+  derivePortfolioTotals,
   savePortfolioToStorage,
   loadPortfolioFromStorage,
   clearPortfolioFromStorage,
@@ -52,17 +59,17 @@ function PortfolioRow({
   pos,
   matchedItem,
   isPricesStale,
-  accountTotal,
+  weightPct,
 }: {
   pos: IBKPosition;
   matchedItem: Optimal2026ItemWithSignal | undefined;
   isPricesStale?: boolean;
-  accountTotal?: number | null;
+  /** % de la cuenta YA normalizado a EUR (fxK) por el padre — cuadra con %netliq de IBK. */
+  weightPct?: number | null;
 }) {
   const inStrategy = !!matchedItem;
   const cur = pos.currency === "USD" ? "$" : "€";
   const name = pos.name ?? matchedItem?.name ?? null;
-  const weightPct = accountTotal && pos.marketValue != null ? (pos.marketValue / accountTotal) * 100 : null;
 
   return (
     <div style={{
@@ -122,13 +129,16 @@ function PortfolioRow({
   );
 }
 
-function PortfolioTotalRow({ posValue, cash, accountTotal, approx }: { posValue: number; cash: number | null; accountTotal: number | null; approx?: boolean }) {
+function PortfolioTotalRow({ totals, approx }: { totals: PortfolioTotals; approx?: boolean }) {
   const fmtM = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const total = accountTotal ?? (cash != null ? posValue + cash : null);
-  const investedPct = total && total > 0 ? Math.min(100, (posValue / total) * 100) : null;
+  const { invested, cash, total, fxNormalized, fxRate } = totals;
+  const investedPct = total != null && total > 0 && invested != null
+    ? Math.min(100, (invested / total) * 100) : null;
   return (
     <div
-      title="Importes ≈ mezcla EUR/USD sin conversión FX"
+      title={fxNormalized
+        ? `Totales en EUR (posiciones USD→EUR al FX implícito ${fxRate != null ? fxRate.toLocaleString("es-ES", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : "—"} leído de la foto IBK)`
+        : "Importes ≈ mezcla EUR/USD sin conversión FX — sube la captura de cabecera IBK (VAL. MDO. / EXCESO LIQ.) para normalizar"}
       style={{
         display: "grid", gridTemplateColumns: PORT_GRID, gap: 6, alignItems: "center",
         padding: "7px 12px",
@@ -140,12 +150,14 @@ function PortfolioTotalRow({ posValue, cash, accountTotal, approx }: { posValue:
       <span style={{ color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 9 }}>Total invertido</span>
       <span />
       <span />
-      <span style={{ ...cellNum, color: TEXT }}>{approx ? "≈" : ""}{fmtM(posValue)}</span>
+      <span style={{ ...cellNum, color: TEXT }}>
+        {approx ? "≈" : ""}{invested != null ? fmtM(invested) : "—"}{fxNormalized ? " €" : ""}
+      </span>
       <span />
       <span style={{ textAlign: "right", fontSize: 8.5, color: "#94a3b8", fontWeight: 600 }}>
-        {cash != null && <>Efectivo <span style={{ color: GREEN, fontWeight: 800 }}>{fmtM(cash)}</span></>}
-        {total != null && <> · Cuenta <span style={{ color: TEXT, fontWeight: 800 }}>{fmtM(total)}</span></>}
-        {investedPct != null && <> · <span style={{ color: ACCENT, fontWeight: 800 }}>{investedPct.toFixed(0)}% inv.</span></>}
+        {cash != null && <>Efectivo <span style={{ color: GREEN, fontWeight: 800 }}>{fmtM(cash)}{fxNormalized ? " €" : ""}</span></>}
+        {total != null && <> · Cuenta <span style={{ color: TEXT, fontWeight: 800 }}>{fmtM(total)}{fxNormalized ? " €" : ""}</span></>}
+        {investedPct != null && <> · <span style={{ color: ACCENT, fontWeight: 800 }}>{investedPct.toFixed(1)}% inv.</span></>}
       </span>
     </div>
   );
@@ -176,14 +188,11 @@ function AlignmentSummary({
     setCashInput(portfolio.cashBalance != null ? String(portfolio.cashBalance) : "");
   }, [portfolio.loadedAt, portfolio.cashBalance]);
 
-  const posValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
-  // Guard defensivo (además del de finishLoad, por si hay datos viejos en localStorage):
-  // accountTotal < posiciones es incoherente → ignorarlo.
-  const acctTotal = portfolio.accountTotal != null && portfolio.accountTotal >= posValue * 0.98
-    ? portfolio.accountTotal : null;
-  // Efectivo: el de la foto (auto) → o derivado de cuenta total − invertido → o manual
-  const cash = portfolio.cashBalance
-    ?? (acctTotal != null && posValue > 0 ? Math.max(0, Math.round(acctTotal - posValue)) : null);
+  // FUENTE ÚNICA de totales (fix 15-ago): invertido = VAL.MDO. (EUR), efectivo =
+  // EXCESO LIQ., FX implícito por posición — idéntico en TODAS las secciones.
+  const totals = derivePortfolioTotals(portfolio);
+  const posValue = totals.posValueRaw;
+  const { cash, fxK } = totals;
   const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   // AUDIT FIX: el ✎ ponía cashBalance=null, pero con accountTotal el cash se re-derivaba
   // y el formulario nunca aparecía — el botón quedaba muerto. Estado de edición explícito.
@@ -222,8 +231,8 @@ function AlignmentSummary({
   }
 
   // Total de cuenta: el leído de la foto manda (es el oficial de IBK); si no, invertido + efectivo
-  const total = acctTotal ?? (posValue + cash);
-  const investedPct = (posValue / total) * 100;
+  const total = totals.total ?? (posValue + cash);
+  const investedPct = total > 0 ? ((totals.invested ?? posValue) / total) * 100 : 0;
   const sysPicks = items.filter(it => it.allocationPct > 0);
   const heldSyms = new Set(portfolio.positions.map(p => p.symbol.toUpperCase()));
   const overlap = sysPicks.filter(it => heldSyms.has(it.symbol.split(".")[0].toUpperCase()));
@@ -233,7 +242,7 @@ function AlignmentSummary({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 5 }}>
         <span style={{ fontSize: 9, fontWeight: 800, color: ACCENT, textTransform: "uppercase", letterSpacing: "0.05em" }}>⚖ Alineación con SUPREME</span>
         <span style={{ fontSize: 9, color: GRAY }}>
-          Cuenta {acctTotal != null ? "📷" : "≈"} <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}</span>
+          Cuenta {totals.total != null ? "📷" : "≈"} <span style={{ color: TEXT, fontWeight: 700 }}>{fmtMoney(total)}{totals.fxNormalized ? " €" : ""}</span>
         </span>
         <span style={{ fontSize: 9, color: GRAY }}>
           Pendiente de invertir: <span style={{ color: GREEN, fontWeight: 700 }}>{fmtMoney(cash)}</span>
@@ -279,7 +288,8 @@ function AlignmentSummary({
           {sysPicks.map(it => {
             const base = it.symbol.split(".")[0].toUpperCase();
             const held = portfolio.positions.find(p => p.symbol.toUpperCase() === base);
-            const heldVal = held?.marketValue ?? 0;
+            // FX: el objetivo sale del total EUR — la tenencia cruda (USD) se convierte igual
+            const heldVal = (held?.marketValue ?? 0) * fxK;
             const targetVal = total * it.allocationPct / 100;
             const gap = targetVal - heldVal;
             return (
@@ -297,10 +307,13 @@ function AlignmentSummary({
         </div>
       )}
       {/* ── Plan de acción sistemático (mandato 25-jul: entradas/salidas/balanceo en cada foto) ── */}
-      <SystemActionPlan portfolio={portfolio} items={items} total={total} isPricesStale={isPricesStale} />
+      <SystemActionPlan portfolio={portfolio} items={items} total={total} fxK={fxK} isPricesStale={isPricesStale} />
 
       <div style={{ fontSize: 7, color: "#334155", marginTop: 3 }}>
-        Importes ≈ sin conversión EUR/USD. Objetivo = cuenta × asignación del sistema (régimen + vol-target del último scan). Ideas, no asesoramiento.
+        {totals.fxNormalized
+          ? "Importes en EUR (posiciones USD→EUR al FX implícito de la foto IBK)."
+          : "Importes ≈ sin conversión EUR/USD."}
+        {" "}Objetivo = cuenta × asignación del sistema (régimen + vol-target del último scan). Ideas, no asesoramiento.
       </div>
     </div>
   );
@@ -314,11 +327,14 @@ function SystemActionPlan({
   portfolio,
   items,
   total,
+  fxK = 1,
   isPricesStale,
 }: {
   portfolio: IBKPortfolio;
   items: Optimal2026ItemWithSignal[];
   total: number;
+  /** Factor crudo→EUR de la foto (derivePortfolioTotals) — importes comparables al total. */
+  fxK?: number;
   isPricesStale?: boolean;
 }) {
   const fmtMoney = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -337,7 +353,7 @@ function SystemActionPlan({
   for (const it of sysPicks) {
     const base = it.symbol.split(".")[0].toUpperCase();
     const held = portfolio.positions.find(p => p.symbol.toUpperCase() === base);
-    const gap = total * it.allocationPct / 100 - (held?.marketValue ?? 0);
+    const gap = total * it.allocationPct / 100 - (held?.marketValue ?? 0) * fxK;
     if (gap > total * 0.01) {
       plan.push({
         icon: held ? "▲" : "＋", color: GREEN,
@@ -403,14 +419,10 @@ function PortfolioSection({
   onUpdate: (p: IBKPortfolio) => void;
 }) {
   const isPhoto = portfolio.source === "IBK_PHOTO";
-  // AUDIT FIX (26-jul): total ÚNICO sin gate — el antiguo allHaveValue ponía el TOTAL a 0
-  // si una posición perdía el precio en OCR, contradiciendo a la Alineación (que sumaba sin
-  // gate) dos secciones más arriba. Ahora TODAS las secciones usan la MISMA suma; si falta
-  // algún valor, el símbolo "≈" ya comunica que es aproximado.
-  const totalValue = portfolio.positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
+  // AUDIT FIX (26-jul): total ÚNICO sin gate — si falta algún valor, el símbolo "≈" ya
+  // comunica que es aproximado. Desde 15-ago los totales salen de derivePortfolioTotals
+  // (fuente única, con FX implícito de la foto) — ver el bloque de la tabla más abajo.
   const someMissingValue = portfolio.positions.some(p => p.marketValue == null);
-  const totalPnL = portfolio.positions.reduce((s, p) => s + (p.unrealizedPnL ?? 0), 0);
-  void totalPnL;
 
   return (
     <div style={{ margin: "0" }}>
@@ -464,9 +476,8 @@ function PortfolioSection({
           Señal·Stop — contenedor con scroll horizontal propio (patrón terminal) y ancho
           mínimo para que las columnas nunca se aplasten. */}
       {(() => {
-        const acct = portfolio.accountTotal != null && portfolio.accountTotal >= totalValue * 0.98
-          ? portfolio.accountTotal : null;
-        const cash = portfolio.cashBalance ?? (acct != null ? Math.max(0, Math.round(acct - totalValue)) : null);
+        // FUENTE ÚNICA de totales/FX (fix 15-ago): mismos números que Alineación y banda Rally
+        const totals = derivePortfolioTotals(portfolio);
         return (
           <div style={{ overflowX: "auto" }}>
             <div style={{ minWidth: 470 }}>
@@ -479,11 +490,13 @@ function PortfolioSection({
                     pos={pos}
                     matchedItem={matched}
                     isPricesStale={isPricesStale}
-                    accountTotal={acct ?? (cash != null ? totalValue + cash : null)}
+                    weightPct={totals.total != null && totals.total > 0 && pos.marketValue != null
+                      ? ((pos.marketValue * totals.fxK) / totals.total) * 100
+                      : null}
                   />
                 );
               })}
-              <PortfolioTotalRow posValue={totalValue} cash={cash} accountTotal={acct} approx={someMissingValue} />
+              <PortfolioTotalRow totals={totals} approx={someMissingValue} />
             </div>
           </div>
         );
@@ -492,46 +505,72 @@ function PortfolioSection({
   );
 }
 
-function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio) => void; onScanAfterLoad?: () => void }) {
+function PortfolioUpload({
+  onLoad,
+  onScanAfterLoad,
+  existing = null,
+  compact = false,
+}: {
+  onLoad: (p: IBKPortfolio) => void;
+  onScanAfterLoad?: () => void;
+  /** Cartera ya cargada: los archivos nuevos se FUSIONAN (reintento de una foto fallida
+   *  o añadir la captura de cabecera con totales) — la lectura NUEVA corrige la anterior. */
+  existing?: IBKPortfolio | null;
+  /** Modo banda fina bajo la tabla (cuando ya hay cartera cargada). */
+  compact?: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [ocrPct, setOcrPct] = useState<number | null>(null); // null = sin OCR en curso
 
   const finishLoad = useCallback((
     positions: IBKPosition[],
     source: IBKPortfolio["source"],
-    summary?: { accountTotal: number | null; totalCash: number | null },
+    summary?: IBKAccountSummary,
   ) => {
-    if (positions.length === 0) {
-      alert("No se encontraron posiciones.\n\n• Foto: usa una captura de pantalla nítida de la lista de posiciones de IBK.\n• CSV: exporta desde IBK → Informes → Estado de cuenta.");
+    // Fusión con la cartera existente (reintento/añadir): el símbolo repetido lo CORRIGE
+    // la lectura nueva; el resumen nuevo (NAV/VAL.MDO./efectivo) pisa campo a campo.
+    let mergedPositions = positions;
+    if (existing) {
+      const m = new Map(existing.positions.map(p => [p.symbol.toUpperCase(), p]));
+      for (const p of positions) m.set(p.symbol.toUpperCase(), p);
+      mergedPositions = [...m.values()];
+    }
+    if (mergedPositions.length === 0) {
+      const soloTotales = summary && (summary.accountTotal != null || summary.totalCash != null || summary.marketValue != null);
+      alert(soloTotales
+        ? "Se leyeron los TOTALES de la cuenta (NAV/efectivo) pero ninguna posición.\n\nSube también la(s) captura(s) con la tabla de posiciones — se fusionan solas con esta."
+        : "No se encontraron posiciones.\n\n• Foto: usa una captura de pantalla nítida de la lista de posiciones de IBK.\n• CSV: exporta desde IBK → Informes → Estado de cuenta.");
       return;
     }
     // BUG FIX (26-jul): objeto SIEMPRE nuevo — nunca heredar el efectivo de una carga
     // anterior (tras "Limpiar" quedaba el importe viejo). El efectivo se lee AUTO de la
-    // propia foto ("Total efectivo") o, si no aparece, se deriva de cuenta − invertido.
-    const posValue = positions.reduce((s, p) => s + (p.marketValue ?? 0), 0);
-    // AUDIT FIX: un accountTotal MENOR que la suma de posiciones es imposible (OCR malo:
-    // dígito perdido u otro número colado) — descartarlo ANTES de que genere "Pendiente 0",
-    // porcentajes >100% u órdenes "Reducir" falsas. Margen 2% por redondeos/FX.
-    const accountTotal =
-      summary?.accountTotal != null && summary.accountTotal >= posValue * 0.98
-        ? summary.accountTotal
-        : null;
+    // propia foto ("EXCESO LIQ."/"Total efectivo") o se deriva de cuenta − invertido.
+    // Desde 15-ago la plausibilidad fina (NAV vs Σ posiciones con FX) vive centralizada
+    // en derivePortfolioTotals — aquí solo sanidad básica (>0) antes de persistir.
+    const sane = (v: number | null | undefined) =>
+      v != null && Number.isFinite(v) && v >= 0 && v < 100_000_000 ? v : null;
+    const accountTotal = sane(summary?.accountTotal) ?? sane(existing?.accountTotal);
+    const investedValue = sane(summary?.marketValue) ?? sane(existing?.investedValue);
     const cashBalance =
-      summary?.totalCash
-      ?? (accountTotal != null && posValue > 0 ? Math.max(0, Math.round(accountTotal - posValue)) : null);
+      sane(summary?.totalCash)
+      ?? sane(existing?.cashBalance)
+      ?? (accountTotal != null && investedValue != null
+        ? Math.max(0, Math.round((accountTotal - investedValue) * 100) / 100)
+        : null);
     const portfolio: IBKPortfolio = {
-      positions,
+      positions: mergedPositions,
       loadedAt: new Date().toISOString(),
-      source,
+      source: source === "IBK_PHOTO" || existing?.source === "IBK_PHOTO" ? "IBK_PHOTO" : source,
       cashBalance,
       accountTotal,
+      investedValue,
     };
     savePortfolioToStorage(portfolio);
     onLoad(portfolio);
     // SCAN PREVIO AUTOMÁTICO (petición 26-jul): al cargar la cartera se lanza un scan
     // fresco para que los % objetivo del plan salgan de datos actuales, no de un ranking viejo.
     onScanAfterLoad?.();
-  }, [onLoad, onScanAfterLoad]);
+  }, [onLoad, onScanAfterLoad, existing]);
 
   // MULTI-ARCHIVO (25-jul, petición de Sergi): la cartera de IBK a veces no cabe en una
   // captura — se pueden seleccionar VARIAS fotos (y/o CSV) a la vez desde carrete/Archivos.
@@ -554,7 +593,10 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
     let imagesDone = 0;
     let anyPhoto = false;
     const all: IBKPosition[] = [];
-    const failed: string[] = [];
+    // FIX 15-ago (fallo real IMG_9360): cada fallo lleva su MOTIVO, y una foto que solo
+    // trae la CABECERA DE TOTALES (NAV/VAL.MDO./EXCESO LIQ., 0 posiciones) es un ÉXITO
+    // — es la fuente del FX; antes se marcaba "no se pudo leer" por no tener filas.
+    const failed: { name: string; reason: string }[] = [];
     const photoTexts: string[] = [];
     if (nImages > 0) setOcrPct(0);
     try {
@@ -566,15 +608,21 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
             const res = await parseImagePortfolio(f, (pct) =>
               setOcrPct(Math.round(((imagesDone + pct / 100) / nImages) * 100)),
             );
+            const s = res.summary;
+            const hasTotals = s.accountTotal != null || s.totalCash != null || s.marketValue != null;
             // AUDIT FIX: una foto borrosa NO lanza — el OCR devuelve texto basura y el parser
             // 0 posiciones. Sin esto, se cargaba MEDIA cartera en silencio como si fuera completa.
-            if (res.positions.length === 0) failed.push(f.name);
+            if (res.positions.length === 0 && !hasTotals) {
+              failed.push({ name: f.name, reason: "el OCR no reconoció ni posiciones ni totales (¿borrosa o recortada?) — repite la captura" });
+            }
             photoTexts.push(res.text);
-          } catch { failed.push(f.name); }
+          } catch (err) {
+            failed.push({ name: f.name, reason: err instanceof Error ? err.message : "error de OCR desconocido — reintenta" });
+          }
           imagesDone++;
         } else {
           const positions = await readCsvFile(f);
-          if (positions.length === 0) failed.push(f.name);
+          if (positions.length === 0) failed.push({ name: f.name, reason: "CSV sin posiciones reconocibles (usa el export de IBK → Informes → Estado de cuenta)" });
           all.push(...positions);
         }
       }
@@ -583,7 +631,7 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
     // AUDIT FIX (multi-foto): las FOTOS se parsean COMBINADAS en un único texto — así el
     // mapa de columnas de la cabecera (que suele estar solo en la 1ª captura) se aplica
     // también a las fotos de continuación, y el resumen de cuenta se busca en todas.
-    let summary: { accountTotal: number | null; totalCash: number | null } = { accountTotal: null, totalCash: null };
+    let summary: IBKAccountSummary = { accountTotal: null, totalCash: null, marketValue: null };
     if (photoTexts.length > 0) {
       const combined = photoTexts.join("\n");
       all.push(...parseOCRPortfolio(combined));
@@ -594,26 +642,35 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
     const merged = new Map<string, IBKPosition>();
     for (const p of all) if (!merged.has(p.symbol.toUpperCase())) merged.set(p.symbol.toUpperCase(), p);
 
-    if (failed.length > 0 && merged.size === 0) {
-      alert(`No se pudo leer: ${failed.join(", ")}. Si es HEIC, haz mejor capturas de pantalla (PNG) e inténtalo de nuevo.`);
+    const gotTotals = summary.accountTotal != null || summary.totalCash != null || summary.marketValue != null;
+    const failList = failed.map((f) => `• ${f.name}: ${f.reason}`).join("\n");
+    if (failed.length > 0 && merged.size === 0 && !gotTotals && !existing) {
+      alert(`No se pudo leer ningún archivo:\n\n${failList}\n\nCorrige y vuelve a intentarlo con el mismo botón.`);
       return;
     }
     if (failed.length > 0) {
-      alert(`Aviso: no se pudo leer ${failed.join(", ")} — se cargó el resto (${merged.size} posiciones).`);
+      alert(
+        `Aviso — ${failed.length} archivo(s) con problema:\n\n${failList}\n\n` +
+        `Se cargó el resto (${merged.size} posiciones${gotTotals ? " + totales de cuenta" : ""}). ` +
+        `Puedes volver a subir SOLO ese archivo con "＋ Añadir fotos" — la lectura nueva corrige la anterior.`,
+      );
     }
     finishLoad([...merged.values()], anyPhoto ? "IBK_PHOTO" : "IBK_CSV", summary);
-  }, [finishLoad]);
+  }, [finishLoad, existing]);
 
   const busy = ocrPct !== null;
 
   return (
     <div style={{
-      padding: "8px 12px",
+      padding: compact ? "5px 12px" : "8px 12px",
       background: "rgba(245,158,11,0.03)",
+      borderTop: compact ? "1px solid rgba(245,158,11,0.10)" : undefined,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9, color: "#94a3b8", flex: 1, minWidth: 160 }}>
-          Carga tu cartera IBK (CSV o foto/captura) para ver P&L y acciones por posición
+        <span style={{ fontSize: compact ? 8 : 9, color: "#94a3b8", flex: 1, minWidth: 160 }}>
+          {compact
+            ? "¿Falló una foto o falta la captura de totales (NAV · VAL. MDO. · EXCESO LIQ.)? Añádela aquí — la lectura nueva corrige la anterior"
+            : "Carga tu cartera IBK (CSV o foto/captura) para ver P&L y acciones por posición"}
         </span>
         {/* SIN atributo accept (fix 26-jul, mismo bug que el CSV del 25-jul): con accept,
             iOS deja en gris ("desconectadas") las fotos de Archivos cuyo MIME no casa
@@ -638,15 +695,19 @@ function PortfolioUpload({ onLoad, onScanAfterLoad }: { onLoad: (p: IBKPortfolio
             whiteSpace: "nowrap",
           }}
         >
-          {busy ? `🔍 Leyendo fotos… ${ocrPct}%` : "📂 Cargar CSV / 📷 Fotos"}
+          {busy ? `🔍 Leyendo fotos… ${ocrPct}%` : compact ? "＋ Añadir fotos" : "📂 Cargar CSV / 📷 Fotos"}
         </button>
       </div>
-      <div style={{ fontSize: 7, color: "#334155", marginTop: 4 }}>
-        📷 Fotos: capturas de pantalla de tus posiciones en la app IBK (carrete, Archivos o cámara) —
-        puedes seleccionar VARIAS a la vez si la cartera no cabe en una; se fusionan solas.
-        CSV: IBK → Informes → Estado de cuenta → Exportar. Todo se procesa y guarda SOLO en tu
-        dispositivo (localStorage + OCR local), nunca se envía al servidor.
-      </div>
+      {!compact && (
+        <div style={{ fontSize: 7, color: "#334155", marginTop: 4 }}>
+          📷 Fotos: capturas de pantalla de tus posiciones en la app IBK (carrete, Archivos o cámara) —
+          puedes seleccionar VARIAS a la vez si la cartera no cabe en una; se fusionan solas.
+          Incluye la captura de CABECERA con los totales (NAV · VAL. MDO. · EXCESO LIQ.): es la que
+          permite convertir USD→EUR y cuadrar los % con la app.
+          CSV: IBK → Informes → Estado de cuenta → Exportar. Todo se procesa y guarda SOLO en tu
+          dispositivo (localStorage + OCR local), nunca se envía al servidor.
+        </div>
+      )}
     </div>
   );
 }
@@ -698,14 +759,25 @@ export function PortfolioCard({ data, onScanAfterLoad }: { data: Optimal2026Resu
       </div>
 
       {hasPortfolio ? (
-        <PortfolioSection
-          portfolio={portfolio}
-          items={items}
-          onClear={handlePortfolioClear}
-          isPricesStale={isPricesStale}
-          deployPct={deployPct}
-          onUpdate={handlePortfolioUpdate}
-        />
+        <>
+          <PortfolioSection
+            portfolio={portfolio}
+            items={items}
+            onClear={handlePortfolioClear}
+            isPricesStale={isPricesStale}
+            deployPct={deployPct}
+            onUpdate={handlePortfolioUpdate}
+          />
+          {/* Banda de REINTENTO/AÑADIR (fix 15-ago, fallo IMG_9360): permite volver a subir
+              SOLO la foto que falló (p.ej. la de totales) sin Limpiar toda la cartera —
+              la lectura nueva se fusiona y corrige a la anterior. */}
+          <PortfolioUpload
+            compact
+            existing={portfolio}
+            onLoad={handlePortfolioLoad}
+            onScanAfterLoad={onScanAfterLoad}
+          />
+        </>
       ) : (
         <PortfolioUpload onLoad={handlePortfolioLoad} onScanAfterLoad={onScanAfterLoad} />
       )}
