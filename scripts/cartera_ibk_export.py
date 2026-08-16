@@ -29,6 +29,9 @@ BASE_URL = "https://emrrclaude.vercel.app"
 SCAN_URL = f"{BASE_URL}/api/rally-scan/last"
 PORTFOLIO_URL = f"{BASE_URL}/api/rally-scan/ibk-portfolio"
 
+MAIL_FROM_ACCOUNT = "sergimaymo@gmail.com"
+MAIL_TO = "sergimaymo@gmail.com"
+
 OUT_DIR = os.path.expanduser("~/Desktop/CarteraIBK")
 STATE_DIR = os.path.expanduser("~/Library/Application Support/CarteraIBK")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
@@ -92,6 +95,42 @@ def notify(title: str, body: str) -> None:
         pass
 
 
+def _as_str(s: str) -> str:
+    """Escapa comillas/backslashes para incrustar en un literal AppleScript."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def send_email(subject: str, body: str, attachments: list) -> bool:
+    """Envía el correo desde Mail.app (cuenta ya configurada en el Mac) — sin
+    credenciales nuevas, sin tocar nada del dashboard. Best-effort: si falla,
+    solo se registra en el log, nunca interrumpe la generación de archivos."""
+    attach_lines = "\n".join(
+        f'    make new attachment with properties {{file name:(POSIX file "{_as_str(p)}")}} '
+        f'at after the last paragraph'
+        for p in attachments
+    )
+    script = f'''
+    tell application "Mail"
+        set newMsg to make new outgoing message with properties {{subject:"{_as_str(subject)}", content:"{_as_str(body)}\n", visible:false}}
+        tell newMsg
+            set sender to "{_as_str(MAIL_FROM_ACCOUNT)}"
+            make new to recipient at end of to recipients with properties {{address:"{_as_str(MAIL_TO)}"}}
+{attach_lines}
+        end tell
+        send newMsg
+    end tell
+    '''
+    try:
+        r = subprocess.run(["osascript", "-e", script], timeout=30, capture_output=True, text=True)
+        if r.returncode != 0:
+            log(f"AVISO: envío de email falló ({r.stderr.strip()[:200]})")
+            return False
+        return True
+    except Exception as e:
+        log(f"AVISO: envío de email falló ({e})")
+        return False
+
+
 def base_symbol(sym: str) -> str:
     return (sym or "").split(".")[0].strip().upper()
 
@@ -103,18 +142,25 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
     val_mdo = float(portfolio["valMdoEur"])
     cash = float(portfolio["cashEur"])
 
+    valid_positions = [
+        p for p in portfolio["positions"]
+        if p.get("quantity") is not None and p.get("lastPrice") is not None
+        and float(p["quantity"]) > 0 and float(p["lastPrice"]) > 0
+    ]
+    dropped = len(portfolio["positions"]) - len(valid_positions)
+
     fx = portfolio.get("fxEurPerUsd")
     if not fx:
         usd_total = sum(
             float(p["quantity"]) * float(p["lastPrice"])
-            for p in portfolio["positions"]
+            for p in valid_positions
             if (p.get("currency") or "USD") == "USD"
         )
         fx = (val_mdo / usd_total) if usd_total > 0 else 0.86433
     fx = float(fx)
 
     holdings = {}
-    for p in portfolio["positions"]:
+    for p in valid_positions:
         b = base_symbol(p["symbol"])
         qty = float(p["quantity"])
         price = float(p["lastPrice"])
@@ -182,6 +228,7 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
         "nav": nav, "val_mdo": val_mdo, "cash": cash, "fx": fx,
         "rows": rows,
         "seeded": portfolio.get("_seeded", False),
+        "dropped": dropped,
     }
 
 
@@ -516,8 +563,26 @@ def main() -> int:
                 "generatedAt": datetime.now(timezone.utc).isoformat()})
     log(f"Generados: {os.path.basename(xlsx_path)} + PDF (scan {plan['scan_id']}, "
         f"cartera {'semilla' if plan['seeded'] else portfolio.get('loadedAt')})")
+
+    invertido_pct = 100 * plan["val_mdo"] / plan["nav"]
+    buys = sum(1 for r in plan["rows"] if r["action"].startswith("COMPRAR"))
+    sells = sum(1 for r in plan["rows"] if r["action"] in ("REDUCIR", "VENDER TODO"))
+    subject = f"CarteraIBK · Rally Leaders {plan['scan_local'].strftime('%d/%m %H:%M')}"
+    body = (
+        f"Plan de rebalanceo del scan {plan['scan_local'].strftime('%d/%m/%Y %H:%M')} "
+        f"(hora Canarias).\n\n"
+        f"Total cartera: {plan['nav']:,.0f} EUR\n"
+        f"Invertido: {plan['val_mdo']:,.0f} EUR ({invertido_pct:.1f}%)\n"
+        f"Efectivo: {plan['cash']:,.0f} EUR ({100-invertido_pct:.1f}%)\n\n"
+        f"{buys} tickers a comprar/ampliar, {sells} a reducir/vender. "
+        f"Detalle de posiciones (+/-) y trailing stop por ticker en los adjuntos.\n\n"
+        f"Generado automaticamente, solo lectura, no afecta a los modulos."
+    )
+    sent = send_email(subject, body, [xlsx_path, pdf_path])
+    log(f"Email {'enviado' if sent else 'NO enviado (ver aviso arriba)'} a {MAIL_TO}")
     notify("CarteraIBK actualizada",
-           f"Nuevo plan Rally Leaders {plan['scan_local'].strftime('%d/%m %H:%M')} en Escritorio/CarteraIBK")
+           f"Nuevo plan Rally Leaders {plan['scan_local'].strftime('%d/%m %H:%M')} "
+           f"— {'enviado por email' if sent else 'en Escritorio/CarteraIBK'}")
     return 0
 
 
