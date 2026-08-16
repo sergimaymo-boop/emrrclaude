@@ -312,7 +312,7 @@ def write_xlsx(plan: dict, path: str) -> None:
         vals = [
             row["rank"] or "—", row["ticker"], row["name"], row["action"], sign,
             stop, row["cur_qty"], row["target_qty"], row["weight_pct"],
-            row["cur_val"], row["target_eur"],
+            round(row["cur_val"]), round(row["target_eur"]),
             f"{row['price_native']:,.2f} {row['currency']}",
         ]
         for j, v in enumerate(vals):
@@ -345,9 +345,9 @@ def write_xlsx(plan: dict, path: str) -> None:
 
     tr = r + 1
     ws.cell(row=tr, column=3, value="TOTALES").font = F(bold=True, size=10)
-    tc = ws.cell(row=tr, column=11, value=sum(x["cur_val"] for x in plan["rows"]))
+    tc = ws.cell(row=tr, column=11, value=round(sum(x["cur_val"] for x in plan["rows"])))
     tc.number_format, tc.font = "#,##0 €", F(bold=True, size=10)
-    tc2 = ws.cell(row=tr, column=12, value=sum(x["target_eur"] for x in plan["rows"]))
+    tc2 = ws.cell(row=tr, column=12, value=round(sum(x["target_eur"] for x in plan["rows"])))
     tc2.number_format, tc2.font = "#,##0 €", F(bold=True, size=10)
     for col in range(2, 14):
         ws.cell(row=tr, column=col).border = Border(top=Side(style="medium", color=NAVY))
