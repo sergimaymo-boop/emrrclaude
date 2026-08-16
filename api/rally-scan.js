@@ -21,7 +21,7 @@
 // threshold gate. The monetary cycle correctly modulates the ENTRY decision via
 // Filter 5 (cycleWarning) in OptimalSignalPanel.tsx, not the technical ranking.
 import { buildUniverseResponse } from './universe.js';
-import { saveLastRallySnapshot, loadLastRallySnapshot } from './_lib/kvStorage.js';
+import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio } from './_lib/kvStorage.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
 import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
 import { filterActiveOperableAssets, getActiveMarketsAt } from './_lib/scanSnapshot.js';
@@ -158,6 +158,47 @@ async function handleLast(req, res) {
   return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_SCAN_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
 }
 
+// ─── ibk-portfolio handler ────────────────────────────────────────────────────
+// Canal LATERAL de persistencia del snapshot de cartera IBK (subido por fotos
+// desde el navegador) para que un proceso externo (script del Mac) pueda leerlo.
+// NO participa en ningún cálculo de módulos (Rally / Supreme / SP500): solo
+// guarda y devuelve el último snapshot tal cual.
+const IBK_MAX_POSITIONS = 50;
+const IBK_MAX_BYTES = 50 * 1024;
+
+function isFiniteNumberOrNull(v) {
+  return v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v));
+}
+
+function validateIbkSnapshot(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'BODY_MUST_BE_OBJECT';
+  if (!Array.isArray(body.positions)) return 'POSITIONS_MUST_BE_ARRAY';
+  if (body.positions.length > IBK_MAX_POSITIONS) return 'TOO_MANY_POSITIONS';
+  if (!isFiniteNumberOrNull(body.navEur))    return 'INVALID_NAV_EUR';
+  if (!isFiniteNumberOrNull(body.valMdoEur)) return 'INVALID_VAL_MDO_EUR';
+  if (!isFiniteNumberOrNull(body.cashEur))   return 'INVALID_CASH_EUR';
+  try {
+    if (Buffer.byteLength(JSON.stringify(body), 'utf8') >= IBK_MAX_BYTES) return 'SNAPSHOT_TOO_LARGE';
+  } catch { return 'SNAPSHOT_NOT_SERIALIZABLE'; }
+  return null;
+}
+
+async function handleIbkPortfolio(req, res) {
+  if (req.method === 'GET') {
+    const portfolio = await loadLastIBKPortfolio();
+    return sendJson(res, 200, { ok: true, portfolio: portfolio ?? null }, 'IBK_PORTFOLIO');
+  }
+  if (req.method === 'POST') {
+    const body = await readBody(req);
+    const invalidReason = validateIbkSnapshot(body);
+    if (invalidReason) return sendJson(res, 400, { ok: false, error: invalidReason }, 'IBK_PORTFOLIO');
+    const saved = await saveLastIBKPortfolio(body);
+    if (!saved) return sendJson(res, 503, { ok: false, error: 'KV_UNAVAILABLE' }, 'IBK_PORTFOLIO');
+    return sendJson(res, 200, { ok: true }, 'IBK_PORTFOLIO');
+  }
+  return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'IBK_PORTFOLIO');
+}
+
 // ─── main dispatcher ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -166,5 +207,6 @@ export default async function handler(req, res) {
   if (action === 'start')    return handleStart(req, res);
   if (action === 'continue') return handleContinue(req, res);
   if (action === 'last')     return handleLast(req, res);
-  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last'] });
+  if (action === 'ibk-portfolio') return handleIbkPortfolio(req, res);
+  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio'] });
 }

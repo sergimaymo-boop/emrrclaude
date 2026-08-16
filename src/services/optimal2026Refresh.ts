@@ -126,11 +126,53 @@ function appendPortfolioHistory(portfolio: IBKPortfolio): void {
   } catch { /* ignore quota */ }
 }
 
+// ── Espejo servidor del snapshot IBK (canal LATERAL de solo persistencia) ─────
+// POST fire-and-forget a /api/rally-scan/ibk-portfolio para que un proceso
+// externo (script del Mac) pueda leer la última cartera sin acceso al
+// localStorage del navegador. JAMÁS bloquea ni afecta al flujo existente:
+// cualquier fallo se ignora en silencio. No toca ningún cálculo de módulos.
+
+const IBK_EU_SUFFIX_RE = /\.(PA|MC|MI|DE|AS|BR|LS|VI|HE|F|SW|ST|OL|CO)$/i;
+
+function ibkPositionCurrency(pos: IBKPosition): string {
+  const c = typeof pos.currency === "string" ? pos.currency.trim().toUpperCase() : "";
+  if (c) return c;
+  return IBK_EU_SUFFIX_RE.test(pos.symbol ?? "") ? "EUR" : "USD";
+}
+
+function mirrorPortfolioToServer(portfolio: IBKPortfolio): void {
+  try {
+    const t = derivePortfolioTotals(portfolio);
+    const payload = {
+      loadedAt: portfolio.loadedAt ?? new Date().toISOString(),
+      navEur: t.total ?? null,       // NAV total de la cuenta (EUR)
+      valMdoEur: t.invested ?? null, // "VAL. MDO." — invertido en EUR
+      cashEur: t.cash ?? null,       // "EXCESO LIQ." — efectivo (EUR)
+      // FX implícito EUR por 1 USD (fxK = invertido EUR / Σ crudo USD); null si no derivable.
+      fxEurPerUsd: t.fxNormalized ? Math.round(t.fxK * 1e5) / 1e5 : null,
+      positions: (portfolio.positions ?? []).slice(0, 50).map((p) => ({
+        symbol: p.symbol,
+        quantity: p.quantity,
+        lastPrice: p.currentPrice ?? null,
+        currency: ibkPositionCurrency(p),
+      })),
+    };
+    void fetch("/api/rally-scan/ibk-portfolio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => { /* silencioso: el espejo nunca interfiere */ });
+  } catch { /* silencioso: el espejo nunca interfiere */ }
+}
+
 export function savePortfolioToStorage(portfolio: IBKPortfolio): void {
   try {
     localStorage.setItem(IBK_STORAGE_KEY, JSON.stringify(portfolio));
     appendPortfolioHistory(portfolio);
   } catch { /* ignore quota errors */ }
+  // Fuera del try de localStorage a propósito: fire-and-forget con manejo propio.
+  mirrorPortfolioToServer(portfolio);
 }
 
 export function loadPortfolioFromStorage(): IBKPortfolio | null {

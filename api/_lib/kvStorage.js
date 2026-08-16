@@ -66,6 +66,35 @@ export async function loadLastRallySnapshot() {
   }
 }
 
+// ─── IBK portfolio snapshot (canal lateral de lectura externa, p.ej. Mac) ────
+// Solo persistencia: NO participa en ningún cálculo de módulos (Rally/Supreme/SP500).
+const KV_IBK_KEY = "last_ibk_portfolio";
+const KV_IBK_TTL_SECONDS = 180 * 24 * 60 * 60; // 180 días
+
+export async function saveLastIBKPortfolio(snapshot) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(KV_IBK_KEY, snapshot, { ex: KV_IBK_TTL_SECONDS });
+    return true;
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function loadLastIBKPortfolio() {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    const data = await redis.get(KV_IBK_KEY);
+    return data ?? null;
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
+    return null;
+  }
+}
+
 // ─── SPY Benchmark cache (4h TTL) — ensures RS is always calculable ───────────
 const KV_SPY_KEY = "benchmark_spy_bars";
 const KV_SPY_TTL_SECONDS = 72 * 60 * 60; // 72h — el cierre diario del SPY sigue válido días para EMA200/régimen (evita re-fetch bajo rate-limit)
