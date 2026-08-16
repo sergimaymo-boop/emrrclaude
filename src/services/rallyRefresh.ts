@@ -72,6 +72,13 @@ export interface RallyAsset {
   warningFlags?: RallyWarningFlag[];
   entryTiming?: RallyEntryTiming;
   runway?: RallyRunway | null;
+  /**
+   * Riesgo de pullback inminente 0-100 (verde <35, ámbar 35-64, rojo ≥65).
+   * OPCIONAL y aún NO emitido por el motor de scan: el hueco visual del badge "PB n"
+   * en la fila colapsada de RallyPanel ya está preparado (17-ago-2026), pero no se
+   * renderiza nada hasta que el backend incluya este campo en el top-10.
+   */
+  pullbackRisk?: number | null;
   /** % del capital del módulo sugerido para esta posición (ponderación por convicción). */
   suggestedWeightPct?: number;
   metrics: RallyMetrics | null;

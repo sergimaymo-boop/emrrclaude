@@ -235,6 +235,25 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
     : stop >= 36 ? { color: GREEN, band: "AMPLIO" }
     : stop >= 25 ? { color: SLATE, band: "MEDIO" }
     : { color: "#eab308", band: "CEÑIDO" };
+  // Badge "PB n" — riesgo de pullback inminente (0-100). HUECO PREPARADO 17-ago-2026:
+  // el motor de scan aún NO emite `pullbackRisk`, así que hoy no se renderiza NADA
+  // (ni hueco fantasma) y la fila queda idéntica. Cuando el motor lo emita, lo hará
+  // para todo el top-10 a la vez, con lo que las columnas fijas de escritorio
+  // (mandato 11-ago-2026) siguen alineadas fila contra fila. Informativo: no altera
+  // ranking, pesos ni stops.
+  const pb = asset.pullbackRisk ?? null;
+  const pbStyle = pb == null ? null
+    : pb >= 65 ? { color: RED, band: "alto — pullback inminente probable" }
+    : pb >= 35 ? { color: "#eab308", band: "medio — vigilar de cerca" }
+    : { color: GREEN, band: "bajo — lejos de pullback" };
+  const pbBadge = pb != null && pbStyle ? (
+    <span title={`Riesgo de pullback inminente: ${Math.round(pb)}/100 (${pbStyle.band}). Informativo: no cambia ranking ni pesos.`}
+      style={{ width: 44, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
+        color: pbStyle.color, background: `${pbStyle.color}18`,
+        border: `1px solid ${pbStyle.color}55`, whiteSpace: "nowrap" }}>
+      {`PB ${Math.round(pb)}`}
+    </span>
+  ) : null;
   // BUG FIX (móvil 375-430px, ago-2026): la fila colapsada vivía en una única línea
   // flex con 9-10 elementos de ancho fijo (~350px de mínimo) dentro de una sección con
   // overflow:hidden. En 375px el chevron ▼ quedaba COMPLETAMENTE fuera del recorte
@@ -266,6 +285,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
           border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
         {stop != null ? `STOP ${stop}%` : "—"}
       </span>
+      {pbBadge}
       <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
         style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
         {flags.length > 0 ? "⚠" : ""}
@@ -334,6 +354,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
                 border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
               {stop != null ? `STOP ${stop}%` : "—"}
             </span>
+            {pbBadge}
             <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
               style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
               {flags.length > 0 ? "⚠" : ""}
