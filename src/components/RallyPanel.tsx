@@ -315,7 +315,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
               <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
               <span style={{ flex: 1, minWidth: 6 }} />
-              <span title="Porcentaje del capital del módulo sugerido para esta posición"
+              <span title="PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP."
                 style={{ fontSize: 10, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right" }}>
                 {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
               </span>
@@ -361,7 +361,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
               style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
               {flags.length > 0 ? "⚠" : ""}
             </span>
-            <span title="Porcentaje del capital del módulo sugerido para esta posición"
+            <span title="PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP."
               style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 44, flexShrink: 0, textAlign: "right" }}>
               {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
             </span>
