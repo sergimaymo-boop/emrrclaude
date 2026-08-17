@@ -289,6 +289,11 @@ export function convictionWeights(scores) {
  *   pickJump(i, heldSet) — sustituto al saltar el stop (null = sin reinversión)
  *   scoreFn(f)     — ranking en revisión (por defecto scoreV4)
  *   eligible(f, i) — filtro de candidatos en revisión (por defecto todos)
+ *   weightsOf(top, i) — pesos INICIALES de la revisión (array % alineado con `top`,
+ *     ya ordenado por score desc). null (por defecto) = comportamiento previo
+ *     (convicción o iguales según `conviction`). Añadido 17-ago-2026 para el
+ *     estudio de ponderación (rally-weighting-study.mjs); cambio aditivo, la ruta
+ *     por defecto queda bit a bit idéntica (verificado contra el canon H4 round2).
  *
  * Devuelve { curve, dret, closed, wins, trades, jumpCount }.
  */
@@ -297,6 +302,7 @@ export function simulate(T, D, opts) {
     FROM, TO = D - 1, review = 84, topN = 10, conviction = true,
     widthOf = null, dailyWidth = false, ratchet = false,
     pickJump = null, scoreFn = scoreV4, eligible = null,
+    weightsOf = null,
   } = opts;
   let eq = 1, closed = 0, wins = 0, trades = 0, jumpCount = 0;
   const curve = new Array(D).fill(null); curve[FROM] = 1;
@@ -375,7 +381,9 @@ export function simulate(T, D, opts) {
     }
     cands.sort((a, b) => b.s - a.s || (b.f.m9 ?? 0) - (a.f.m9 ?? 0));
     const top = cands.slice(0, topN);
-    const ws = conviction ? convictionWeights(top.map((c) => c.s)) : top.map(() => 100 / Math.max(top.length, 1));
+    const ws = weightsOf
+      ? weightsOf(top, i)
+      : conviction ? convictionWeights(top.map((c) => c.s)) : top.map(() => 100 / Math.max(top.length, 1));
     const prev = new Map(held.map((h) => [h.ti, h]));
     const newSet = new Set(top.map((c) => c.ti));
     let turn = 0;

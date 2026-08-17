@@ -148,7 +148,7 @@ export function RallyPanel() {
               <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
             )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
-            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo.</span>
+            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2016-2026.</span>
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
@@ -197,6 +197,8 @@ export function RallyPanel() {
             gana 7/9 celdas al campeón sin stops (no domina 9/9) y 6/9 al fijo 30%. Probados y <b>descartados con números</b>:
             stop por k·ATR (satura y pierde robustez), modulación por "salud" compuesta, parámetros por ticker incluso con shrinkage (los
             óptimos individuales no son estables), ratchets de beneficio, y exigir "entrada IDEAL" al saltar (pierde en todas las celdas).
+            Los pesos por momentum mejoran el backtest sobre todo en mercados con tendencias fuertes; en mercados laterales rinden como el
+            esquema anterior.
             ⚠ Todas estas cifras son de backtest con el universo superviviente actual y ejecución ideal al cierre (20 pb de costes):{" "}
             <b>sirven para comparar variantes entre sí, no como rentabilidad esperada</b>.
           </div>

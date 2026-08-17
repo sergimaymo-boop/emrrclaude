@@ -79,7 +79,11 @@ export interface RallyAsset {
    * renderiza nada hasta que el backend incluya este campo en el top-10.
    */
   pullbackRisk?: number | null;
-  /** % del capital del módulo sugerido para esta posición (ponderación por convicción). */
+  /**
+   * % del capital del módulo sugerido para esta posición — ponderado por el
+   * momentum 9 meses CRUDO del ticker (esquema M9_RAW, estudio 17-ago-2026:
+   * más momentum → más peso, acotado entre 4% y 20%, Σ=100).
+   */
   suggestedWeightPct?: number;
   metrics: RallyMetrics | null;
   dataMode: string;
@@ -89,7 +93,7 @@ export interface RallyAsset {
 /** Calibración v4.0 (super-auditoría 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md §10). */
 export const RALLY_BACKTEST = {
   period: "2017-08 → 2026-08 (10 años, 603 tickers)",
-  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por convicción",
+  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m (4-20%)",
   strategy: { cagr: 0.394, maxDD: 0.439, mar: 0.90, sharpe: 1.14 },
   equalWeight: { cagr: 0.374, maxDD: 0.437, mar: 0.86 },
   v3: { cagr: 0.375, maxDD: 0.419, mar: 0.89 },
@@ -111,8 +115,16 @@ export const RALLY_BACKTEST = {
    * clasificador de pullback no halló combinación explotable OOS (la evidencia
    * decisiva es a nivel de política). Cifras del backtest completo (universo
    * superviviente): comparan variantes, no prometen rentabilidad.
+   *
+   * 17-ago-2026 — pesos M9_RAW (estudio de ponderación, rally-weighting-study.mjs):
+   * misma selección y mismos stops, pero el top-10 se pondera por el momentum 9m
+   * CRUDO (caps 4-20%) en vez de por el score saturado. Cifras del periodo completo
+   * con ese esquema: CAGR 47,7% · MaxDD 37,7% · MAR 1,27; winRate 0,65 sin cambios
+   * (los stops son los mismos). En confirmación 2022-26: +8,7 pp CAGR vs el esquema
+   * anterior, con el exceso concentrado en los mega-trends 2024-26 (en lateral
+   * 2022-23 rinde ≈ igual). Sin cifra nueva de sharpe: se retiró el campo.
    */
-  withStops: { cagr: 0.411, maxDD: 0.369, mar: 1.11, sharpe: 1.27, winRate: 0.65, stopRule: "12 + 0,35·recorrido, acotado 15-45%", jumpRule: "0,7·score + 0,3·recorrido" },
+  withStops: { cagr: 0.477, maxDD: 0.377, mar: 1.27, winRate: 0.65, stopRule: "12 + 0,35·recorrido, acotado 15-45%", jumpRule: "0,7·score + 0,3·recorrido" },
 } as const;
 
 /** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */

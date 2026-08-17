@@ -420,30 +420,85 @@ function computeWarningFlags(metrics) {
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
 /**
- * PESO SUGERIDO POR CONVICCIÓN — validado 9-ago-2026 (docs/RALLY-MODULE-AUDIT.md §9).
+ * PESO SUGERIDO POR MOMENTUM 9M CRUDO — esquema M9_RAW (estudio 17-ago-2026:
+ * scripts/rally-weighting-study.mjs → backtests/rally-weighting-study.json,
+ * triple verificación adversarial: verify-weighting-recompute.mjs (simulador
+ * independiente + waterfilling KKT) y verify-weighting-stress.mjs →
+ * backtests/rally-weighting-stress.json).
  *
- * En vez de repartir el capital a partes iguales entre los 10, se pondera según la
- * puntuación: los que más destacan pesan más. Es la ÚNICA mejora que superó la
- * prueba dura de robustez (mejorar en las TRES cadencias de revisión probadas —
- * 63, 84 y 105 sesiones — midiendo siempre el PEOR de los dos semestres):
+ * QUÉ CAMBIA: antes se ponderaba por (score−50), pero el score satura en ~100
+ * con momentos >150% (tanh), así que entre los mega-líderes los pesos apenas
+ * separaban (perfil medio 11,8% → 8,9%). Ahora la base es el momentum 9 meses
+ * CRUDO en % — la misma señal del ranking, sin saturar — y el perfil medio pasa
+ * a 18,1% → 7,0%: el capital sigue de verdad a la convicción del modelo.
  *
- *   peso igual (lo anterior) .... CAGR 34,3% · caída 41,5% · MAR 0,82 · peor-3 28,0%
- *   por convicción .............. CAGR 37,5% · caída 41,9% · MAR 0,89 · peor-3 29,8%
+ *   w_i = clamp(base_i · t, 4%, 20%)  con  base_i = max(1, mom9m_i)  y un único
+ *   t tal que Σ w_i = 100 (reparto proporcional EXACTO dentro de topes; la
+ *   bisección está validada a 5e-15 contra un solver waterfilling independiente).
  *
- * El efecto es monótono (cuanto más se inclina, mejor mide), lo que indica que es
- * real y no un ajuste a un parámetro concreto. Se eligió la inclinación intermedia
- * con TOPE del 18% por posición: la variante más agresiva medía algo mejor (39,0%)
- * pero llegaba al 21% en un solo valor, demasiada concentración para una cartera de
- * 10 valores de máximo momento. Suelo del 4% para que ninguna posición sea simbólica.
+ * CIFRAS (misma selección, mismos stops H4, solo cambian los pesos):
+ *   · Confirmación 2022-26: CAGR 44,9% vs 36,2% del esquema por score saturado
+ *     (+8,7 pp) · MaxDD 36,1% vs 34,4% (+1,6 pp) · MAR 1,24 vs 1,05.
+ *   · Dominancia 9/9 celdas de la malla fase×cadencia en TRAIN y 9/9 en
+ *     CONFIRMACIÓN; winrate idéntico 65% (los stops no cambian).
+ *   · Periodo completo 2017-26: CAGR 47,7% · MaxDD 37,7% · MAR 1,27.
+ *
+ * ADVERTENCIA DE VENTA HONESTA (estrés 17-ago-2026):
+ *   · El exceso se CONCENTRA en mega-trends: casi todo el +8,7 pp cae en
+ *     2024-26 (WDC/MU/PLTR aportan ~80% del exceso neto). En régimen
+ *     lateral/bajista rinde ≈ igual que el esquema anterior (2022-23 ≈ neutro,
+ *     gana solo 3/9 sub-celdas) y PIERDE en crashes de momentum tipo 2021
+ *     (−8,5 pp ese año). Expectativa realista: ~0-3 pp en régimen normal más
+ *     opcionalidad grande cuando aparece un mega-trend; nunca daño material
+ *     (peor rebanada observada −2,2 pp).
+ *   · Universo superviviente: el Δ de los esquemas concentradores puede estar
+ *     algo inflado; las cifras comparan variantes, no prometen rentabilidad.
+ *   · NO SUBIR EL TECHO DEL 20%: el cap [4,25] mide +1,0 pp más en el backtest,
+ *     pero ese extra viene de UN solo ticker en una revisión — concentración
+ *     sin evidencia robusta. El suelo del 4% evita posiciones simbólicas.
+ *
+ * Solo cambia la asignación de pesos: score, stops, rotación y ranking intactos.
  */
 export function assignSuggestedWeights(assets) {
   if (!Array.isArray(assets) || !assets.length) return assets;
-  const raw = assets.map((a) => Math.max(0.1, (Number(a.rallyScore) || 0) - 50));
-  const total = raw.reduce((s, v) => s + v, 0) || 1;
-  // Reparto proporcional, luego acotado a [4%, 18%] y renormalizado para sumar 100%.
-  const clamped = raw.map((v) => clamp((v / total) * 100, 4, 18));
-  const sum = clamped.reduce((s, v) => s + v, 0) || 1;
-  return assets.map((a, i) => ({ ...a, suggestedWeightPct: Math.round((clamped[i] / sum) * 1000) / 10 }));
+  const n = assets.length;
+  const FLOOR = 4, CEIL = 20;
+  // base_i = momentum 9m crudo en % ya calculado por el engine (metrics.mom9m);
+  // suelo 1 para que negativos/planos/ausentes cuenten igual (mínimo del estudio).
+  const base = assets.map((a) => {
+    const m9 = a?.metrics?.mom9m;
+    return Number.isFinite(m9) ? Math.max(1, m9) : 1;
+  });
+
+  let weights;
+  if (n * CEIL < 100) {
+    // Menos de 5 posiciones: ni todo al techo suma 100 → equiponderado 100/N.
+    weights = base.map(() => 100 / n);
+  } else if (base.every((v) => v === base[0])) {
+    // Bases idénticas: equiponderado (evita depender del t degenerado).
+    weights = base.map(() => 100 / n);
+  } else {
+    weights = capNormalizeWeights(base, FLOOR, CEIL);
+  }
+  return assets.map((a, i) => ({ ...a, suggestedWeightPct: Math.round(weights[i] * 10) / 10 }));
+}
+
+/**
+ * Reparto proporcional EXACTO dentro de topes [lo, hi]: w_i = clamp(raw_i·t, lo, hi)
+ * con t único tal que Σw = 100. Bisección geométrica (f(t) continua y no
+ * decreciente; solución única en pesos), determinista — algoritmo copiado tal
+ * cual del estudio (rally-weighting-study.mjs, capNormalize), donde está
+ * validado a 5e-15 contra un solver waterfilling KKT independiente.
+ */
+function capNormalizeWeights(raw, lo = 4, hi = 20) {
+  const n = raw.length;
+  if (!n) return [];
+  const w = raw.map((v) => (Number.isFinite(v) && v > 0 ? v : 1e-6));
+  const f = (t) => w.reduce((s, v) => s + Math.min(hi, Math.max(lo, v * t)), 0);
+  let a = 1e-9, b = 1e9;
+  for (let k = 0; k < 200; k++) { const m = Math.sqrt(a * b); (f(m) < 100 ? (a = m) : (b = m)); }
+  const t = Math.sqrt(a * b);
+  return w.map((v) => Math.min(hi, Math.max(lo, v * t)));
 }
 
 /**
