@@ -25,8 +25,8 @@
 | Live URL | https://emrrclaude.vercel.app |
 | GitHub | https://github.com/sergimaymo-boop/emrrclaude |
 | Stack | React 19 + TypeScript + Vite → Vercel Serverless |
-| Primary data | EODHD API |
-| Secondary data | Finnhub API |
+| Primary data | Yahoo Finance (histórico diario) · cascada Finnhub/Yahoo/Stooq para quotes (`api/_lib/providerCascade.js`) — EODHD CANCELADO jun-2026 |
+| Universo | Estático (`api/_lib/staticUniverse.js`, ~603 tickers US+EU) — nunca filtrar por mercado abierto |
 | Persistence | Upstash Redis (Vercel integration) |
 | Design | Dark navy dashboard, Bloomberg-inspired, optimised for iPhone 16 Pro Max |
 | Auth | None — public access, no password |
@@ -60,21 +60,22 @@ BROWSER (iPhone / Desktop)
 ├── shared/types/domain.ts     ← ALL TypeScript contracts
 └── styles.css                 ← ALL visual styles (navy palette)
 
-VERCEL SERVERLESS FUNCTIONS  (api/)
-│
-├── GET  /api/master-indicators      → EODHD real-time: SPY LQD HYG VIX VVIX TNX MOVE
-├── GET  /api/universe               → EODHD exchange-symbol-list → filtered universe
-├── POST /api/scan-snapshot/start    → batch 1: universe → eligibility → score → TOP 8
-├── POST /api/scan-snapshot/continue → batches 2..N via snapshotToken
-├── POST /api/scan-snapshot/finalize → validate 100% → save Redis → return GLOBAL_TOP8_FINAL
-├── GET  /api/scan-snapshot/last     → load last completed scan from Redis
-├── POST /api/visible-top8-quotes    → live prices for scanned TOP 8 tickers
-└── GET  /api/health                 → system health check
+VERCEL SERVERLESS FUNCTIONS  (api/) — ⚠️ LÍMITE DURO: 12 funciones (plan Hobby) y ESTAMOS EN EL LÍMITE.
+NUNCA crear archivos nuevos en api/ raíz: toda API nueva se añade como action= dentro de un handler
+existente + rewrite en vercel.json (patrón: /api/rally-scan/last → /api/rally-scan?action=last).
+
+├── scan-snapshot.js   → start/continue/last del SCAN FULL (action=)
+├── rally-scan.js      → start/continue/last del Rally + ibk-portfolio GET/POST (snapshot cartera IBK)
+├── market-data.js     → fear-greed / market-regime / monetary-cycle / master-indicators / optimal2026 / sp500 (source=)
+├── market-breadth.js  → amplitud de mercado
+├── universe.js · visible-top8-quotes.js · sector-leaders-data.js · eps-batch.js
+├── claude01-scan.js · fable01.js · fable5.js   → motores auxiliares
+└── cron/market-pulse.js → cron Vercel (14:00 y 16:00 UTC L-V)
 
 EXTERNAL SERVICES
-├── EODHD    → exchange lists + real-time quotes (primary)
-├── Finnhub  → real-time quotes (secondary / fallback)
-└── Upstash Redis → scan persistence (7-day TTL)
+├── Yahoo Finance → histórico diario ajustado (primario)
+├── Finnhub / Stooq → quotes en cascada (providerCascade.js)
+└── Upstash Redis → persistencia scans + cartera IBK (kvStorage.js; TTL 7d scans, 180d cartera)
 ```
 
 ---
@@ -343,40 +344,62 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 
 ## 10. DASHBOARD SECTION ORDER
 
-Order is intentional. Most valuable real data first, technical debug last.
+Orden DICTADO por Sergi (16-ago-2026) — no reordenar sin su OK. Separación uniforme 14px entre módulos.
 
-| # | Component | Data source | Always visible |
-|---|---|---|---|
-| 1 | `StickyMiniHeader` | systemStatus | ✅ sticky — SCAN FULL + SCAN RALLY |
-| 2 | `TechnicalHeader` | systemStatus | ✅ |
-| 3 | `MasterIndicatorsGrid` | real-time quotes | ✅ loads on mount |
-| 4 | `Top8Grid` | SCAN FULL results | when scan complete |
-| 5 | `RallyLeadersPanel` | SCAN RALLY results | ✅ shows idle/results |
-| 6 | `SectorLeaders` | scan derived | when scan complete |
-| 7 | `FearGreedPanel` | Finnhub (pending) | ✅ shows unavailable |
-| 8 | `ScanStatusPanel` | scanState | ✅ |
-| 9 | `ActionButtons` | — | ✅ |
-| 10 | `SystemStatusCards` | systemStatus | ✅ bottom |
+| # | Component | Módulo |
+|---|---|---|
+| 1 | `StickyMiniHeader` | SCAN EMRR (barra superior, intocable) |
+| 2 | `FearGreedPanel` | Fear & Greed |
+| 3 | (riesgo) | Riesgo de mercado |
+| 4 | `MarketBreadthPanel` | Amplitud de mercado |
+| 5 | `SP500Panel` | SP500 |
+| 6 | `PortfolioCard` | Carga de cartera IBK (fotos → OCR → % invertido/efectivo, SIN listado por ticker) |
+| 7 | `RallyPanel` | Rally Leaders |
+| 8 | `Optimal2026Panel` | Optimal Supreme |
+| 9 | `IntraDayFlowsPanel` | Flujos de capital |
+| 10 | `TechnicalHeader` | Cabecera EMRR/INSTITUTIONAL (penúltimo por mandato) |
+| 11 | `SystemStatusCards` | System Status (último) |
 
-## 10b. RALLY LEADERS ENGINE
+## 10b. RALLY LEADERS ENGINE — v4.0 CERTIFICADA (auditoría conjunta 17-ago-2026)
 
-Independent engine. Never modify TOP 8 results. Never share rankings.
+Motor independiente del TOP 8 (Redis key propia `last_rally_snapshot`, sin compartir rankings).
+Config C0 EN PRODUCCIÓN, certificada con triple verificación adversarial — ⚠️ los PARÁMETROS DE
+ESTRATEGIA (score, stops, pesos, top-N, cadencia, selección, rotación) están BLOQUEADOS: solo se
+cambian si un estudio walk-forward supera los gates pre-registrados (ver §10d). Nunca "a ojo".
 
 | Item | Value |
 |---|---|
-| Endpoint start | `POST /api/rally-scan/start` |
-| Endpoint continue | `POST /api/rally-scan/continue` |
-| Endpoint last | `GET /api/rally-scan/last` |
-| Redis key | `last_rally_snapshot` |
-| Score engine | `api/_lib/rallyScoreEngine.js` |
-| Frontend service | `src/services/rallyRefresh.ts` |
-| Panel component | `src/components/RallyLeadersPanel.tsx` |
-| Target | Top 10 (not 8) |
-| Activation | Manual — SCAN RALLY button in sticky header |
-| Score formula | RS 35% · Momentum 25% · Trend 20% · RVOL 10% · ATR 5% · Liq/Spread 5% |
-| Ranges | ELITE(90+) · STRONG(80+) · ACTIVE(70+) · WATCH(60+) · DISCARD(<60) |
-| Shared with TOP 8 | Universe engine, historical data, KV storage (separate key), market hours |
-| NOT shared | Rankings, scores, scan state, Redis key |
+| Endpoints | POST /api/rally-scan/{start,continue} · GET /api/rally-scan/last (action= vía rewrites) |
+| Score v4 | `clamp(50 + 50·tanh(mom9m/75), 0, 100)` — momentum 9 meses puro (189 sesiones, cierre ajustado); desempate por mom9m crudo |
+| Selección | Top-10 · revisión ~84 sesiones · SIN filtros por estado (estudio 18-ago: excluir runway BAJO / EN_MAXIMOS / bajo-EMA50 destruye rentabilidad — bajo-EMA50 rinde MÁS, 20,9% vs 11,4% fwd) |
+| Trailing stop | por ticker `clamp(12 + 0,35·runwayScore, 15, 45)` %, fijado a la entrada y RE-FIJADO en cada revisión; sobre cierres diarios, no intradía (`suggestedStopPct`) |
+| Pesos | M9_RAW: `w_i = clamp(max(1,mom9m_i)·t, 4, 20)` con Σ=100, reparto proporcional exacto (`capNormalizeWeights`); techo 20% INTOCABLE |
+| Rotación | al saltar stop → mejor por `0,7·score + 0,3·runwayScore` (`rotationRank`), sin exigir IDEAL; el sustituto hereda el peso |
+| Extras emitidos | `dayChangePct` (rentabilidad de la sesión, solo display), `runway`, `entryTiming`, `warningFlags`, `pullbackRisk` NO se emite (estudio 17-ago: sin señal OOS — badge PB dormido en RallyPanel) |
+| Backtest canon | full 47,7%/MaxDD 37,7%/MAR 1,27/aciertos 65% · confirmación 2022-26: 44,9%/36,1%/1,24 — universo superviviente: solo comparaciones relativas |
+| Frontend | `src/services/rallyRefresh.ts` (RALLY_BACKTEST = cifras canon) · `src/components/RallyPanel.tsx` (layout 2 líneas <680px — no romper) |
+| Venta honesta | stops = ROBUSTEZ (no CAGR extra); pesos = concentración en mega-tendencias (en lateral ≈ esquema anterior); nunca prometer rentabilidad futura |
+
+---
+
+## 10c. ESTUDIOS Y BACKTESTS — PROTOCOLO OBLIGATORIO
+
+- **Infraestructura**: `scripts/rally-study-lib.mjs` (réplica de producción + simulador; ruta por defecto = canon C0 bit a bit, opciones `weightsOf`/`jumpWeightOf`) · `data/universe-10y.json` (603 tickers, 10 años, cierres ajustados) · resultados canon en `backtests/*.json`.
+- **Disciplina**: walk-forward SIEMPRE (elegir en train 2016/17-2021, confirmar en 2022-26), malla 9 celdas (3 fases × 3 cadencias), sin lookahead, determinista. Gate estándar para cambiar producción: batir a C0 en confirmación en CAGR Y peor-celda + mejora material (≥2 pp CAGR o ≥0,08 MAR) + MaxDD ≤ +5 pp + elección por TRAIN entre passers. Sin dominancia → no cambiar (parsimonia).
+- **Tras re-ejecutar cualquier estudio rally-***: correr sus `verify-*` ANTES de leer conclusiones (`verify-joint-recompute.mjs`, `verify-joint-cadence.mjs` a 20 y 50 pb, `verify-coherence-scan-recompute.mjs`, `verify-coherence-data-sanity.mjs`).
+- **Estudios CERRADOS — no repetir** (detalles y cifras en la memoria de sesión, archivo `project_emrr_rally_leaders_estrategia_15ago.md`): pullback score (sin señal OOS), ponderar por riesgo (resta), filtros de selección por estado (0/10 pasa), ceñir stops en máximos (resta), cadencia 63 (trampa test-brillante/train-flojo). **Candidato futuro nº1**: top-8 con topes [5,25] — exige estudio propio pre-registrado.
+- **Re-auditoría conjunta**: ~feb-2027, o antes si drawdown >25% o cambio de régimen (SPY<EMA200) — en ese caso REPORTAR, no cambiar.
+- **Supreme**: `scripts/recalibrate-supreme.mjs` con regla de PERSISTENCIA (un retador solo se recomienda tras ganar 2 recalibraciones consecutivas — nunca churning semanal). Módulo independiente: NUNCA cruzar con Rally ni SP500.
+- **Auditoría semanal automática**: tarea programada viernes 6:00 Canarias (`auditoria-semanal-emrr-supreme` en ~/.claude/scheduled-tasks/) — salud + coherencia + refutación + email de veredicto.
+
+---
+
+## 10d. SISTEMA CARTERA IBK (fotos + export automático)
+
+- **Carga por fotos** (`PortfolioCard` + `src/services/optimal2026Refresh.ts`): OCR client-side (tesseract.js), EXIF + downscale 2200px + PNG antes de OCR (verificado: MÁS preciso que full-res), etiqueta y valor en LÍNEAS DISTINTAS en la UI de IBK, identidad `NAV = VAL.MDO. + EXCESO LIQ. (±3%)` autocorrige, posiciones con separador decimal perdido se reconstruyen por valor÷precio. Foto de cabecera sola (0 posiciones) = carga VÁLIDA. UI: solo % invertido/efectivo + barra — SIN listado por ticker (mandato 16-ago). El input file va SIN atributo accept (compatibilidad iPhone).
+- **Semántica IBK**: invertido = Σ(Posición × Último) = VAL.MDO. · efectivo = EXCESO LIQ. · total = NAV. Posiciones US cotizan en USD, totales de cuenta en EUR → FX implícito = VAL.MDO. / Σ(valores USD).
+- **Espejo servidor**: al cargar fotos con éxito, POST fire-and-forget a `/api/rally-scan/ibk-portfolio` (Redis 180d). Endpoint sin auth (riesgo aceptado, sin datos identificativos).
+- **Export automático**: launchd `com.emrr.cartera-ibk` (cada 5 min) ejecuta `scripts/cartera_ibk_export.py`: con scan nuevo o cartera nueva genera `~/Desktop/CarteraIBK/Cartera_RallyLeaders_<fecha>_<hora>.{xlsx,pdf}` (hora Canarias del scan) con ± posiciones a operar y trailing stop por ticker, y lo ENVÍA POR EMAIL vía Mail.app a sergimaymo@gmail.com (el iCloud del usuario está lleno — el Escritorio NO sincroniza al iPhone). Estado/logs en `~/Library/Application Support/CarteraIBK/`. FORMATO PERMANENTE: columnas de importes € SIN decimales (round() real en la celda, no solo number_format).
 
 ---
 
@@ -546,6 +569,9 @@ Radius pill:   999px  (market pills)
 ❌ Change shared/types/domain.ts without updating all consumers
 ❌ Partial file updates — always update all affected files together
 ❌ Break the { ok, app, endpoint, timestampUtc } API response envelope
+❌ Crear archivos nuevos en api/ raíz (límite 12 funciones Vercel — usar action= en handlers existentes)
+❌ Cambiar parámetros de estrategia (score, stops, pesos, top-N, cadencia, selección) sin estudio walk-forward que supere los gates de §10c
+❌ Confiar en `npx tsc --noEmit` a secas — el typecheck real es `npx tsc -p tsconfig.app.json --noEmit` (ver nota final)
 ```
 
 ---
