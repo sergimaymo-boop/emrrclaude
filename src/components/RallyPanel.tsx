@@ -148,7 +148,7 @@ export function RallyPanel() {
               <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
             )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
-            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2016-2026.</span>
+            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2017-2026.</span>
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>

@@ -6,8 +6,8 @@
  *   · score      = clamp(50 + 50·tanh(mom9m/75))              — el ranking
  *   · runway     = computeRunway (edad EMA50, ext50, prox52w) — ALTO/MEDIO/BAJO
  *   · entryZone  = computeEntryTiming (prox52w)               — IDEAL/LEJOS/EN_MAXIMOS
- *   · trailing   = catástrofe clamp(25+2·ATR, 25, 35)         — lo que sugiere el panel
- *   · convicción = assignSuggestedWeights (score−50, [4,18]%) — pesos del top-10
+ *   · trailing   = catástrofe clamp(25+2·ATR, 25, 35)         — legacy; producción usa clamp(12+0,35·runway, 15, 45)
+ *   · convicción = convictionWeights (score−50) — LEGACY, solo para comparar; producción usa pesos M9_RAW [4,20] (ver weightsOf)
  *
  * Todo sin lookahead: los rasgos del día k usan solo barras ≤ k. Señales sobre el
  * precio SIN ajustar (convención de los estudios rally previos); rentabilidad
@@ -287,6 +287,11 @@ export function convictionWeights(scores) {
  *   dailyWidth     — true: recalcular anchura cada día con el rasgo del día
  *   ratchet        — true: la anchura solo puede CEÑIRSE, nunca ensancharse
  *   pickJump(i, heldSet) — sustituto al saltar el stop (null = sin reinversión)
+ *   jumpWeightOf(rep, i, h) — peso del sustituto al reinvertir (h = posición recién
+ *     vendida). null (por defecto) = hereda h.w, la convención de producción.
+ *     Añadido 17-ago-2026 para rally-joint-study.mjs; cambio aditivo, ruta por
+ *     defecto bit a bit idéntica (el coste del salto se carga sobre h.w en AMBAS
+ *     rutas — con pesos recalculados la diferencia de coste es de 2º orden a 20 pb).
  *   scoreFn(f)     — ranking en revisión (por defecto scoreV4)
  *   eligible(f, i) — filtro de candidatos en revisión (por defecto todos)
  *   weightsOf(top, i) — pesos INICIALES de la revisión (array % alineado con `top`,
@@ -302,7 +307,7 @@ export function simulate(T, D, opts) {
     FROM, TO = D - 1, review = 84, topN = 10, conviction = true,
     widthOf = null, dailyWidth = false, ratchet = false,
     pickJump = null, scoreFn = scoreV4, eligible = null,
-    weightsOf = null,
+    weightsOf = null, jumpWeightOf = null,
   } = opts;
   let eq = 1, closed = 0, wins = 0, trades = 0, jumpCount = 0;
   const curve = new Array(D).fill(null); curve[FROM] = 1;
@@ -356,7 +361,7 @@ export function simulate(T, D, opts) {
                 eq *= 1 - COST_BPS * (h.w / wsum);      // compra del sustituto
                 trades++; jumpCount++;
                 const epx = T[rep].adj[i];
-                next.push({ ti: rep, w: h.w, peak: epx, trailPct: isNum(w0) ? w0 : 0.30, entryPx: epx });
+                next.push({ ti: rep, w: jumpWeightOf ? jumpWeightOf(rep, i, h) : h.w, peak: epx, trailPct: isNum(w0) ? w0 : 0.30, entryPx: epx });
                 heldSet.add(rep);
               }
             }
