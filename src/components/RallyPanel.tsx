@@ -301,7 +301,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   const dchg = asset.metrics?.dayChangePct;
   const dchgColor = dchg == null ? "transparent" : dchg > 0 ? "#22c55e" : dchg < 0 ? "#ef4444" : "#94a3b8";
   const dchgText = dchg == null ? "" : `${dchg > 0 ? "+" : ""}${dchg.toFixed(2)}%`;
-  const dchgTitle = "Rentabilidad de la sesión en el momento del scan (último cierre vs cierre anterior). Con mercado cerrado, la de la última sesión. No es el peso de inversión.";
+  const dchgTitle = "Rentabilidad de la sesión en el momento del scan (último precio vs cierre anterior). Con el mercado ABIERTO es el dato en curso a esa hora — puede diferir del tiempo real actual; con mercado cerrado, la de la última sesión. No es el peso de inversión.";
   const dayChangeEl = (width: number) => (
     <span title={dchg != null ? dchgTitle : undefined}
       style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
