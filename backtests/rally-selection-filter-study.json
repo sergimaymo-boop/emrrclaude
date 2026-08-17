@@ -1,0 +1,3887 @@
+{
+ "ranAt": "2026-08-17T22:35:34.975Z",
+ "objeto": "FILTROS DE EXCLUSIÓN POR ESTADO en la selección del top-10 (runway BAJO / EN_MAXIMOS / precio<EMA50): ¿expulsarlos y rellenar con los siguientes del ranking sube la rentabilidad? Variable nunca probada (los estudios previos probaron ponderar por estado y exigir IDEAL en rotación, no vetar en selección).",
+ "umbralesProduccion": {
+  "BAJO": "runwayScore < 55 (level: ≥75 ALTO, ≥55 MEDIO, resto BAJO — computeRunway)",
+  "EN_MAXIMOS": "prox52w > 0,997 (computeEntryTiming)",
+  "BELOW_EMA50": "precio < EMA50 estricto, es decir ext50 < 0 (computeWarningFlags)",
+  "F3B_margen": "ext50 < −0,02 (precio < 0,98·EMA50)"
+ },
+ "metodologia": {
+  "señales": "cierre ajustado (convención de producción), rasgos rich",
+  "split": {
+   "indice": 1361,
+   "fecha": "2022-01-03",
+   "train": "2017-08-18 → 2022-01-03",
+   "confirmacion": "2022-01-03 → 2026-08-07"
+  },
+  "malla": "3 fases (260/280/300) × 3 cadencias (63/84/105), canónica (260, 84) — idéntica a rally-joint-study",
+  "mecanicaFiltro": "scoreFn penalizado (score−1000 si excluido): el top-10 son los 10 primeros ELEGIBLES del ranking (orden y desempate por m9 intactos); si un día hay <10 elegibles en el universo se completa con los mejores no-elegibles (cartera siempre de 10 — aísla la sustitución del market-timing de la liquidez) y se cuenta (selFillFallback/eleg<10)",
+  "rotacion": "el filtro se aplica TAMBIÉN al candidato del salto (mejor por 0,7·score+0,3·recorrido entre elegibles; si ninguno, mejor global contado como jumpFallback); F3 se descompone además en solo-selección y solo-rotación",
+  "gate": "vs F0 en CONFIRMACIÓN: CAGR canónica > Y peor-celda > · material (ΔCAGR ≥ 2 pp O ΔMAR ≥ 0,08) · ΔMaxDD ≤ +5 pp · entre passers se elige POR TRAIN (peor-celda, desempate CAGR canónica train). Sin passers → MANTENER_ACTUAL (parsimonia)",
+  "casoUsuario": "calendario canónico (FROM 260, revisiones cada 84): estado de cada miembro del top-10 SIN filtro el día de revisión y retorno forward 84 sesiones (buy&hold ajustado, solo ventanas completas); exceso vs la media del top-10 del MISMO día = control de régimen; y excluidos vs los 11º-12º… que les habrían sustituido ese mismo día",
+  "costes": "20 pb por lado (COST_BPS)"
+ },
+ "controlRegresion": "F0 ≡ C0/M9_RAW guardado en backtests/rally-weighting-study.json (canónica + 9 celdas, tolerancia 1e-9) — OK",
+ "c0Referencia": {
+  "name": "F0",
+  "filtro": "sin filtro (control = C0)",
+  "worstTrain": 0.3700487031283042,
+  "worstConfirm": 0.42286085985647914,
+  "medianConfirm": 0.4917809433179592,
+  "sdCellsConfirm": 0.061464915497880905,
+  "sdCellsTrain": 0.043662279824977,
+  "canon": {
+   "train": {
+    "cagr": 0.5070485041983679,
+    "mdd": 0.3770905133653919,
+    "mar": 1.3446334135355182
+   },
+   "confirm": {
+    "cagr": 0.44908188128740023,
+    "mdd": 0.36080520832792473,
+    "mar": 1.2446657390800289
+   },
+   "full": {
+    "cagr": 0.47712510658530705,
+    "mdd": 0.3770905133653919,
+    "mar": 1.2652800579021302
+   },
+   "tradesYr": 45.18774966711052,
+   "jumps": 39,
+   "winrate": 0.6473429951690821,
+   "counters": {
+    "jumpFallback": 0,
+    "f6Infeasible": 0,
+    "selFillFallback": 0
+   }
+  },
+  "cells": [
+   {
+    "FROM": 260,
+    "review": 63,
+    "train": {
+     "cagr": 0.4148093356471898,
+     "mdd": 0.44159811814858896,
+     "mar": 0.9393367376344088
+    },
+    "confirm": {
+     "cagr": 0.5441209598358148,
+     "mdd": 0.34635410484299345,
+     "mar": 1.5709961343823873
+    },
+    "full": {
+     "cagr": 0.47951551177138607,
+     "mdd": 0.44159811814858896,
+     "mar": 1.0858640289994141
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 260,
+    "review": 84,
+    "train": {
+     "cagr": 0.5070485041983679,
+     "mdd": 0.3770905133653919,
+     "mar": 1.3446334135355182
+    },
+    "confirm": {
+     "cagr": 0.44908188128740023,
+     "mdd": 0.36080520832792473,
+     "mar": 1.2446657390800289
+    },
+    "full": {
+     "cagr": 0.47712510658530705,
+     "mdd": 0.3770905133653919,
+     "mar": 1.2652800579021302
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 260,
+    "review": 105,
+    "train": {
+     "cagr": 0.3721827817503589,
+     "mdd": 0.4296556813430682,
+     "mar": 0.8662349828284506
+    },
+    "confirm": {
+     "cagr": 0.61337776196456,
+     "mdd": 0.34635410484299334,
+     "mar": 1.7709556589277664
+    },
+    "full": {
+     "cagr": 0.4906303561013199,
+     "mdd": 0.4296556813430682,
+     "mar": 1.1419152065385239
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 280,
+    "review": 63,
+    "train": {
+     "cagr": 0.4026090220545888,
+     "mdd": 0.40362168326783054,
+     "mar": 0.997491063401146
+    },
+    "confirm": {
+     "cagr": 0.48751970398024547,
+     "mdd": 0.3563618159324421,
+     "mar": 1.368046974125499
+    },
+    "full": {
+     "cagr": 0.4457909065944168,
+     "mdd": 0.40362168326783054,
+     "mar": 1.1044771008959995
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 280,
+    "review": 84,
+    "train": {
+     "cagr": 0.393114311554712,
+     "mdd": 0.36285563800103215,
+     "mar": 1.0833903910667464
+    },
+    "confirm": {
+     "cagr": 0.5870653967654651,
+     "mdd": 0.35158593831956275,
+     "mar": 1.6697635848902206
+    },
+    "full": {
+     "cagr": 0.49001533248004225,
+     "mdd": 0.36285563800103215,
+     "mar": 1.3504415562605876
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 280,
+    "review": 105,
+    "train": {
+     "cagr": 0.3700487031283042,
+     "mdd": 0.4438674045774881,
+     "mar": 0.8336919974570987
+    },
+    "confirm": {
+     "cagr": 0.4537559718015183,
+     "mdd": 0.35666780123516173,
+     "mar": 1.2722089581120988
+    },
+    "full": {
+     "cagr": 0.4126130602249849,
+     "mdd": 0.4438674045774881,
+     "mar": 0.9295863043102842
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 300,
+    "review": 63,
+    "train": {
+     "cagr": 0.47662488518760315,
+     "mdd": 0.3601488759703505,
+     "mar": 1.3234107253658112
+    },
+    "confirm": {
+     "cagr": 0.5401035302133261,
+     "mdd": 0.3477699854167433,
+     "mar": 1.5530481434908872
+    },
+    "full": {
+     "cagr": 0.5093358480304078,
+     "mdd": 0.3601488759703505,
+     "mar": 1.4142369503669898
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 300,
+    "review": 84,
+    "train": {
+     "cagr": 0.4192122385604413,
+     "mdd": 0.43712442442467536,
+     "mar": 0.9590226835578696
+    },
+    "confirm": {
+     "cagr": 0.4917809433179592,
+     "mdd": 0.34824867462107545,
+     "mar": 1.4121545296706706
+    },
+    "full": {
+     "cagr": 0.45653689754944415,
+     "mdd": 0.43712442442467536,
+     "mar": 1.0444094908453552
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   {
+    "FROM": 300,
+    "review": 105,
+    "train": {
+     "cagr": 0.39477154492649147,
+     "mdd": 0.4256913187991953,
+     "mar": 0.9273657401331946
+    },
+    "confirm": {
+     "cagr": 0.42286085985647914,
+     "mdd": 0.35989929459977243,
+     "mar": 1.1749421746622855
+    },
+    "full": {
+     "cagr": 0.40932382849559334,
+     "mdd": 0.4256913187991953,
+     "mar": 0.9615508008249453
+    },
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   }
+  ]
+ },
+ "variantes": [
+  {
+   "name": "F1",
+   "filtro": "excluir runway BAJO (sel+rot)",
+   "worstTrain": 0.32118897029661886,
+   "worstConfirm": 0.3974784033138803,
+   "medianConfirm": 0.45272782627821084,
+   "sdCellsConfirm": 0.05368951516006734,
+   "sdCellsTrain": 0.04937461896333043,
+   "canon": {
+    "train": {
+     "cagr": 0.4144766275256504,
+     "mdd": 0.39400052640404337,
+     "mar": 1.0519697303668296
+    },
+    "confirm": {
+     "cagr": 0.41515347445960415,
+     "mdd": 0.3377181597963773,
+     "mar": 1.2292897566121865
+    },
+    "full": {
+     "cagr": 0.4148226712555101,
+     "mdd": 0.39400052640404337,
+     "mar": 1.0528480127717237
+    },
+    "tradesYr": 47.87217043941412,
+    "jumps": 29,
+    "winrate": 0.589041095890411,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.46918847767627647,
+      "mdd": 0.40600737424107436,
+      "mar": 1.1556156548961773
+     },
+     "confirm": {
+      "cagr": 0.5312926645341232,
+      "mdd": 0.3108969508864238,
+      "mar": 1.7089027828008962
+     },
+     "full": {
+      "cagr": 0.5006222021257298,
+      "mdd": 0.40600737424107436,
+      "mar": 1.233037215300617
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.4144766275256504,
+      "mdd": 0.39400052640404337,
+      "mar": 1.0519697303668296
+     },
+     "confirm": {
+      "cagr": 0.41515347445960415,
+      "mdd": 0.3377181597963773,
+      "mar": 1.2292897566121865
+     },
+     "full": {
+      "cagr": 0.4148226712555101,
+      "mdd": 0.39400052640404337,
+      "mar": 1.0528480127717237
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.32118897029661886,
+      "mdd": 0.40361345125576975,
+      "mar": 0.7957836125067137
+     },
+     "confirm": {
+      "cagr": 0.567631366848504,
+      "mdd": 0.3108969508864242,
+      "mar": 1.8257862138244936
+     },
+     "full": {
+      "cagr": 0.4419332279775834,
+      "mdd": 0.40361345125576975,
+      "mar": 1.0949417731311695
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.3921264474330246,
+      "mdd": 0.400386476611837,
+      "mar": 0.9793698597197621
+     },
+     "confirm": {
+      "cagr": 0.45272782627821084,
+      "mdd": 0.31017561570770846,
+      "mar": 1.4595854843239364
+     },
+     "full": {
+      "cagr": 0.4230680538921707,
+      "mdd": 0.400386476611837,
+      "mar": 1.0566492092147328
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.37547487847242356,
+      "mdd": 0.36992131924614624,
+      "mar": 1.0150128120152544
+     },
+     "confirm": {
+      "cagr": 0.4503452749845689,
+      "mdd": 0.3440845723427912,
+      "mar": 1.3088214676940424
+     },
+     "full": {
+      "cagr": 0.413604708913061,
+      "mdd": 0.36992131924614624,
+      "mar": 1.1180883268797162
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.3590351686242923,
+      "mdd": 0.4496776576354281,
+      "mar": 0.7984278572171728
+     },
+     "confirm": {
+      "cagr": 0.40941505913275433,
+      "mdd": 0.31485147867385743,
+      "mar": 1.3003434535457643
+     },
+     "full": {
+      "cagr": 0.38479701503553754,
+      "mdd": 0.4496776576354281,
+      "mar": 0.8557174422650726
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.47831238509987295,
+      "mdd": 0.38584928783640793,
+      "mar": 1.239635267391416
+     },
+     "confirm": {
+      "cagr": 0.48730488623228196,
+      "mdd": 0.3520017339277105,
+      "mar": 1.384382061971201
+     },
+     "full": {
+      "cagr": 0.48298671875921584,
+      "mdd": 0.38584928783640793,
+      "mar": 1.251749670104334
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.449278668142004,
+      "mdd": 0.36931773552101754,
+      "mar": 1.2165098638119316
+     },
+     "confirm": {
+      "cagr": 0.4582947555920056,
+      "mdd": 0.3099745714395553,
+      "mar": 1.478491456456042
+     },
+     "full": {
+      "cagr": 0.45396510757260455,
+      "mdd": 0.36931773552101754,
+      "mar": 1.2291993151430167
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3900733070228628,
+      "mdd": 0.4085674064966216,
+      "mar": 0.9547342759611156
+     },
+     "confirm": {
+      "cagr": 0.3974784033138803,
+      "mdd": 0.40493270627737266,
+      "mar": 0.9815912549222777
+     },
+     "full": {
+      "cagr": 0.3939231965991776,
+      "mdd": 0.4608461148428964,
+      "mar": 0.8547825052913097
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F2",
+   "filtro": "excluir EN_MAXIMOS (sel+rot)",
+   "worstTrain": 0.3652724145711701,
+   "worstConfirm": 0.40067949507770306,
+   "medianConfirm": 0.4901862153679746,
+   "sdCellsConfirm": 0.051892418029655905,
+   "sdCellsTrain": 0.034284659296939655,
+   "canon": {
+    "train": {
+     "cagr": 0.4310208286759263,
+     "mdd": 0.4150210897013945,
+     "mar": 1.0385516287522725
+    },
+    "confirm": {
+     "cagr": 0.4156468481796671,
+     "mdd": 0.3063538198318,
+     "mar": 1.3567542536530903
+    },
+    "full": {
+     "cagr": 0.42313908578097426,
+     "mdd": 0.4150210897013945,
+     "mar": 1.0195604423028732
+    },
+    "tradesYr": 47.20106524633822,
+    "jumps": 30,
+    "winrate": 0.6203703703703703,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.4152578420458459,
+      "mdd": 0.4291109320211295,
+      "mar": 0.9677167628658749
+     },
+     "confirm": {
+      "cagr": 0.535375071770428,
+      "mdd": 0.34746961452428426,
+      "mar": 1.5407824148980693
+     },
+     "full": {
+      "cagr": 0.4754532546485566,
+      "mdd": 0.4291109320211295,
+      "mar": 1.1079961361253439
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.4310208286759263,
+      "mdd": 0.4150210897013945,
+      "mar": 1.0385516287522725
+     },
+     "confirm": {
+      "cagr": 0.4156468481796671,
+      "mdd": 0.3063538198318,
+      "mar": 1.3567542536530903
+     },
+     "full": {
+      "cagr": 0.42313908578097426,
+      "mdd": 0.4150210897013945,
+      "mar": 1.0195604423028732
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.37371662932190186,
+      "mdd": 0.42644340897918376,
+      "mar": 0.8763569126710182
+     },
+     "confirm": {
+      "cagr": 0.5483037895715475,
+      "mdd": 0.34746961452428404,
+      "mar": 1.5779906117034803
+     },
+     "full": {
+      "cagr": 0.46037621476146096,
+      "mdd": 0.42644340897918376,
+      "mar": 1.0795716502302268
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.4653570801521554,
+      "mdd": 0.4248301740129792,
+      "mar": 1.095395545369002
+     },
+     "confirm": {
+      "cagr": 0.4410433344210989,
+      "mdd": 0.33717858748767593,
+      "mar": 1.3080407558122868
+     },
+     "full": {
+      "cagr": 0.45276287523830905,
+      "mdd": 0.4248301740129792,
+      "mar": 1.0657502760726136
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.4002133873984042,
+      "mdd": 0.3817368736887732,
+      "mar": 1.0484011762633514
+     },
+     "confirm": {
+      "cagr": 0.4349554745363915,
+      "mdd": 0.3415529760873871,
+      "mar": 1.2734641621893148
+     },
+     "full": {
+      "cagr": 0.4180304146618168,
+      "mdd": 0.3817368736887732,
+      "mar": 1.0950747582289717
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.3652724145711701,
+      "mdd": 0.43221947879366585,
+      "mar": 0.8451086369144063
+     },
+     "confirm": {
+      "cagr": 0.40067949507770306,
+      "mdd": 0.3570303329789323,
+      "mar": 1.1222561728427327
+     },
+     "full": {
+      "cagr": 0.3834256355109027,
+      "mdd": 0.43221947879366585,
+      "mar": 0.8871086434629281
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.46900588903194573,
+      "mdd": 0.40122025709428655,
+      "mar": 1.1689486777875464
+     },
+     "confirm": {
+      "cagr": 0.5150778690610547,
+      "mdd": 0.3404211518463097,
+      "mar": 1.5130607080890126
+     },
+     "full": {
+      "cagr": 0.49281155740844507,
+      "mdd": 0.40122025709428655,
+      "mar": 1.2282818444349748
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.44040157097627897,
+      "mdd": 0.3700604420418786,
+      "mar": 1.1900801083906183
+     },
+     "confirm": {
+      "cagr": 0.4901862153679746,
+      "mdd": 0.3379548205308187,
+      "mar": 1.450448952312765
+     },
+     "full": {
+      "cagr": 0.46610634016144004,
+      "mdd": 0.3700604420418786,
+      "mar": 1.259541110607797
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.4141093558368658,
+      "mdd": 0.40015262723254563,
+      "mar": 1.0348785129835205
+     },
+     "confirm": {
+      "cagr": 0.5153606319818091,
+      "mdd": 0.3650343510049905,
+      "mar": 1.4118140678074527
+     },
+     "full": {
+      "cagr": 0.4659426702387599,
+      "mdd": 0.40015262723254563,
+      "mar": 1.1644123730018168
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F3",
+   "filtro": "excluir precio<EMA50 (sel+rot)",
+   "worstTrain": 0.16702398736128687,
+   "worstConfirm": 0.24943026048450334,
+   "medianConfirm": 0.40198459392528796,
+   "sdCellsConfirm": 0.09961380658661803,
+   "sdCellsTrain": 0.0727936762100184,
+   "canon": {
+    "train": {
+     "cagr": 0.3536555275489557,
+     "mdd": 0.3066455129848641,
+     "mar": 1.153304100576916
+    },
+    "confirm": {
+     "cagr": 0.42158737839326044,
+     "mdd": 0.37540049148419485,
+     "mar": 1.1230336346296717
+    },
+    "full": {
+     "cagr": 0.38797469047579214,
+     "mdd": 0.37540049148419485,
+     "mar": 1.0334954249577126
+    },
+    "tradesYr": 49.43808255659122,
+    "jumps": 38,
+    "winrate": 0.6106194690265486,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.2982966282909896,
+      "mdd": 0.3830134726053017,
+      "mar": 0.7788149755201601
+     },
+     "confirm": {
+      "cagr": 0.5119009997778023,
+      "mdd": 0.3589739151680933,
+      "mar": 1.426011690955593
+     },
+     "full": {
+      "cagr": 0.40345126705832834,
+      "mdd": 0.3830134726053017,
+      "mar": 1.0533605105690054
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.3536555275489557,
+      "mdd": 0.3066455129848641,
+      "mar": 1.153304100576916
+     },
+     "confirm": {
+      "cagr": 0.42158737839326044,
+      "mdd": 0.37540049148419485,
+      "mar": 1.1230336346296717
+     },
+     "full": {
+      "cagr": 0.38797469047579214,
+      "mdd": 0.37540049148419485,
+      "mar": 1.0334954249577126
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.21357602548569998,
+      "mdd": 0.37702249642256647,
+      "mar": 0.5664808532972107
+     },
+     "confirm": {
+      "cagr": 0.5581073805405183,
+      "mdd": 0.3589739151680936,
+      "mar": 1.554729625073672
+     },
+     "full": {
+      "cagr": 0.3789882314640258,
+      "mdd": 0.37702249642256647,
+      "mar": 1.005213840182248
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.2686539385736313,
+      "mdd": 0.3564947713034091,
+      "mar": 0.75359853832185
+     },
+     "confirm": {
+      "cagr": 0.30702426270369365,
+      "mdd": 0.3507856078399141,
+      "mar": 0.8752476037837005
+     },
+     "full": {
+      "cagr": 0.2883063196939173,
+      "mdd": 0.3564947713034091,
+      "mar": 0.8087252405969867
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.33308396340981883,
+      "mdd": 0.35392228114993496,
+      "mar": 0.9411217692415126
+     },
+     "confirm": {
+      "cagr": 0.3748428525063279,
+      "mdd": 0.36284998506491295,
+      "mar": 1.033051861471813
+     },
+     "full": {
+      "cagr": 0.35446642253985017,
+      "mdd": 0.36284998506491295,
+      "mar": 0.9768952380594339
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.16702398736128687,
+      "mdd": 0.38511922421736944,
+      "mar": 0.43369423507930366
+     },
+     "confirm": {
+      "cagr": 0.24943026048450334,
+      "mdd": 0.3387278894913729,
+      "mar": 0.7363735559508929
+     },
+     "full": {
+      "cagr": 0.20883490473872923,
+      "mdd": 0.38511922421736944,
+      "mar": 0.542260400433447
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.400486158096629,
+      "mdd": 0.3474495967954454,
+      "mar": 1.1526453384615896
+     },
+     "confirm": {
+      "cagr": 0.5327108609094853,
+      "mdd": 0.3289373823084488,
+      "mar": 1.6194901812952212
+     },
+     "full": {
+      "cagr": 0.46782780557960546,
+      "mdd": 0.3474495967954454,
+      "mar": 1.3464623643095794
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.29781127033299515,
+      "mdd": 0.3845644037659196,
+      "mar": 0.7744119513314857
+     },
+     "confirm": {
+      "cagr": 0.40198459392528796,
+      "mdd": 0.3571130140466181,
+      "mar": 1.1256509231355323
+     },
+     "full": {
+      "cagr": 0.3510356655141811,
+      "mdd": 0.3845644037659196,
+      "mar": 0.9128137239864064
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.38671061188588385,
+      "mdd": 0.3694269277838115,
+      "mar": 1.046785122583665
+     },
+     "confirm": {
+      "cagr": 0.3457564491661904,
+      "mdd": 0.32430453949492566,
+      "mar": 1.0661474233591492
+     },
+     "full": {
+      "cagr": 0.36523832691441904,
+      "mdd": 0.3694269277838115,
+      "mar": 0.9886618961575979
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F3_SOLO_SEL",
+   "filtro": "excluir precio<EMA50 SOLO selección",
+   "worstTrain": 0.1774151841043634,
+   "worstConfirm": 0.3398494518364543,
+   "medianConfirm": 0.4375091026033111,
+   "sdCellsConfirm": 0.08557269490183876,
+   "sdCellsTrain": 0.0797818985803043,
+   "canon": {
+    "train": {
+     "cagr": 0.38578228485088695,
+     "mdd": 0.3770905133653918,
+     "mar": 1.0230495628434786
+    },
+    "confirm": {
+     "cagr": 0.4375091026033111,
+     "mdd": 0.36422425134419,
+     "mar": 1.201208049679996
+    },
+    "full": {
+     "cagr": 0.4119942914735517,
+     "mdd": 0.3770905133653918,
+     "mar": 1.0925607430339648
+    },
+    "tradesYr": 48.766977363515316,
+    "jumps": 38,
+    "winrate": 0.6233183856502242,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.3856455637464966,
+      "mdd": 0.44159811814858874,
+      "mar": 0.8732953060654456
+     },
+     "confirm": {
+      "cagr": 0.5649377270966611,
+      "mdd": 0.34635410484299356,
+      "mar": 1.631098691187027
+     },
+     "full": {
+      "cagr": 0.4745948728858489,
+      "mdd": 0.44159811814858874,
+      "mar": 1.074721230415564
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.38578228485088695,
+      "mdd": 0.3770905133653918,
+      "mar": 1.0230495628434786
+     },
+     "confirm": {
+      "cagr": 0.4375091026033111,
+      "mdd": 0.36422425134419,
+      "mar": 1.201208049679996
+     },
+     "full": {
+      "cagr": 0.4119942914735517,
+      "mdd": 0.3770905133653918,
+      "mar": 1.0925607430339648
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.36269849474269056,
+      "mdd": 0.4296556813430684,
+      "mar": 0.8441608257312572
+     },
+     "confirm": {
+      "cagr": 0.5762893879299893,
+      "mdd": 0.346354104842994,
+      "mar": 1.663873417037247
+     },
+     "full": {
+      "cagr": 0.468025455641899,
+      "mdd": 0.4296556813430684,
+      "mar": 1.0893035422664257
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.2767687422486975,
+      "mdd": 0.407568547352965,
+      "mar": 0.6790728677328689
+     },
+     "confirm": {
+      "cagr": 0.3398494518364543,
+      "mdd": 0.3487280204639627,
+      "mar": 0.9745401341260277
+     },
+     "full": {
+      "cagr": 0.30893199653119896,
+      "mdd": 0.407568547352965,
+      "mar": 0.7579878244717834
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.40635358485842366,
+      "mdd": 0.3628556380010328,
+      "mar": 1.1198767286544602
+     },
+     "confirm": {
+      "cagr": 0.5802012857679504,
+      "mdd": 0.35158593831956264,
+      "mar": 1.6502403040948561
+     },
+     "full": {
+      "cagr": 0.4935101744231871,
+      "mdd": 0.3628556380010328,
+      "mar": 1.360073050378736
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.1774151841043634,
+      "mdd": 0.4438674045774881,
+      "mar": 0.3997031146570511
+     },
+     "confirm": {
+      "cagr": 0.4243023401202908,
+      "mdd": 0.3566678012351616,
+      "mar": 1.1896289450601
+     },
+     "full": {
+      "cagr": 0.29891349724880567,
+      "mdd": 0.4438674045774881,
+      "mar": 0.6734297093370435
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.45988290374544105,
+      "mdd": 0.36014887597035083,
+      "mar": 1.2769244454987576
+     },
+     "confirm": {
+      "cagr": 0.5319038703665331,
+      "mdd": 0.3414912049986917,
+      "mar": 1.5575917112376902
+     },
+     "full": {
+      "cagr": 0.4969412506226645,
+      "mdd": 0.36014887597035083,
+      "mar": 1.3798217453372672
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.4106935064620254,
+      "mdd": 0.4371244244246755,
+      "mar": 0.9395345661651432
+     },
+     "confirm": {
+      "cagr": 0.4220341206836833,
+      "mdd": 0.34824867462107556,
+      "mar": 1.2118757412153618
+     },
+     "full": {
+      "cagr": 0.4165856484898105,
+      "mdd": 0.4371244244246755,
+      "mar": 0.9530138908117586
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3920986795067092,
+      "mdd": 0.4256913187991954,
+      "mar": 0.92108685846062
+     },
+     "confirm": {
+      "cagr": 0.3843118559860046,
+      "mdd": 0.3401342464928311,
+      "mar": 1.1298828622777466
+     },
+     "full": {
+      "cagr": 0.3880397177489592,
+      "mdd": 0.4256913187991954,
+      "mar": 0.9115518701287
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F3_SOLO_ROT",
+   "filtro": "excluir precio<EMA50 SOLO rotación",
+   "worstTrain": 0.22179833264992443,
+   "worstConfirm": 0.27490772493868976,
+   "medianConfirm": 0.45103109949468356,
+   "sdCellsConfirm": 0.08909373470391208,
+   "sdCellsTrain": 0.06548631281827616,
+   "canon": {
+    "train": {
+     "cagr": 0.4534356685602168,
+     "mdd": 0.306645512984864,
+     "mar": 1.4786965709900943
+    },
+    "confirm": {
+     "cagr": 0.41112880016254305,
+     "mdd": 0.37224245365606534,
+     "mar": 1.1044651036563575
+    },
+    "full": {
+     "cagr": 0.43164727593711794,
+     "mdd": 0.37224245365606534,
+     "mar": 1.1595863709192609
+    },
+    "tradesYr": 47.64846870838882,
+    "jumps": 40,
+    "winrate": 0.6238532110091743,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.32414780973253854,
+      "mdd": 0.38301347260530216,
+      "mar": 0.8463091585986453
+     },
+     "confirm": {
+      "cagr": 0.4999832043384753,
+      "mdd": 0.3589739151680932,
+      "mar": 1.3928120769007772
+     },
+     "full": {
+      "cagr": 0.4113161567644368,
+      "mdd": 0.38301347260530216,
+      "mar": 1.0738947483142471
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.4534356685602168,
+      "mdd": 0.306645512984864,
+      "mar": 1.4786965709900943
+     },
+     "confirm": {
+      "cagr": 0.41112880016254305,
+      "mdd": 0.37224245365606534,
+      "mar": 1.1044651036563575
+     },
+     "full": {
+      "cagr": 0.43164727593711794,
+      "mdd": 0.37224245365606534,
+      "mar": 1.1595863709192609
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.22179833264992443,
+      "mdd": 0.37702249642256613,
+      "mar": 0.5882893852608022
+     },
+     "confirm": {
+      "cagr": 0.601360405152848,
+      "mdd": 0.3589739151680934,
+      "mar": 1.6752203426013685
+     },
+     "full": {
+      "cagr": 0.40305301830037976,
+      "mdd": 0.37702249642256613,
+      "mar": 1.0690423572195509
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.39035930499848903,
+      "mdd": 0.3380945338396645,
+      "mar": 1.1545862648687784
+     },
+     "confirm": {
+      "cagr": 0.45103109949468356,
+      "mdd": 0.36115078949880397,
+      "mar": 1.2488719742814718
+     },
+     "full": {
+      "cagr": 0.4213360943750104,
+      "mdd": 0.36115078949880397,
+      "mar": 1.1666486869922952
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.3315309275332543,
+      "mdd": 0.35392228114993507,
+      "mar": 0.9367336988676479
+     },
+     "confirm": {
+      "cagr": 0.3986759745530821,
+      "mdd": 0.3628499850649126,
+      "mar": 1.0987349895625884
+     },
+     "full": {
+      "cagr": 0.36575833228520027,
+      "mdd": 0.3628499850649126,
+      "mar": 1.0080152882458224
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.3574359719460056,
+      "mdd": 0.36753746764142325,
+      "mar": 0.9725157389796437
+     },
+     "confirm": {
+      "cagr": 0.27490772493868976,
+      "mdd": 0.33085639984401993,
+      "mar": 0.8308974076617324
+     },
+     "full": {
+      "cagr": 0.3142136842594785,
+      "mdd": 0.36753746764142325,
+      "mar": 0.8549160614178022
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.4062739691913606,
+      "mdd": 0.3683194619374529,
+      "mar": 1.1030477918659456
+     },
+     "confirm": {
+      "cagr": 0.5407148540731452,
+      "mdd": 0.3429767756522967,
+      "mar": 1.5765348923255131
+     },
+     "full": {
+      "cagr": 0.4747261068893063,
+      "mdd": 0.3683194619374529,
+      "mar": 1.2888976987317686
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.2790539905686089,
+      "mdd": 0.3845644037659196,
+      "mar": 0.7256365587556206
+     },
+     "confirm": {
+      "cagr": 0.46635202836977907,
+      "mdd": 0.32662059338982297,
+      "mar": 1.4278096293003366
+     },
+     "full": {
+      "cagr": 0.37335813047775224,
+      "mdd": 0.3845644037659196,
+      "mar": 0.9708598269147435
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3741517563444925,
+      "mdd": 0.3694269277838116,
+      "mar": 1.0127896160386172
+     },
+     "confirm": {
+      "cagr": 0.3976711650363207,
+      "mdd": 0.3538617247786049,
+      "mar": 1.1238038397205161
+     },
+     "full": {
+      "cagr": 0.38634521346943873,
+      "mdd": 0.4008841373868878,
+      "mar": 0.963732853057696
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F3B",
+   "filtro": "excluir precio<0,98·EMA50 (sel+rot)",
+   "worstTrain": 0.21776976294832084,
+   "worstConfirm": 0.29559640014600697,
+   "medianConfirm": 0.4090099579938704,
+   "sdCellsConfirm": 0.08806900506626401,
+   "sdCellsTrain": 0.061328698218467974,
+   "canon": {
+    "train": {
+     "cagr": 0.3962927972699626,
+     "mdd": 0.31734323388805896,
+     "mar": 1.248782879075823
+    },
+    "confirm": {
+     "cagr": 0.42968215545307675,
+     "mdd": 0.38595261141378623,
+     "mar": 1.113302884204111
+    },
+    "full": {
+     "cagr": 0.41326679832830426,
+     "mdd": 0.38595261141378623,
+     "mar": 1.070770830684273
+    },
+    "tradesYr": 49.21438082556592,
+    "jumps": 38,
+    "winrate": 0.6266666666666667,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.34932681795180853,
+      "mdd": 0.40673728068917725,
+      "mar": 0.8588512401909847
+     },
+     "confirm": {
+      "cagr": 0.5025474495796882,
+      "mdd": 0.35897391516809374,
+      "mar": 1.3999553403326381
+     },
+     "full": {
+      "cagr": 0.4256120604797171,
+      "mdd": 0.40673728068917725,
+      "mar": 1.0464053350569644
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.3962927972699626,
+      "mdd": 0.31734323388805896,
+      "mar": 1.248782879075823
+     },
+     "confirm": {
+      "cagr": 0.42968215545307675,
+      "mdd": 0.38595261141378623,
+      "mar": 1.113302884204111
+     },
+     "full": {
+      "cagr": 0.41326679832830426,
+      "mdd": 0.38595261141378623,
+      "mar": 1.070770830684273
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.2731940517401492,
+      "mdd": 0.39754469105514445,
+      "mar": 0.687203370808576
+     },
+     "confirm": {
+      "cagr": 0.557705892983257,
+      "mdd": 0.3589739151680933,
+      "mar": 1.5536111940671382
+     },
+     "full": {
+      "cagr": 0.41150170320934354,
+      "mdd": 0.39754469105514445,
+      "mar": 1.035108033054485
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.27842448785569895,
+      "mdd": 0.3708921121065789,
+      "mar": 0.7506886201335319
+     },
+     "confirm": {
+      "cagr": 0.31840876134129026,
+      "mdd": 0.34874245309566343,
+      "mar": 0.9130197901485416
+     },
+     "full": {
+      "cagr": 0.2988984991105088,
+      "mdd": 0.3708921121065789,
+      "mar": 0.805890687221242
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.3754534143156929,
+      "mdd": 0.3237475297455823,
+      "mar": 1.1597105145813584
+     },
+     "confirm": {
+      "cagr": 0.4090099579938704,
+      "mdd": 0.3598240975207533,
+      "mar": 1.1366941814403642
+     },
+     "full": {
+      "cagr": 0.39266414979332986,
+      "mdd": 0.3598240975207533,
+      "mar": 1.0912669621041222
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.21776976294832084,
+      "mdd": 0.3918480033009567,
+      "mar": 0.5557506000127911
+     },
+     "confirm": {
+      "cagr": 0.29559640014600697,
+      "mdd": 0.34138983173725246,
+      "mar": 0.8658617588045505
+     },
+     "full": {
+      "cagr": 0.25731815091583266,
+      "mdd": 0.3918480033009567,
+      "mar": 0.6566784792781013
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.40474916352373014,
+      "mdd": 0.34429316742682614,
+      "mar": 1.17559452761941
+     },
+     "confirm": {
+      "cagr": 0.5449660864275416,
+      "mdd": 0.3420066646115162,
+      "mar": 1.5934370373938944
+     },
+     "full": {
+      "cagr": 0.4760749924662422,
+      "mdd": 0.34429316742682614,
+      "mar": 1.3827605003733456
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.32430025527614936,
+      "mdd": 0.39373518443428346,
+      "mar": 0.8236506873067546
+     },
+     "confirm": {
+      "cagr": 0.40734714564101115,
+      "mdd": 0.3341709556360165,
+      "mar": 1.2189783066745608
+     },
+     "full": {
+      "cagr": 0.3669006374468311,
+      "mdd": 0.39373518443428346,
+      "mar": 0.9318462051441806
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3852091545841514,
+      "mdd": 0.3699932957239893,
+      "mar": 1.0411246880308689
+     },
+     "confirm": {
+      "cagr": 0.36929571969705033,
+      "mdd": 0.3248640702402896,
+      "mar": 1.1367699709724632
+     },
+     "full": {
+      "cagr": 0.37690230829912363,
+      "mdd": 0.3699932957239893,
+      "mar": 1.018673345314582
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F4",
+   "filtro": "excluir BAJO∧EN_MAXIMOS (sel+rot)",
+   "worstTrain": 0.3448511351036978,
+   "worstConfirm": 0.3692859251032481,
+   "medianConfirm": 0.4966444723657071,
+   "sdCellsConfirm": 0.06217105881115966,
+   "sdCellsTrain": 0.03444515403049603,
+   "canon": {
+    "train": {
+     "cagr": 0.4518568931158362,
+     "mdd": 0.3975550516344576,
+     "mar": 1.136589489325136
+    },
+    "confirm": {
+     "cagr": 0.4262260860427374,
+     "mdd": 0.3390852445220064,
+     "mar": 1.2569880079670515
+    },
+    "full": {
+     "cagr": 0.4386943619599739,
+     "mdd": 0.3975550516344576,
+     "mar": 1.1034807887772557
+    },
+    "tradesYr": 44.96404793608522,
+    "jumps": 31,
+    "winrate": 0.6262135922330098,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.4077164470072152,
+      "mdd": 0.4415981181485886,
+      "mar": 0.9232748742602818
+     },
+     "confirm": {
+      "cagr": 0.5503093209074237,
+      "mdd": 0.3474696145242845,
+      "mar": 1.5837624295892578
+     },
+     "full": {
+      "cagr": 0.4789076032059596,
+      "mdd": 0.4415981181485886,
+      "mar": 1.0844874185918
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.4518568931158362,
+      "mdd": 0.3975550516344576,
+      "mar": 1.136589489325136
+     },
+     "confirm": {
+      "cagr": 0.4262260860427374,
+      "mdd": 0.3390852445220064,
+      "mar": 1.2569880079670515
+     },
+     "full": {
+      "cagr": 0.4386943619599739,
+      "mdd": 0.3975550516344576,
+      "mar": 1.1034807887772557
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.37040141061982146,
+      "mdd": 0.426443408979184,
+      "mar": 0.8685828009547262
+     },
+     "confirm": {
+      "cagr": 0.5811422613786872,
+      "mdd": 0.34746961452428415,
+      "mar": 1.6724980749016602
+     },
+     "full": {
+      "cagr": 0.4743904078571777,
+      "mdd": 0.426443408979184,
+      "mar": 1.1124346111779961
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.396115411977213,
+      "mdd": 0.4148134125065045,
+      "mar": 0.9549243106284605
+     },
+     "confirm": {
+      "cagr": 0.4676209377983711,
+      "mdd": 0.33717858748767593,
+      "mar": 1.3868642765325747
+     },
+     "full": {
+      "cagr": 0.4325588649668697,
+      "mdd": 0.4148134125065045,
+      "mar": 1.0427793603710607
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.3448511351036978,
+      "mdd": 0.3800653239420403,
+      "mar": 0.9073470095269396
+     },
+     "confirm": {
+      "cagr": 0.4966444723657071,
+      "mdd": 0.34155297608738666,
+      "mar": 1.4540774261578682
+     },
+     "full": {
+      "cagr": 0.4211332433940287,
+      "mdd": 0.3800653239420403,
+      "mar": 1.1080548970530424
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.37162784866275667,
+      "mdd": 0.4438674045774883,
+      "mar": 0.8372496940082916
+     },
+     "confirm": {
+      "cagr": 0.3692859251032481,
+      "mdd": 0.336507147014809,
+      "mar": 1.0974088615330257
+     },
+     "full": {
+      "cagr": 0.37041915548442406,
+      "mdd": 0.4438674045774883,
+      "mar": 0.8345265988544964
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.455837888309113,
+      "mdd": 0.37935376113824615,
+      "mar": 1.201616894324119
+     },
+     "confirm": {
+      "cagr": 0.5495511757688929,
+      "mdd": 0.3520017339277104,
+      "mar": 1.561217240713231
+     },
+     "full": {
+      "cagr": 0.5038915176013643,
+      "mdd": 0.37935376113824615,
+      "mar": 1.328289236119458
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.4084208921700807,
+      "mdd": 0.39847039623564484,
+      "mar": 1.0249717319741651
+     },
+     "confirm": {
+      "cagr": 0.49895160942508365,
+      "mdd": 0.3345346873460523,
+      "mar": 1.4914794438310481
+     },
+     "full": {
+      "cagr": 0.4548435685115302,
+      "mdd": 0.39847039623564484,
+      "mar": 1.1414739283230158
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3976643771147861,
+      "mdd": 0.3957545332803093,
+      "mar": 1.0048258293307384
+     },
+     "confirm": {
+      "cagr": 0.48290512616992864,
+      "mdd": 0.35989929459977243,
+      "mar": 1.3417784736337017
+     },
+     "full": {
+      "cagr": 0.44140739885266433,
+      "mdd": 0.40190584550331476,
+      "mar": 1.0982855904966522
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F5",
+   "filtro": "excluir BAJO∨precio<EMA50 (sel+rot)",
+   "worstTrain": 0.17052049555726945,
+   "worstConfirm": 0.24253283037668671,
+   "medianConfirm": 0.34476019734566754,
+   "sdCellsConfirm": 0.07168744441629972,
+   "sdCellsTrain": 0.06834406509324925,
+   "canon": {
+    "train": {
+     "cagr": 0.3154802229458282,
+     "mdd": 0.3618140345076132,
+     "mar": 0.8719402589652447
+    },
+    "confirm": {
+     "cagr": 0.34476019734566754,
+     "mdd": 0.3312037200043596,
+     "mar": 1.0409309332066967
+    },
+    "full": {
+     "cagr": 0.33037107253329934,
+     "mdd": 0.3618140345076132,
+     "mar": 0.9130963451511657
+    },
+    "tradesYr": 51.45139813581891,
+    "jumps": 28,
+    "winrate": 0.5829787234042553,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.37591517123751084,
+      "mdd": 0.37349282451403165,
+      "mar": 1.0064856579952532
+     },
+     "confirm": {
+      "cagr": 0.47216943925903454,
+      "mdd": 0.3135321592899981,
+      "mar": 1.505968128846096
+     },
+     "full": {
+      "cagr": 0.4243184557209745,
+      "mdd": 0.37349282451403165,
+      "mar": 1.1360819482223636
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.3154802229458282,
+      "mdd": 0.3618140345076132,
+      "mar": 0.8719402589652447
+     },
+     "confirm": {
+      "cagr": 0.34476019734566754,
+      "mdd": 0.3312037200043596,
+      "mar": 1.0409309332066967
+     },
+     "full": {
+      "cagr": 0.33037107253329934,
+      "mdd": 0.3618140345076132,
+      "mar": 0.9130963451511657
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.26179027848290204,
+      "mdd": 0.37172214321183217,
+      "mar": 0.704263340948501
+     },
+     "confirm": {
+      "cagr": 0.4339232203516794,
+      "mdd": 0.3135321592899982,
+      "mar": 1.3839831337694668
+     },
+     "full": {
+      "cagr": 0.3470544099525654,
+      "mdd": 0.37172214321183217,
+      "mar": 0.9336393225162015
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.26271042338455386,
+      "mdd": 0.3847917746916142,
+      "mar": 0.6827339892987561
+     },
+     "confirm": {
+      "cagr": 0.24253283037668671,
+      "mdd": 0.33815198993268514,
+      "mar": 0.7172302325500641
+     },
+     "full": {
+      "cagr": 0.25226026118569633,
+      "mdd": 0.3847917746916142,
+      "mar": 0.6555760226108437
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.3402375735232144,
+      "mdd": 0.3263931375689745,
+      "mar": 1.042416443119348
+     },
+     "confirm": {
+      "cagr": 0.32631524891909836,
+      "mdd": 0.37885211734327506,
+      "mar": 0.8613261850228134
+     },
+     "full": {
+      "cagr": 0.33303692237267946,
+      "mdd": 0.37885211734327506,
+      "mar": 0.8790683940428323
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.17052049555726945,
+      "mdd": 0.3829534748373209,
+      "mar": 0.4452773163364212
+     },
+     "confirm": {
+      "cagr": 0.3504750589337473,
+      "mdd": 0.3184372438219738,
+      "mar": 1.100609510141611
+     },
+     "full": {
+      "cagr": 0.26014399566515234,
+      "mdd": 0.3829534748373209,
+      "mar": 0.6793096622916448
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.40958019663880907,
+      "mdd": 0.3414095471758274,
+      "mar": 1.1996741158145572
+     },
+     "confirm": {
+      "cagr": 0.4455642964447588,
+      "mdd": 0.35729355479311864,
+      "mar": 1.247053831415322
+     },
+     "full": {
+      "cagr": 0.42819887985094507,
+      "mdd": 0.35729355479311864,
+      "mar": 1.1984511730106138
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.35936325908917355,
+      "mdd": 0.3641739853272089,
+      "mar": 0.9867900332482208
+     },
+     "confirm": {
+      "cagr": 0.3142044264583337,
+      "mdd": 0.2960628598976627,
+      "mar": 1.0612760633567542
+     },
+     "full": {
+      "cagr": 0.3356650226451736,
+      "mdd": 0.3641739853272089,
+      "mar": 0.9217160922232814
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3334656315123301,
+      "mdd": 0.3649359995911402,
+      "mar": 0.913764692674693
+     },
+     "confirm": {
+      "cagr": 0.3004964191313826,
+      "mdd": 0.3222275001117293,
+      "mar": 0.9325598188459655
+     },
+     "full": {
+      "cagr": 0.31620018704845543,
+      "mdd": 0.3649359995911402,
+      "mar": 0.8664538094425147
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F6",
+   "filtro": "SUAVE: bajo-EMA50 al 4% fijo, excedente al resto (sel; rot C0)",
+   "worstTrain": 0.23014535791413726,
+   "worstConfirm": 0.3886502364942801,
+   "medianConfirm": 0.4767109072183031,
+   "sdCellsConfirm": 0.0718579857707427,
+   "sdCellsTrain": 0.07170306540888864,
+   "canon": {
+    "train": {
+     "cagr": 0.46951120590906714,
+     "mdd": 0.3770905133653921,
+     "mar": 1.2450888825572801
+    },
+    "confirm": {
+     "cagr": 0.4409058182499028,
+     "mdd": 0.36447109996807847,
+     "mar": 1.2097140713996768
+    },
+    "full": {
+     "cagr": 0.45481450101633847,
+     "mdd": 0.3770905133653921,
+     "mar": 1.2061149376506153
+    },
+    "tradesYr": 45.18774966711052,
+    "jumps": 39,
+    "winrate": 0.6473429951690821,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 1,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.40354680515474417,
+      "mdd": 0.44159811814858874,
+      "mar": 0.9138327102629521
+     },
+     "confirm": {
+      "cagr": 0.5471609847224379,
+      "mdd": 0.346354104842994,
+      "mar": 1.5797733506593543
+     },
+     "full": {
+      "cagr": 0.475231107581205,
+      "mdd": 0.44159811814858874,
+      "mar": 1.0761619854124909
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.46951120590906714,
+      "mdd": 0.3770905133653921,
+      "mar": 1.2450888825572801
+     },
+     "confirm": {
+      "cagr": 0.4409058182499028,
+      "mdd": 0.36447109996807847,
+      "mar": 1.2097140713996768
+     },
+     "full": {
+      "cagr": 0.45481450101633847,
+      "mdd": 0.3770905133653921,
+      "mar": 1.2061149376506153
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 1,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.3782270134973613,
+      "mdd": 0.42965568134306853,
+      "mar": 0.8803026002473763
+     },
+     "confirm": {
+      "cagr": 0.5841972328984721,
+      "mdd": 0.34635410484299356,
+      "mar": 1.6867050938036254
+     },
+     "full": {
+      "cagr": 0.4799588073393368,
+      "mdd": 0.42965568134306853,
+      "mar": 1.1170777629170987
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.3246709403902266,
+      "mdd": 0.40362168326783066,
+      "mar": 0.8043941984523789
+     },
+     "confirm": {
+      "cagr": 0.3886502364942801,
+      "mdd": 0.36240429230403715,
+      "mar": 1.0724217255358115
+     },
+     "full": {
+      "cagr": 0.35730080615343285,
+      "mdd": 0.40362168326783066,
+      "mar": 0.8852368962455847
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 1,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.39234276139514357,
+      "mdd": 0.3628556380010325,
+      "mar": 1.0812640629109562
+     },
+     "confirm": {
+      "cagr": 0.5612513721270702,
+      "mdd": 0.3515859383195622,
+      "mar": 1.596341920867551
+     },
+     "full": {
+      "cagr": 0.47706649386691624,
+      "mdd": 0.3628556380010325,
+      "mar": 1.314755632556986
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.23014535791413726,
+      "mdd": 0.4438674045774882,
+      "mar": 0.5185002447593775
+     },
+     "confirm": {
+      "cagr": 0.4229469885042698,
+      "mdd": 0.3566678012351616,
+      "mar": 1.185828905888279
+     },
+     "full": {
+      "cagr": 0.32610476867035487,
+      "mdd": 0.4438674045774882,
+      "mar": 0.7346896061916732
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.4796919940942108,
+      "mdd": 0.3601488759703506,
+      "mar": 1.3319269504917228
+     },
+     "confirm": {
+      "cagr": 0.5368869660231412,
+      "mdd": 0.35238626137651974,
+      "mar": 1.5235751925342091
+     },
+     "full": {
+      "cagr": 0.5091946838375458,
+      "mdd": 0.3601488759703506,
+      "mar": 1.4138449897021628
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 1,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.43075966988946823,
+      "mdd": 0.43712442442467514,
+      "mar": 0.9854394900408873
+     },
+     "confirm": {
+      "cagr": 0.4767109072183031,
+      "mdd": 0.34824867462107534,
+      "mar": 1.368880750908832
+     },
+     "full": {
+      "cagr": 0.45449875779633864,
+      "mdd": 0.43712442442467514,
+      "mar": 1.0397468830402943
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 1,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3997535811556918,
+      "mdd": 0.4256913187991953,
+      "mar": 0.9390691411873995
+     },
+     "confirm": {
+      "cagr": 0.3893626682568221,
+      "mdd": 0.3540712299835671,
+      "mar": 1.0996732727335483
+     },
+     "full": {
+      "cagr": 0.39433482308795065,
+      "mdd": 0.4256913187991953,
+      "mar": 0.9263398281184213
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 1,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  },
+  {
+   "name": "F7",
+   "filtro": "excluir BAJO∨EN_MAXIMOS∨precio<EMA50 (sel+rot)",
+   "worstTrain": 0.17089649940026375,
+   "worstConfirm": 0.23418053896301916,
+   "medianConfirm": 0.35095369252294795,
+   "sdCellsConfirm": 0.07518287768869153,
+   "sdCellsTrain": 0.06825120118122029,
+   "canon": {
+    "train": {
+     "cagr": 0.27842541613158467,
+     "mdd": 0.3771533834781733,
+     "mar": 0.7382286049349409
+    },
+    "confirm": {
+     "cagr": 0.35095369252294795,
+     "mdd": 0.31795707220648206,
+     "mar": 1.1037769661403782
+    },
+    "full": {
+     "cagr": 0.3150103525606065,
+     "mdd": 0.3771533834781733,
+     "mar": 0.8352314107738525
+    },
+    "tradesYr": 51.898801597869515,
+    "jumps": 27,
+    "winrate": 0.569620253164557,
+    "counters": {
+     "jumpFallback": 0,
+     "f6Infeasible": 0,
+     "selFillFallback": 0
+    }
+   },
+   "cells": [
+    {
+     "FROM": 260,
+     "review": 63,
+     "train": {
+      "cagr": 0.3721566866201276,
+      "mdd": 0.3624599115113202,
+      "mar": 1.0267526829887905
+     },
+     "confirm": {
+      "cagr": 0.48398205153782237,
+      "mdd": 0.32112106019736153,
+      "mar": 1.5071638441912412
+     },
+     "full": {
+      "cagr": 0.4282402889083148,
+      "mdd": 0.3624599115113202,
+      "mar": 1.1814831800921526
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 84,
+     "train": {
+      "cagr": 0.27842541613158467,
+      "mdd": 0.3771533834781733,
+      "mar": 0.7382286049349409
+     },
+     "confirm": {
+      "cagr": 0.35095369252294795,
+      "mdd": 0.31795707220648206,
+      "mar": 1.1037769661403782
+     },
+     "full": {
+      "cagr": 0.3150103525606065,
+      "mdd": 0.3771533834781733,
+      "mar": 0.8352314107738525
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 260,
+     "review": 105,
+     "train": {
+      "cagr": 0.26081405606286756,
+      "mdd": 0.3717221432118325,
+      "mar": 0.7016371255404014
+     },
+     "confirm": {
+      "cagr": 0.37478444433897096,
+      "mdd": 0.3211210601973614,
+      "mar": 1.1671126275823454
+     },
+     "full": {
+      "cagr": 0.3178567507112342,
+      "mdd": 0.3717221432118325,
+      "mar": 0.855092322358902
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 63,
+     "train": {
+      "cagr": 0.30039151351573845,
+      "mdd": 0.385664774113905,
+      "mar": 0.7788927941524125
+     },
+     "confirm": {
+      "cagr": 0.23418053896301916,
+      "mdd": 0.33190972298641463,
+      "mar": 0.705554922754114
+     },
+     "full": {
+      "cagr": 0.2658014845562984,
+      "mdd": 0.385664774113905,
+      "mar": 0.6892034284619281
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 84,
+     "train": {
+      "cagr": 0.33351989933230475,
+      "mdd": 0.33435742710858385,
+      "mar": 0.9974951123905882
+     },
+     "confirm": {
+      "cagr": 0.2824917544520211,
+      "mdd": 0.3851969571568219,
+      "mar": 0.7333696416947881
+     },
+     "full": {
+      "cagr": 0.3069460262779369,
+      "mdd": 0.3851969571568219,
+      "mar": 0.7968547533281074
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 280,
+     "review": 105,
+     "train": {
+      "cagr": 0.17089649940026375,
+      "mdd": 0.3722162325487136,
+      "mar": 0.4591323119630409
+     },
+     "confirm": {
+      "cagr": 0.384887275337523,
+      "mdd": 0.33969143687338854,
+      "mar": 1.1330496843845377
+     },
+     "full": {
+      "cagr": 0.2768073025179618,
+      "mdd": 0.3722162325487136,
+      "mar": 0.7436733766890051
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 63,
+     "train": {
+      "cagr": 0.3776307056734576,
+      "mdd": 0.33911374901858715,
+      "mar": 1.1135812297977905
+     },
+     "confirm": {
+      "cagr": 0.4503318395840792,
+      "mdd": 0.3374585628508122,
+      "mar": 1.3344804048820873
+     },
+     "full": {
+      "cagr": 0.41500933073246915,
+      "mdd": 0.33911374901858715,
+      "mar": 1.2238056756280975
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 84,
+     "train": {
+      "cagr": 0.4044860660432599,
+      "mdd": 0.35152954118616453,
+      "mar": 1.1506460159177643
+     },
+     "confirm": {
+      "cagr": 0.2998653739599828,
+      "mdd": 0.29992755451286746,
+      "mar": 0.9997926814260676
+     },
+     "full": {
+      "cagr": 0.34901471260582717,
+      "mdd": 0.35152954118616453,
+      "mar": 0.9928460391355686
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    },
+    {
+     "FROM": 300,
+     "review": 105,
+     "train": {
+      "cagr": 0.3488714754418052,
+      "mdd": 0.3699007132947454,
+      "mar": 0.9431489664736504
+     },
+     "confirm": {
+      "cagr": 0.3239821004171255,
+      "mdd": 0.35024600782052695,
+      "mar": 0.9250129714059164
+     },
+     "full": {
+      "cagr": 0.3358572164721063,
+      "mdd": 0.3699007132947454,
+      "mar": 0.9079658524596776
+     },
+     "counters": {
+      "jumpFallback": 0,
+      "f6Infeasible": 0,
+      "selFillFallback": 0
+     }
+    }
+   ]
+  }
+ ],
+ "gateTable": [
+  {
+   "variante": "F1",
+   "dCagr": -0.033928406827796076,
+   "dMar": -0.01537598246784233,
+   "dMdd": -0.023087048531547416,
+   "dWorst": -0.025382456542598852,
+   "dWorstTrain": -0.04885973283168532,
+   "dCanonTrain": -0.09257187667271749,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F2",
+   "dCagr": -0.0334350331077331,
+   "dMar": 0.11208851457306146,
+   "dMdd": -0.05445138849612474,
+   "dWorst": -0.02218136477877608,
+   "dWorstTrain": -0.0047762885571340785,
+   "dCanonTrain": -0.0760276755224416,
+   "beats": false,
+   "material": true,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F3",
+   "dCagr": -0.027494502894139794,
+   "dMar": -0.12163210445035721,
+   "dMdd": 0.014595283156270122,
+   "dWorst": -0.1734305993719758,
+   "dWorstTrain": -0.2030247157670173,
+   "dCanonTrain": -0.1533929766494122,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F3_SOLO_SEL",
+   "dCagr": -0.011572778684089124,
+   "dMar": -0.04345768940003292,
+   "dMdd": 0.0034190430162652774,
+   "dWorst": -0.08301140802002482,
+   "dWorstTrain": -0.19263351902394077,
+   "dCanonTrain": -0.12126621934748094,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F3_SOLO_ROT",
+   "dCagr": -0.03795308112485718,
+   "dMar": -0.14020063542367134,
+   "dMdd": 0.01143724532814061,
+   "dWorst": -0.1479531349177894,
+   "dWorstTrain": -0.14825037047837974,
+   "dCanonTrain": -0.05361283563815111,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F3B",
+   "dCagr": -0.019399725834323478,
+   "dMar": -0.1313628548759178,
+   "dMdd": 0.025147403085861497,
+   "dWorst": -0.12726445971047218,
+   "dWorstTrain": -0.15227894017998334,
+   "dCanonTrain": -0.1107557069284053,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F4",
+   "dCagr": -0.022855795244662858,
+   "dMar": 0.012322268887022592,
+   "dMdd": -0.02171996380591834,
+   "dWorst": -0.05357493475323105,
+   "dWorstTrain": -0.025197568024606376,
+   "dCanonTrain": -0.05519161108253168,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F5",
+   "dCagr": -0.10432168394173269,
+   "dMar": -0.20373480587333215,
+   "dMdd": -0.02960148832356513,
+   "dWorst": -0.18032802947979243,
+   "dWorstTrain": -0.19952820757103473,
+   "dCanonTrain": -0.19156828125253966,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F6",
+   "dCagr": -0.008176063037497405,
+   "dMar": -0.03495166768035207,
+   "dMdd": 0.00366589164015374,
+   "dWorst": -0.034210623362199044,
+   "dWorstTrain": -0.13990334521416692,
+   "dCanonTrain": -0.03753729828930075,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  },
+  {
+   "variante": "F7",
+   "dCagr": -0.09812818876445228,
+   "dMar": -0.14088877293965063,
+   "dMdd": -0.04284813612144267,
+   "dWorst": -0.18868032089345999,
+   "dWorstTrain": -0.19915220372804043,
+   "dCanonTrain": -0.22862308806678322,
+   "beats": false,
+   "material": false,
+   "mddOK": true,
+   "pass": false,
+   "trainPrefiereRef": true
+  }
+ ],
+ "impactoSeleccion": {
+  "F1": {
+   "filtro": "excluir runway BAJO (sel+rot)",
+   "pctPlazasExpulsadas": 0.19615384615384615,
+   "pctRevisionesAfectadas": 0.8461538461538461,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 12.509803921568627,
+   "tickersMasExpulsados": [
+    "RHM.XETRA×3",
+    "FSLR.US×2",
+    "DIE.BR×2",
+    "BX.US×2",
+    "TSLA.US×2",
+    "RR.LSE×2",
+    "BESI.AS×1",
+    "BA.US×1",
+    "GWW.US×1",
+    "MONC.MI×1",
+    "AMD.US×1",
+    "MONT.BR×1"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "FSLR.US×2",
+    "ASML.AS×2",
+    "STLD.US×2",
+    "KER.PA×1",
+    "VRTX.US×1",
+    "UMI.BR×1",
+    "AAL.LSE×1",
+    "MONC.MI×1",
+    "SBUX.US×1",
+    "WDAY.US×1",
+    "AZO.US×1",
+    "AMT.US×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 48,
+    "media": 0.10384709790457859,
+    "mediana": 0.06909252545066957
+   },
+   "fwd84_sustitutos": {
+    "n": 48,
+    "media": 0.0732920246063401,
+    "mediana": 0.08181103594808192
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": 0.012557965028163339,
+    "sustitutos": -0.01799710827007517
+   },
+   "deltaSustitutoMenosExcluido": -0.03055507329823849,
+   "pctDiasSustitutoGanaAlExcluido": 0.5,
+   "nDiasComparables": 20,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 33,
+      "media": 0.07595731841348445,
+      "mediana": 0.06499282734232503
+     },
+     "sustitutos": {
+      "n": 33,
+      "media": 0.0426498904126286,
+      "mediana": 0.038377071622054615
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 15,
+      "media": 0.16520461278498572,
+      "mediana": 0.1907425098384501
+     },
+     "sustitutos": {
+      "n": 15,
+      "media": 0.14070471983250535,
+      "mediana": 0.1440154334390198
+     }
+    }
+   }
+  },
+  "F2": {
+   "filtro": "excluir EN_MAXIMOS (sel+rot)",
+   "pctPlazasExpulsadas": 0.19615384615384615,
+   "pctRevisionesAfectadas": 0.8461538461538461,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 12.490196078431373,
+   "tickersMasExpulsados": [
+    "GAW.LSE×2",
+    "ARGX.BR×2",
+    "LRCX.US×2",
+    "NEM.US×2",
+    "TSLA.US×2",
+    "HWM.US×2",
+    "FSLR.US×1",
+    "BA.US×1",
+    "MONC.MI×1",
+    "VLO.US×1",
+    "DXCM.US×1",
+    "LULU.US×1"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "FSLR.US×2",
+    "ASML.AS×2",
+    "BESI.AS×2",
+    "KER.PA×1",
+    "VRTX.US×1",
+    "CBOE.US×1",
+    "AAL.LSE×1",
+    "MU.US×1",
+    "MONC.MI×1",
+    "NFLX.US×1",
+    "ALTR.LS×1",
+    "AMZN.US×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 47,
+    "media": 0.04235564873260353,
+    "mediana": 0.03552516063387956
+   },
+   "fwd84_sustitutos": {
+    "n": 47,
+    "media": 0.020362221543858285,
+    "mediana": 0.0271929311223833
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": -0.04921476563255843,
+    "sustitutos": -0.07120819282130368
+   },
+   "deltaSustitutoMenosExcluido": -0.021993427188745245,
+   "pctDiasSustitutoGanaAlExcluido": 0.5,
+   "nDiasComparables": 20,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 33,
+      "media": 0.014196675904329714,
+      "mediana": 0.004626024758666691
+     },
+     "sustitutos": {
+      "n": 33,
+      "media": -0.012961709058428757,
+      "mediana": -0.021926223597389383
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 14,
+      "media": 0.10873037039924895,
+      "mediana": 0.07559777725113803
+     },
+     "sustitutos": {
+      "n": 14,
+      "media": 0.09891148653496344,
+      "mediana": 0.08181103594808192
+     }
+    }
+   }
+  },
+  "F3": {
+   "filtro": "excluir precio<EMA50 (sel+rot)",
+   "pctPlazasExpulsadas": 0.11923076923076924,
+   "pctRevisionesAfectadas": 0.6153846153846154,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 13.709677419354838,
+   "tickersMasExpulsados": [
+    "MRNA.US×2",
+    "DVN.US×2",
+    "RHM.XETRA×2",
+    "PLTR.US×2",
+    "VRT.US×2",
+    "ANET.US×1",
+    "ARGX.BR×1",
+    "AXON.US×1",
+    "TTD.US×1",
+    "DXCM.US×1",
+    "AMD.US×1",
+    "LULU.US×1"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "FSLR.US×1",
+    "MONC.MI×1",
+    "AMZN.US×1",
+    "ARGX.BR×1",
+    "O.US×1",
+    "AUTO.LSE×1",
+    "AZO.US×1",
+    "ELI.BR×1",
+    "CPR.MI×1",
+    "AD.AS×1",
+    "PYPL.US×1",
+    "STLD.US×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 28,
+    "media": 0.20911470562020526,
+    "mediana": 0.13504986102000127
+   },
+   "fwd84_sustitutos": {
+    "n": 30,
+    "media": 0.050411720837052774,
+    "mediana": 0.08035037977579873
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": 0.08161706528453087,
+    "sustitutos": -0.08219421244169832
+   },
+   "deltaSustitutoMenosExcluido": -0.15870298478315248,
+   "pctDiasSustitutoGanaAlExcluido": 0.35714285714285715,
+   "nDiasComparables": 14,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 17,
+      "media": 0.19295013160366306,
+      "mediana": 0.08263945351387592
+     },
+     "sustitutos": {
+      "n": 17,
+      "media": 0.005657103797783261,
+      "mediana": 0.013341988898938784
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 11,
+      "media": 0.23409632000940686,
+      "mediana": 0.14967319825523728
+     },
+     "sustitutos": {
+      "n": 13,
+      "media": 0.10893698927302059,
+      "mediana": 0.11698608015679146
+     }
+    }
+   }
+  },
+  "F3B": {
+   "filtro": "excluir precio<0,98·EMA50 (sel+rot)",
+   "pctPlazasExpulsadas": 0.07307692307692308,
+   "pctRevisionesAfectadas": 0.4230769230769231,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 12.105263157894736,
+   "tickersMasExpulsados": [
+    "DVN.US×2",
+    "RHM.XETRA×2",
+    "ARGX.BR×1",
+    "TTD.US×1",
+    "DXCM.US×1",
+    "AMD.US×1",
+    "LULU.US×1",
+    "TSCO.US×1",
+    "MRNA.US×1",
+    "DDOG.US×1",
+    "IT.US×1",
+    "CEG.US×1"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "STLD.US×2",
+    "MONC.MI×1",
+    "ORLY.US×1",
+    "ARGX.BR×1",
+    "O.US×1",
+    "HRL.US×1",
+    "AUTO.LSE×1",
+    "EXR.US×1",
+    "RMS.PA×1",
+    "PANW.US×1",
+    "COST.US×1",
+    "XOM.US×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 17,
+    "media": 0.2185910287353444,
+    "mediana": 0.16955936835133678
+   },
+   "fwd84_sustitutos": {
+    "n": 17,
+    "media": 0.048752499784511356,
+    "mediana": 0.08035037977579873
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": 0.136902836955482,
+    "sustitutos": -0.03293569199535107
+   },
+   "deltaSustitutoMenosExcluido": -0.16983852895083304,
+   "pctDiasSustitutoGanaAlExcluido": 0.4444444444444444,
+   "nDiasComparables": 9,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 11,
+      "media": 0.23949564520647423,
+      "mediana": 0.20321709300582946
+     },
+     "sustitutos": {
+      "n": 11,
+      "media": 0.02957156374098181,
+      "mediana": 0.08035037977579873
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 6,
+      "media": 0.1802658985382731,
+      "mediana": 0.039403383179211104
+     },
+     "sustitutos": {
+      "n": 6,
+      "media": 0.08391754919764886,
+      "mediana": 0.0793449309406351
+     }
+    }
+   }
+  },
+  "F4": {
+   "filtro": "excluir BAJO∧EN_MAXIMOS (sel+rot)",
+   "pctPlazasExpulsadas": 0.1076923076923077,
+   "pctRevisionesAfectadas": 0.6153846153846154,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 12.071428571428571,
+   "tickersMasExpulsados": [
+    "TSLA.US×2",
+    "FSLR.US×1",
+    "BA.US×1",
+    "MONC.MI×1",
+    "AMD.US×1",
+    "VEEV.US×1",
+    "BALL.US×1",
+    "QCOM.US×1",
+    "KEYS.US×1",
+    "CMG.US×1",
+    "AMP.MI×1",
+    "DIE.BR×1"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "FSLR.US×2",
+    "KER.PA×1",
+    "VRTX.US×1",
+    "MONC.MI×1",
+    "SBUX.US×1",
+    "WDAY.US×1",
+    "AZO.US×1",
+    "AMT.US×1",
+    "ARGX.BR×1",
+    "BX.US×1",
+    "LSEG.LSE×1",
+    "AZM.MI×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 25,
+    "media": 0.03645091914710711,
+    "mediana": 0.00774616227065561
+   },
+   "fwd84_sustitutos": {
+    "n": 25,
+    "media": 0.04945285521855809,
+    "mediana": 0.08932780243257699
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": -0.026627309515213346,
+    "sustitutos": -0.013625373443762356
+   },
+   "deltaSustitutoMenosExcluido": 0.013001936071450983,
+   "pctDiasSustitutoGanaAlExcluido": 0.5,
+   "nDiasComparables": 14,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 21,
+      "media": 0.03239620512698599,
+      "mediana": 0.00774616227065561
+     },
+     "sustitutos": {
+      "n": 21,
+      "media": 0.03643314492251696,
+      "mediana": 0.08738992877972906
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 4,
+      "media": 0.057738167752743014,
+      "mediana": -0.09030610687878671
+     },
+     "sustitutos": {
+      "n": 4,
+      "media": 0.1178063342727741,
+      "mediana": 0.1440154334390198
+     }
+    }
+   }
+  },
+  "F5": {
+   "filtro": "excluir BAJO∨precio<EMA50 (sel+rot)",
+   "pctPlazasExpulsadas": 0.3153846153846154,
+   "pctRevisionesAfectadas": 1,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 13.926829268292684,
+   "tickersMasExpulsados": [
+    "RHM.XETRA×5",
+    "PLTR.US×3",
+    "VRT.US×3",
+    "FSLR.US×2",
+    "ARGX.BR×2",
+    "AXON.US×2",
+    "AMD.US×2",
+    "TTD.US×2",
+    "DIE.BR×2",
+    "BX.US×2",
+    "TSLA.US×2",
+    "MRNA.US×2"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "FSLR.US×2",
+    "LULU.US×2",
+    "AMZN.US×2",
+    "ARGX.BR×2",
+    "AZO.US×2",
+    "ASML.AS×2",
+    "ABN.AS×2",
+    "KLAC.US×2",
+    "KER.PA×1",
+    "UMI.BR×1",
+    "LONN.SW×1",
+    "AAL.LSE×1"
+   ],
+   "fwd84_excluidos": {
+    "n": 76,
+    "media": 0.14262990074717782,
+    "mediana": 0.08263945351387592
+   },
+   "fwd84_sustitutos": {
+    "n": 78,
+    "media": 0.049193242904424665,
+    "mediana": 0.03747547527831441
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": 0.038000791438404014,
+    "sustitutos": -0.057986967049812085
+   },
+   "deltaSustitutoMenosExcluido": -0.09343665784275315,
+   "pctDiasSustitutoGanaAlExcluido": 0.4583333333333333,
+   "nDiasComparables": 24,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 50,
+      "media": 0.11573487489814507,
+      "mediana": 0.06499282734232503
+     },
+     "sustitutos": {
+      "n": 50,
+      "media": 0.0319867970409139,
+      "mediana": 0.027792869097120976
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 26,
+      "media": 0.19435110430300997,
+      "mediana": 0.14967319825523728
+     },
+     "sustitutos": {
+      "n": 28,
+      "media": 0.07991903908926533,
+      "mediana": 0.06643198660131788
+     }
+    }
+   }
+  },
+  "F7": {
+   "filtro": "excluir BAJO∨EN_MAXIMOS∨precio<EMA50 (sel+rot)",
+   "pctPlazasExpulsadas": 0.40384615384615385,
+   "pctRevisionesAfectadas": 1,
+   "revisionesConMenosDe10Elegibles": 0,
+   "rangoMedioDelSustituto": 15.161904761904761,
+   "tickersMasExpulsados": [
+    "RHM.XETRA×5",
+    "ARGX.BR×3",
+    "PLTR.US×3",
+    "VRT.US×3",
+    "GAW.LSE×2",
+    "FSLR.US×2",
+    "GWW.US×2",
+    "AXON.US×2",
+    "DXCM.US×2",
+    "LULU.US×2",
+    "FTNT.US×2",
+    "AMD.US×2"
+   ],
+   "tickersSustitutosMasFrecuentes": [
+    "NVDA.US×3",
+    "STLAM.MI×2",
+    "FSLR.US×2",
+    "NTAP.US×2",
+    "AMZN.US×2",
+    "ARGX.BR×2",
+    "AZO.US×2",
+    "ASML.AS×2",
+    "ALB.US×2",
+    "EXPE.US×2",
+    "ABN.AS×2",
+    "AVGO.US×2"
+   ],
+   "fwd84_excluidos": {
+    "n": 98,
+    "media": 0.12162566294428777,
+    "mediana": 0.07559777725113803
+   },
+   "fwd84_sustitutos": {
+    "n": 100,
+    "media": 0.04910007129119677,
+    "mediana": 0.038377071622054615
+   },
+   "excesoVsMediaDelDia": {
+    "excluidos": 0.012659682678252992,
+    "sustitutos": -0.06176903005915388
+   },
+   "deltaSustitutoMenosExcluido": -0.072525591653091,
+   "pctDiasSustitutoGanaAlExcluido": 0.5,
+   "nDiasComparables": 24,
+   "porSegmento": {
+    "train": {
+     "excluidos": {
+      "n": 62,
+      "media": 0.0899179635819908,
+      "mediana": 0.05014390036552019
+     },
+     "sustitutos": {
+      "n": 62,
+      "media": 0.0011830784103148812,
+      "mediana": -0.008205593989651816
+     }
+    },
+    "confirm": {
+     "excluidos": {
+      "n": 36,
+      "media": 0.17623336740157708,
+      "mediana": 0.13946807300847208
+     },
+     "sustitutos": {
+      "n": 38,
+      "media": 0.12728042809684617,
+      "mediana": 0.08181103594808192
+     }
+    }
+   }
+  }
+ },
+ "casoUsuario": {
+  "nota": "forward 84 sesiones SIN stops ni rotación (aísla la calidad de la selección; el efecto completo lo miden las simulaciones). Exceso mismo-día = fwd del miembro − media fwd del top-10 de ese día.",
+  "revisiones": 25,
+  "plazasTotales": 250,
+  "porEstado": {
+   "BAJO": {
+    "frecuenciaEnTop10": 0.196,
+    "fwd84_conEstado": {
+     "n": 48,
+     "media": 0.10384709790457859,
+     "mediana": 0.06909252545066957
+    },
+    "fwd84_sinEstado": {
+     "n": 193,
+     "media": 0.13075217750736182,
+     "mediana": 0.07559777725113803
+    },
+    "excesoVsMediaDelDia_conEstado": {
+     "n": 48,
+     "media": 0.012557965028163339,
+     "mediana": -0.01414549278364935
+    },
+    "excesoVsMediaDelDia_sinEstado": {
+     "n": 193,
+     "media": -0.003123224462962907,
+     "mediana": -0.042458853167452876
+    },
+    "pctConEstadoQueBateMediaDelDia": 0.46938775510204084,
+    "porSegmento": {
+     "train": {
+      "con": {
+       "n": 33,
+       "media": 0.07595731841348445,
+       "mediana": 0.06499282734232503
+      },
+      "sin": {
+       "n": 97,
+       "media": 0.12549665694294038,
+       "mediana": 0.05014390036552019
+      },
+      "excesoCon": -0.0003990713566641839
+     },
+     "confirm": {
+      "con": {
+       "n": 15,
+       "media": 0.16520461278498572,
+       "mediana": 0.1907425098384501
+      },
+      "sin": {
+       "n": 96,
+       "media": 0.13606244307766255,
+       "mediana": 0.0805344752299959
+      },
+      "excesoCon": 0.04106344507478388
+     }
+    }
+   },
+   "EN_MAXIMOS": {
+    "frecuenciaEnTop10": 0.192,
+    "fwd84_conEstado": {
+     "n": 47,
+     "media": 0.04235564873260353,
+     "mediana": 0.03552516063387956
+    },
+    "fwd84_sinEstado": {
+     "n": 194,
+     "media": 0.1455109044737538,
+     "mediana": 0.0845433730713927
+    },
+    "excesoVsMediaDelDia_conEstado": {
+     "n": 47,
+     "media": -0.04921476563255843,
+     "mediana": -0.03939832730469532
+    },
+    "excesoVsMediaDelDia_sinEstado": {
+     "n": 194,
+     "media": 0.011923164869743536,
+     "mediana": -0.0338566771054679
+    },
+    "pctConEstadoQueBateMediaDelDia": 0.3333333333333333,
+    "porSegmento": {
+     "train": {
+      "con": {
+       "n": 33,
+       "media": 0.014196675904329714,
+       "mediana": 0.004626024758666691
+      },
+      "sin": {
+       "n": 97,
+       "media": 0.14650800954914764,
+       "mediana": 0.08263945351387592
+      },
+      "excesoCon": -0.045535501709924806
+     },
+     "confirm": {
+      "con": {
+       "n": 14,
+       "media": 0.10873037039924895,
+       "mediana": 0.07559777725113803
+      },
+      "sin": {
+       "n": 97,
+       "media": 0.14451379939835984,
+       "mediana": 0.09788947541985182
+      },
+      "excesoCon": -0.05788731630733764
+     }
+    }
+   },
+   "BELOW_EMA50": {
+    "frecuenciaEnTop10": 0.12,
+    "fwd84_conEstado": {
+     "n": 28,
+     "media": 0.20911470562020526,
+     "mediana": 0.13504986102000127
+    },
+    "fwd84_sinEstado": {
+     "n": 213,
+     "media": 0.11438788357265191,
+     "mediana": 0.0641332961392822
+    },
+    "excesoVsMediaDelDia_conEstado": {
+     "n": 28,
+     "media": 0.08161706528453087,
+     "mediana": -0.03689597440836531
+    },
+    "excesoVsMediaDelDia_sinEstado": {
+     "n": 213,
+     "media": -0.01072900388716837,
+     "mediana": -0.036651490566204384
+    },
+    "pctConEstadoQueBateMediaDelDia": 0.4,
+    "porSegmento": {
+     "train": {
+      "con": {
+       "n": 17,
+       "media": 0.19295013160366306,
+       "mediana": 0.08263945351387592
+      },
+      "sin": {
+       "n": 113,
+       "media": 0.10088154861812326,
+       "mediana": 0.05296276572626657
+      },
+      "excesoCon": 0.09647075545436608
+     },
+     "confirm": {
+      "con": {
+       "n": 11,
+       "media": 0.23409632000940686,
+       "mediana": 0.14967319825523728
+      },
+      "sin": {
+       "n": 100,
+       "media": 0.12965004207126915,
+       "mediana": 0.07978342335700894
+      },
+      "excesoCon": 0.05866136229478562
+     }
+    }
+   },
+   "BAJO_Y_EN_MAXIMOS": {
+    "frecuenciaEnTop10": 0.104,
+    "fwd84_conEstado": {
+     "n": 25,
+     "media": 0.03645091914710711,
+     "mediana": 0.00774616227065561
+    },
+    "fwd84_sinEstado": {
+     "n": 216,
+     "media": 0.1356877684243654,
+     "mediana": 0.0805344752299959
+    },
+    "excesoVsMediaDelDia_conEstado": {
+     "n": 25,
+     "media": -0.026627309515213346,
+     "mediana": -0.02860407231062896
+    },
+    "excesoVsMediaDelDia_sinEstado": {
+     "n": 216,
+     "media": 0.003081864527223773,
+     "mediana": -0.03689597440836531
+    },
+    "pctConEstadoQueBateMediaDelDia": 0.34615384615384615,
+    "porSegmento": {
+     "train": {
+      "con": {
+       "n": 21,
+       "media": 0.03239620512698599,
+       "mediana": 0.00774616227065561
+      },
+      "sin": {
+       "n": 109,
+       "media": 0.12843529287562835,
+       "mediana": 0.06499282734232503
+      },
+      "excesoCon": -0.04240314929141565
+     },
+     "confirm": {
+      "con": {
+       "n": 4,
+       "media": 0.057738167752743014,
+       "mediana": -0.09030610687878671
+      },
+      "sin": {
+       "n": 107,
+       "media": 0.14307580426373287,
+       "mediana": 0.09788947541985182
+      },
+      "excesoCon": 0.056195849309848736
+     }
+    }
+   }
+  }
+ },
+ "benchmarks": {
+  "spy": {
+   "train": {
+    "cagr": 0.18904575834610782,
+    "mdd": 0.33717264353564513,
+    "mar": 0.5606794085182724
+   },
+   "confirm": {
+    "cagr": 0.1260027315837431,
+    "mdd": 0.24496390534609414,
+    "mar": 0.5143726436175229
+   },
+   "full": {
+    "cagr": 0.15638174286026985,
+    "mdd": 0.33717264353564513,
+    "mar": 0.4638031757868207
+   }
+  },
+  "universoEqW": {
+   "train": {
+    "cagr": 0.195418608891619,
+    "mdd": 0.3659464410264476,
+    "mar": 0.534008770090746
+   },
+   "confirm": {
+    "cagr": 0.12953569457020286,
+    "mdd": 0.18870149863546148,
+    "mar": 0.6864582184397132
+   },
+   "full": {
+    "cagr": 0.16126498230440767,
+    "mdd": 0.3659464410264476,
+    "mar": 0.4406791929771843
+   }
+  }
+ },
+ "porAno": [
+  {
+   "ano": 2018,
+   "F0": 0.16721238281314887,
+   "F1": 0.07666142079830984,
+   "F2": 0.05207935695130739,
+   "F3": 0.061245656352024946,
+   "F3_SOLO_SEL": 0.04812760359341128,
+   "F3_SOLO_ROT": 0.17645771279215605,
+   "F3B": 0.07360668462976294,
+   "F4": 0.11071239668937838,
+   "F5": 0.018846838695925516,
+   "F6": 0.1406871200447739,
+   "F7": -0.026613765133910672
+  },
+  {
+   "ano": 2019,
+   "F0": 0.66526959840878,
+   "F1": 0.7166399288729546,
+   "F2": 0.6605091178344489,
+   "F3": 0.4802567597143208,
+   "F3_SOLO_SEL": 0.48025675971431925,
+   "F3_SOLO_ROT": 0.6652695984087784,
+   "F3B": 0.4273164369412237,
+   "F4": 0.702677589746197,
+   "F5": 0.5259198036989197,
+   "F6": 0.6652695984087793,
+   "F7": 0.4648020402462012
+  },
+  {
+   "ano": 2020,
+   "F0": 1.3066980814307758,
+   "F1": 1.084521926824415,
+   "F2": 1.0983231316568105,
+   "F3": 0.817527388606438,
+   "F3_SOLO_SEL": 1.0775910018919896,
+   "F3_SOLO_ROT": 1.01777767740412,
+   "F3B": 1.2544867592471696,
+   "F4": 1.1126434321333232,
+   "F5": 0.7257907765064269,
+   "F6": 1.1349828464818144,
+   "F7": 0.6487666915952182
+  },
+  {
+   "ano": 2021,
+   "F0": 0.38353952724897256,
+   "F1": 0.26057512019976126,
+   "F2": 0.35372239303688735,
+   "F3": 0.34623437330165685,
+   "F3_SOLO_SEL": 0.32114400360445816,
+   "F3_SOLO_ROT": 0.3604453832264627,
+   "F3B": 0.30036643817254016,
+   "F4": 0.3377085870698029,
+   "F5": 0.2844889675350122,
+   "F6": 0.3657647750568507,
+   "F7": 0.2724060870494147
+  },
+  {
+   "ano": 2022,
+   "F0": -0.18316630978703163,
+   "F1": -0.1528544233297302,
+   "F2": -0.15285442332973065,
+   "F3": -0.16909581212437297,
+   "F3_SOLO_SEL": -0.1712210449554834,
+   "F3_SOLO_ROT": -0.24375637440640385,
+   "F3B": -0.19012446930144355,
+   "F4": -0.1528544233297292,
+   "F5": -0.14482139991120857,
+   "F6": -0.20546452525909376,
+   "F7": -0.14482139991120968
+  },
+  {
+   "ano": 2023,
+   "F0": 0.38091093802179343,
+   "F1": 0.3473445620780846,
+   "F2": 0.34413119116681234,
+   "F3": 0.3626399089057597,
+   "F3_SOLO_SEL": 0.3780775869462274,
+   "F3_SOLO_ROT": 0.38091093802179254,
+   "F3B": 0.35124800004709367,
+   "F4": 0.3629213743608124,
+   "F5": 0.3208175862729572,
+   "F6": 0.3787654577327886,
+   "F7": 0.4234350581780475
+  },
+  {
+   "ano": 2024,
+   "F0": 0.87393669009093,
+   "F1": 0.9657427447414013,
+   "F2": 0.8952359725901538,
+   "F3": 0.8094918179828321,
+   "F3_SOLO_SEL": 0.8353405300616532,
+   "F3_SOLO_ROT": 0.8477434901841574,
+   "F3B": 0.8395054426421382,
+   "F4": 0.8914317095401296,
+   "F5": 0.7822414487146585,
+   "F6": 0.861541355606118,
+   "F7": 0.8268172556339579
+  },
+  {
+   "ano": 2025,
+   "F0": 0.6072492775142597,
+   "F1": 0.4303440954104951,
+   "F2": 0.4428560823804637,
+   "F3": 0.5378405001266817,
+   "F3_SOLO_SEL": 0.6416058996219427,
+   "F3_SOLO_ROT": 0.5056555494409452,
+   "F3B": 0.5722668599870895,
+   "F4": 0.45247129670396014,
+   "F5": 0.3564532074289395,
+   "F6": 0.6424989900567328,
+   "F7": 0.4300482214659329
+  },
+  {
+   "ano": 2026,
+   "F0": 0.5987141882020373,
+   "F1": 0.531438895284152,
+   "F2": 0.5641446810051052,
+   "F3": 0.5891906558931821,
+   "F3_SOLO_SEL": 0.531053028287326,
+   "F3_SOLO_ROT": 0.6558540884664494,
+   "F3B": 0.6159135710022783,
+   "F4": 0.589835657094343,
+   "F5": 0.4333542263793073,
+   "F6": 0.5770351923349288,
+   "F7": 0.2624416740733977
+  }
+ ],
+ "cautelas": [
+  "Universo superviviente (603 tickers de HOY, 10 años): niveles absolutos inflados; SOLO valen comparaciones relativas entre variantes. OJO específico de este estudio: los filtros que expulsan tickers débiles (BAJO, bajo-EMA50) sustituyen por nombres que en un universo superviviente 'siempre acaban bien' — el beneficio de sustituir puede estar algo inflado; el de expulsar EN_MAXIMOS no tiene ese sesgo direccional claro",
+  "Muestra del caso del usuario pequeña en algunos estados (n<40): leer medias CON la mediana y el n; sin tests formales — no hay potencia",
+  "Los estados están correlacionados mecánicamente: EN_MAXIMOS resta 15 puntos al runwayScore (un ticker en máximos tiene más papeletas de ser BAJO); BAJO∧EN_MAXIMOS es un subconjunto de ambos",
+  "El forward del caso ignora stops/rotación a propósito; las simulaciones completas (tabla principal) son la medida con toda la maquinaria",
+  "HECHOS previos consistentes o a contrastar: 'en máximos retrocede MENOS' (estudio stops), 'exigir IDEAL en la ROTACIÓN destruye ~10 pp', 'ponderar por zona no aporta ±0,5 pp' — un filtro que expulsa EN_MAXIMOS va CONTRA esos priors y necesitaría señal muy fuerte",
+  "9 variantes no-control comparten referencia: multiplicidad de comparaciones — el umbral de materialidad del gate (≥2 pp / ≥0,08 MAR) y la elección por train mitigan, no eliminan",
+  "sd de celdas ~4-7 pp: Δ menores que la sd son ruido de fase×cadencia",
+  "Cartera siempre de 10 por diseño (relleno con no-elegibles si <10 elegibles): un filtro-a-liquidez (mantener el hueco en cash) es OTRA estrategia, con market-timing implícito, fuera del alcance de este estudio",
+  "Stops evaluados a cierres diarios; primera formación de cartera en FROM+review (convención del simulador, idéntica en todas las variantes)"
+ ],
+ "veredicto": {
+  "verdict": "MANTENER_ACTUAL",
+  "recomendado": null,
+  "passers": [],
+  "passersOrdenTrain": [],
+  "criterio": "gate pre-registrado en confirmación; entre passers, mejor por TRAIN; sin passers → MANTENER_ACTUAL"
+ }
+}
