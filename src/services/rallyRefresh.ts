@@ -26,6 +26,8 @@ export interface RallyRunway {
 
 export interface RallyMetrics {
   lastClose: number;
+  /** Rentabilidad de la sesión en el momento del scan (último cierre vs anterior), %. Solo informativo. */
+  dayChangePct?: number | null;
   ema20: number | null;
   ema50: number | null;
   ema20Slope: number | null;

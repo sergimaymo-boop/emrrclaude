@@ -295,6 +295,21 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
     </span>
   );
 
+  // Rentabilidad de la SESIÓN en el momento del scan (mercado cerrado → última sesión).
+  // Verde/rojo con signo, junto al ticker (izquierda) para que no se confunda con el
+  // peso de inversión (ámbar, derecha). Solo informativo: no toca el análisis.
+  const dchg = asset.metrics?.dayChangePct;
+  const dchgColor = dchg == null ? "transparent" : dchg > 0 ? "#22c55e" : dchg < 0 ? "#ef4444" : "#94a3b8";
+  const dchgText = dchg == null ? "" : `${dchg > 0 ? "+" : ""}${dchg.toFixed(2)}%`;
+  const dchgTitle = "Rentabilidad de la sesión en el momento del scan (último cierre vs cierre anterior). Con mercado cerrado, la de la última sesión. No es el peso de inversión.";
+  const dayChangeEl = (width: number) => (
+    <span title={dchg != null ? dchgTitle : undefined}
+      style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
+        width, flexShrink: 0, textAlign: "left", whiteSpace: "nowrap" }}>
+      {dchgText}
+    </span>
+  );
+
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
       <button
@@ -314,6 +329,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
+              {dchg != null && dayChangeEl(48)}
               <span style={{ flex: 1, minWidth: 6 }} />
               <span title="PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP."
                 style={{ fontSize: 10, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right" }}>
@@ -334,6 +350,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
                 para que ninguna columna se desplace según qué campos tenga cada ticker. */}
             <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
+            {dayChangeEl(52)}
             <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>
             <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
               style={{ width: 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,

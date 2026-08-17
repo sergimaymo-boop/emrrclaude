@@ -634,6 +634,12 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,
+      // Rentabilidad de la SESIÓN en el momento del scan (último cierre vs cierre
+      // anterior, serie ajustada). Con mercado cerrado = variación de la última sesión.
+      // SOLO informativo para la fila del panel: no entra en score, stops ni pesos.
+      dayChangePct: (closes.length >= 2 && closes[closes.length - 2] > 0)
+        ? Math.round((lastClose / closes[closes.length - 2] - 1) * 10000) / 100
+        : null,
       ema5:  ema5  ? Math.round(ema5  * 100) / 100 : null,
       ema20: ema20 ? Math.round(ema20 * 100) / 100 : null,
       ema50: ema50 ? Math.round(ema50 * 100) / 100 : null,
