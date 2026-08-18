@@ -75,13 +75,6 @@ export interface RallyAsset {
   entryTiming?: RallyEntryTiming;
   runway?: RallyRunway | null;
   /**
-   * Riesgo de pullback inminente 0-100 (verde <35, ámbar 35-64, rojo ≥65).
-   * OPCIONAL y aún NO emitido por el motor de scan: el hueco visual del badge "PB n"
-   * en la fila colapsada de RallyPanel ya está preparado (17-ago-2026), pero no se
-   * renderiza nada hasta que el backend incluya este campo en el top-10.
-   */
-  pullbackRisk?: number | null;
-  /**
    * % del capital del módulo sugerido para esta posición — ponderado por el
    * momentum 9 meses CRUDO del ticker (esquema M9_RAW, estudio 17-ago-2026:
    * más momentum → más peso, acotado entre 4% y 20%, Σ=100).
@@ -92,41 +85,50 @@ export interface RallyAsset {
   scanId: string | null;
 }
 
-/** Calibración v4.0 (super-auditoría 9-ago-2026, ver docs/RALLY-MODULE-AUDIT.md §10). */
+/**
+ * Calibración vigente — esquema M9_RAW certificado (C0 de producción, 17-ago-2026).
+ *
+ * TODAS las cifras salen de los JSON de estudio, no de memoria:
+ * - backtests/rally-weighting-study.json → esquema M9_RAW (selección v4 + pesos por
+ *   momentum 9m CRUDO caps 4-20% + stops adaptativos H4 + salto 70/30):
+ *   full CAGR 47,7% · MaxDD 37,7% · MAR 1,27 · winRate 0,65;
+ *   confirmación 2022-26: 44,9% · 36,1% · 1,24.
+ *   Equal-weight equivalente (esquema EQUAL, misma selección y stops, 1/10 por
+ *   posición): full 39,0% · 36,4% · MAR 1,07 (confirmación 34,3%).
+ *   Benchmark buy&hold S&P 500 del mismo periodo: 15,6% · 33,7%.
+ * - backtests/rally-joint-study.json → stops RE-CERTIFICADOS bajo M9_RAW
+ *   (interacciones.stopsBajoM9RAW + variantes): ST_FIJO30 confirmación 45,0% vs
+ *   C0 44,9% = EMPATE en retorno (la familia fija 30-35% queda a −0,5..+1,3 pp de
+ *   C0 sin pasar materialidad); peor-celda train 33,9% (fijo 30) vs 37,0% (C0) =
+ *   C0 mejor suelo. Veredicto final del estudio: CERTIFICAR_ACTUAL (H4).
+ *   La venta honesta de los stops adaptativos: empatan en retorno con un fijo
+ *   30-35% y ganan en peor escenario y en llevar stop propio por ticker.
+ */
 export const RALLY_BACKTEST = {
   period: "2017-08 → 2026-08 (10 años, 603 tickers)",
-  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m (4-20%)",
-  strategy: { cagr: 0.394, maxDD: 0.439, mar: 0.90, sharpe: 1.14 },
-  equalWeight: { cagr: 0.374, maxDD: 0.437, mar: 0.86 },
-  v3: { cagr: 0.375, maxDD: 0.419, mar: 0.89 },
+  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m crudo (4-20%)",
+  /** Esquema completo en producción (M9_RAW + stops H4 + salto 70/30), periodo full. */
+  strategy: { cagr: 0.477, maxDD: 0.377, mar: 1.27, winRate: 0.65 },
+  /** Mismo esquema, solo mitad de confirmación 2022-2026 (fuera del train). */
+  strategyConfirm: { cagr: 0.449, maxDD: 0.361, mar: 1.24 },
+  /** Misma selección y stops con reparto 1/10 por posición (esquema EQUAL), periodo full. */
+  equalWeight: { cagr: 0.39, maxDD: 0.364, mar: 1.07 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
   /**
-   * Variante operada CON stops — ADAPTATIVOS POR TICKER (estudio 15-ago-2026,
-   * scripts/rally-adaptive-stop-study.mjs + rally-adaptive-stop-round2.mjs):
-   * cada ticker lleva SU stop según su fase — stop% = clamp(12 + 0,35·recorrido,
-   * 15, 45), evaluado sobre cierres diarios, fijado a la entrada y RE-FIJADO en
-   * cada revisión (~84 sesiones) — y al saltar, reinversión el mismo día en el
-   * mejor por MEZCLA 0,7·score + 0,3·recorrido (rotationRank).
-   * Elegida por walk-forward honesto (mejor 1ª mitad 42,0%, confirmada 2ª 40,2%);
-   * gana 7/9 celdas al campeón sin stops y 6/9 al fijo 30%. QUÉ COMPRA frente al
-   * fijo 30%: igual robustez con mejor suelo (peor celda 25,0% vs 23,3%) y stop
-   * propio por ticker — NO más rentabilidad esperada (confirmación: 40,2% vs
-   * 41,4% del fijo 30%, empate estadístico). Probados y descartados con números:
-   * k·ATR puro, salud compuesta, k por ticker con shrinkage, ratchets; el
-   * clasificador de pullback no halló combinación explotable OOS (la evidencia
-   * decisiva es a nivel de política). Cifras del backtest completo (universo
-   * superviviente): comparan variantes, no prometen rentabilidad.
-   *
-   * 17-ago-2026 — pesos M9_RAW (estudio de ponderación, rally-weighting-study.mjs):
-   * misma selección y mismos stops, pero el top-10 se pondera por el momentum 9m
-   * CRUDO (caps 4-20%) en vez de por el score saturado. Cifras del periodo completo
-   * con ese esquema: CAGR 47,7% · MaxDD 37,7% · MAR 1,27; winRate 0,65 sin cambios
-   * (los stops son los mismos). En confirmación 2022-26: +8,7 pp CAGR vs el esquema
-   * anterior, con el exceso concentrado en los mega-trends 2024-26 (en lateral
-   * 2022-23 rinde ≈ igual). Sin cifra nueva de sharpe: se retiró el campo.
+   * Stops adaptativos por ticker (H4): stop% = clamp(12 + 0,35·recorrido, 15, 45),
+   * evaluado sobre cierres diarios, fijado a la entrada y re-fijado en cada revisión;
+   * al saltar, reinversión el mismo día en el mejor por mezcla 0,7·score+0,3·recorrido.
+   * Re-certificados bajo M9_RAW (rally-joint-study.json): cifras de comparación abajo.
    */
-  withStops: { cagr: 0.477, maxDD: 0.377, mar: 1.27, winRate: 0.65, stopRule: "12 + 0,35·recorrido, acotado 15-45%", jumpRule: "0,7·score + 0,3·recorrido" },
+  stops: {
+    stopRule: "12 + 0,35·recorrido, acotado 15-45%",
+    jumpRule: "0,7·score + 0,3·recorrido",
+    fijo30Confirm: 0.45,
+    c0Confirm: 0.449,
+    fijo30WorstTrain: 0.339,
+    c0WorstTrain: 0.37,
+  },
 } as const;
 
 /** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */

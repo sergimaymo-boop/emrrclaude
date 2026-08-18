@@ -30,7 +30,12 @@ const SLATE = "#94a3b8";
 const pct = (v: number | null | undefined, d = 1) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "—");
 
 export function RallyPanel() {
-  const isNarrow = useIsNarrow(680);
+  // Umbral 748 (antes 680): con la columna de rentabilidad de sesión, el layout de una
+  // línea NO cabe por debajo de ~746px de viewport (medición DOM 18-ago-2026: a 740px
+  // cada fila desborda 4px — scrollWidth 674 vs clientWidth 670 — y el nombre colapsa a
+  // 0px; a 748px desbordamiento 0). El layout de dos líneas absorbe toda la banda
+  // 680-747 sin recorte; desde 748px la fila de una línea cabe completa.
+  const isNarrow = useIsNarrow(748);
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
@@ -160,16 +165,23 @@ export function RallyPanel() {
           </div>
 
           <div style={{ padding: "8px 16px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", fontSize: 9.5, color: "#64748b", lineHeight: 1.6 }}>
-            Validado en <b style={{ color: SLATE }}>{RALLY_BACKTEST.period}</b>: esta selección dio{" "}
+            Validado en <b style={{ color: SLATE }}>{RALLY_BACKTEST.period}</b>: el esquema completo en producción (selección por momento 9m
+            + pesos por momentum crudo + stops adaptativos) midió{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.cagr * 100).toFixed(1)}%</b> anual con una caída máxima del{" "}
-            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.maxDD * 100).toFixed(0)}%</b> (MAR {RALLY_BACKTEST.strategy.mar.toFixed(2)}),
-            frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(0)}% de comprar y mantener el S&amp;P 500.
-            Con reparto a partes iguales, en lugar de por convicción, la misma selección daba {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}%
-            (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}): respetar los pesos sugeridos es parte de la estrategia.
+            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.strategy.mar.toFixed(2)},
+            aciertos {(RALLY_BACKTEST.strategy.winRate * 100).toFixed(0)}%) en el periodo completo, y{" "}
+            {(RALLY_BACKTEST.strategyConfirm.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.strategyConfirm.maxDD * 100).toFixed(1)}%
+            (MAR {RALLY_BACKTEST.strategyConfirm.mar.toFixed(2)}) en la mitad de confirmación 2022-26, fuera del tramo con el que se eligió —
+            frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(1)}% de comprar y
+            mantener el S&amp;P 500. Con reparto a partes iguales, en lugar de por momentum, la misma selección con los mismos stops daba{" "}
+            {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}% (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}): respetar los pesos
+            sugeridos es parte de la estrategia.
             La señal del ranking es el <b style={{ color: SLATE }}>momento a 9 meses</b> (189 sesiones): en la super-auditoría de familias de
             indicadores (momento a 4 plazos, RSI, fuerza relativa, momento/volatilidad y combos) fue la única que dominó en las 9 celdas de la
             malla fase×cadencia — y coincide con la ventana que OPTIMAL SUPREME encontró por separado con sus 118 variantes.
-            ⚠ Caída máxima superior al índice: diez valores de máximo momento pueden caer a la vez. Rentabilidad pasada; no garantiza la futura.
+            ⚠ Caída máxima superior al índice: diez valores de máximo momento pueden caer a la vez. La mejora de los pesos por momentum se
+            concentra en mercados con mega-tendencias (2024-26); en laterales rinde como el reparto anterior. Rentabilidad pasada; no
+            garantiza la futura.
             <br />
             <b style={{ color: SLATE }}>Zona de entrada</b> (badge junto a cada ticker): validada por separado con 260 episodios históricos de
             entrada en el top-10, comprobada en dos mitades independientes del periodo. Solo la proximidad al máximo de 52 semanas mostró señal
@@ -180,25 +192,20 @@ export function RallyPanel() {
             desde la entrada. Tendencia joven y poco extendida sobre su media de 50 = más recorrido por delante; en máximos de 52 semanas = menos.
             Es informativo: se probó usarlo para filtrar o reordenar el top-10 y <b>ninguna variante mejoró</b> a la cartera base.
             <br />
-            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: un trailing ceñido uniforme <b>destruye rentabilidad aquí</b> (re-medido con la
-            base ajustada y salto inmediato al mejor candidato: 30,3% frente a 38,3% del campeón sin stops). El <b>STOP de cada fila es
-            ADAPTATIVO POR TICKER</b> (estudio 15-ago-2026): anchura = <b>{RALLY_BACKTEST.withStops.stopRule}</b>, fijada a la entrada y
-            re-fijada en cada revisión (~84 sesiones) — recorrido alto (tendencia joven, poco estirada, sin agotar) → stop{" "}
-            <b style={{ color: GREEN }}>AMPLIO</b> para dejar correr; recorrido bajo → <b style={{ color: "#eab308" }}>CEÑIDO</b> para
-            ceder poco en el pullback y rotar. Se evalúa sobre <b>cierres diarios</b> (salta si el CIERRE cae ese % desde su máximo de cierre);
-            no es una orden trailing intradía en el broker — una orden intradía saltaría más a menudo que lo backtesteado.
+            <b style={{ color: "#eab308" }}>⚠ Sobre el stop</b>: el <b>STOP de cada fila es ADAPTATIVO POR TICKER</b>: anchura ={" "}
+            <b>{RALLY_BACKTEST.stops.stopRule}</b>, fijada a la entrada y re-fijada en cada revisión (~84 sesiones) — recorrido alto
+            (tendencia joven, poco estirada, sin agotar) → stop <b style={{ color: GREEN }}>AMPLIO</b> para dejar correr; recorrido bajo →{" "}
+            <b style={{ color: "#eab308" }}>CEÑIDO</b> para ceder poco en el pullback y rotar. Se evalúa sobre <b>cierres diarios</b> (salta
+            si el CIERRE cae ese % desde su máximo de cierre); no es una orden trailing intradía en el broker — una orden intradía saltaría
+            más a menudo que lo backtesteado.
             <b style={{ color: SLATE }}> Si un stop te salta</b>: re-escanea y entra en el mejor por <b>mezcla 70/30 de score y recorrido</b>{" "}
-            ({RALLY_BACKTEST.withStops.jumpRule}). Qué compra esta política frente al stop fijo 30%: <b>igual robustez con mejor suelo</b>{" "}
-            (peor celda de la malla 25,0% frente a 23,3%) <b>y un stop propio por ticker según su fase</b> — NO más rentabilidad esperada:
-            en la mitad de confirmación rindió 40,2% frente a 41,4% del fijo 30% (empate estadístico). En el backtest completo midió{" "}
-            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.cagr * 100).toFixed(1)}%</b> anual con caída máxima del{" "}
-            <b style={{ color: AMBER }}>{(RALLY_BACKTEST.withStops.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.withStops.mar.toFixed(2)},
-            aciertos {(RALLY_BACKTEST.withStops.winRate * 100).toFixed(0)}%), elegida solo con la 1ª mitad del histórico y confirmada en la 2ª;
-            gana 7/9 celdas al campeón sin stops (no domina 9/9) y 6/9 al fijo 30%. Probados y <b>descartados con números</b>:
-            stop por k·ATR (satura y pierde robustez), modulación por "salud" compuesta, parámetros por ticker incluso con shrinkage (los
-            óptimos individuales no son estables), ratchets de beneficio, y exigir "entrada IDEAL" al saltar (pierde en todas las celdas).
-            Los pesos por momentum mejoran el backtest sobre todo en mercados con tendencias fuertes; en mercados laterales rinden como el
-            esquema anterior.
+            ({RALLY_BACKTEST.stops.jumpRule}). Re-certificados bajo los pesos por momentum (auditoría conjunta 17-ago-2026): la venta honesta
+            es que estos stops <b>EMPATAN en retorno con un stop fijo del 30-35%</b> — en la mitad de confirmación,{" "}
+            {(RALLY_BACKTEST.stops.c0Confirm * 100).toFixed(1)}% frente a {(RALLY_BACKTEST.stops.fijo30Confirm * 100).toFixed(1)}% del fijo
+            30% — <b>y ganan en peor escenario</b> (peor celda del train {(RALLY_BACKTEST.stops.c0WorstTrain * 100).toFixed(1)}% frente a{" "}
+            {(RALLY_BACKTEST.stops.fijo30WorstTrain * 100).toFixed(1)}% del fijo 30%) <b>y en llevar un stop propio por ticker según su
+            fase</b> — NO compran más rentabilidad esperada. Probados y descartados en estudios previos: stop por k·ATR puro, modulación por
+            "salud" compuesta, parámetros por ticker incluso con shrinkage, ratchets de beneficio, y exigir "entrada IDEAL" al saltar.
             ⚠ Todas estas cifras son de backtest con el universo superviviente actual y ejecución ideal al cierre (20 pb de costes):{" "}
             <b>sirven para comparar variantes entre sí, no como rentabilidad esperada</b>.
           </div>
@@ -237,25 +244,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
     : stop >= 36 ? { color: GREEN, band: "AMPLIO" }
     : stop >= 25 ? { color: SLATE, band: "MEDIO" }
     : { color: "#eab308", band: "CEÑIDO" };
-  // Badge "PB n" — riesgo de pullback inminente (0-100). HUECO PREPARADO 17-ago-2026:
-  // el motor de scan aún NO emite `pullbackRisk`, así que hoy no se renderiza NADA
-  // (ni hueco fantasma) y la fila queda idéntica. Cuando el motor lo emita, lo hará
-  // para todo el top-10 a la vez, con lo que las columnas fijas de escritorio
-  // (mandato 11-ago-2026) siguen alineadas fila contra fila. Informativo: no altera
-  // ranking, pesos ni stops.
-  const pb = asset.pullbackRisk ?? null;
-  const pbStyle = pb == null ? null
-    : pb >= 65 ? { color: RED, band: "alto — pullback inminente probable" }
-    : pb >= 35 ? { color: "#eab308", band: "medio — vigilar de cerca" }
-    : { color: GREEN, band: "bajo — lejos de pullback" };
-  const pbBadge = pb != null && pbStyle ? (
-    <span title={`Riesgo de pullback inminente: ${Math.round(pb)}/100 (${pbStyle.band}). Informativo: no cambia ranking ni pesos.`}
-      style={{ width: 44, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
-        color: pbStyle.color, background: `${pbStyle.color}18`,
-        border: `1px solid ${pbStyle.color}55`, whiteSpace: "nowrap" }}>
-      {`PB ${Math.round(pb)}`}
-    </span>
-  ) : null;
+  // Badge de pullback eliminado 18-ago tras veredicto NO PUBLICAR del estudio — si un estudio futuro pasa el gate, añadir campo+badge+umbrales en el MISMO commit que el motor lo emita.
   // BUG FIX (móvil 375-430px, ago-2026): la fila colapsada vivía en una única línea
   // flex con 9-10 elementos de ancho fijo (~350px de mínimo) dentro de una sección con
   // overflow:hidden. En 375px el chevron ▼ quedaba COMPLETAMENTE fuera del recorte
@@ -263,7 +252,8 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   // fila se reparte en DOS líneas — 1) identidad + peso + score + chevron, SIEMPRE
   // visibles; 2) badges de recorrido/entrada/stop/aviso, con margen de sobra — en vez de
   // forzarlo todo en una sola línea que no cabía en ningún iPhone actual. Desktop/tablet
-  // (isNarrow=false, ≥680px) no cambia: ahí la fila de una línea ya cabía sin problema.
+  // (isNarrow=false, ≥748px desde el 18-ago — antes 680, la banda 680-747 desbordaba con
+  // la columna de sesión) no cambia: ahí la fila de una línea cabe completa.
   const badgeRow = (
     <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
       <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
@@ -287,7 +277,6 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
           border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
         {stop != null ? `STOP ${stop}%` : "—"}
       </span>
-      {pbBadge}
       <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
         style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
         {flags.length > 0 ? "⚠" : ""}
@@ -302,13 +291,21 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
   const dchgColor = dchg == null ? "transparent" : dchg > 0 ? "#22c55e" : dchg < 0 ? "#ef4444" : "#94a3b8";
   const dchgText = dchg == null ? "" : `${dchg > 0 ? "+" : ""}${dchg.toFixed(2)}%`;
   const dchgTitle = "Rentabilidad de la sesión en el momento del scan (último precio vs cierre anterior). Con el mercado ABIERTO es el dato en curso a esa hora — puede diferir del tiempo real actual; con mercado cerrado, la de la última sesión. No es el peso de inversión.";
-  const dayChangeEl = (width: number) => (
-    <span title={dchg != null ? dchgTitle : undefined}
-      style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
-        width, flexShrink: 0, textAlign: "left", whiteSpace: "nowrap" }}>
-      {dchgText}
-    </span>
-  );
+  // Convención única con flag spacer: en escritorio (reserveWhenNull=true) el hueco de
+  // ancho fijo se renderiza SIEMPRE aunque falte el dato, para que las columnas fijas
+  // (mandato 11-ago-2026) sigan alineadas fila contra fila; en móvil (false) no se
+  // reserva hueco y la línea 1 recupera ese espacio.
+  const dayChangeEl = (width: number, reserveWhenNull: boolean) =>
+    dchg == null && !reserveWhenNull ? null : (
+      <span title={dchg != null ? dchgTitle : undefined}
+        style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
+          width, flexShrink: 0, textAlign: "left", whiteSpace: "nowrap" }}>
+        {dchgText}
+      </span>
+    );
+  // Tooltip del PESO de inversión — izado (patrón dchgTitle) para que ambas ramas
+  // (móvil y escritorio) muestren SIEMPRE el mismo texto.
+  const weightTitle = "PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP.";
 
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -329,9 +326,9 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
-              {dchg != null && dayChangeEl(48)}
+              {dayChangeEl(48, false)}
               <span style={{ flex: 1, minWidth: 6 }} />
-              <span title="PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP."
+              <span title={weightTitle}
                 style={{ fontSize: 10, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right" }}>
                 {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
               </span>
@@ -350,7 +347,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
                 para que ninguna columna se desplace según qué campos tenga cada ticker. */}
             <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
-            {dayChangeEl(52)}
+            {dayChangeEl(52, true)}
             <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>
             <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
               style={{ width: 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
@@ -373,12 +370,11 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
                 border: `1px solid ${stop != null ? `${stopStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
               {stop != null ? `STOP ${stop}%` : "—"}
             </span>
-            {pbBadge}
             <span title={flags.length ? flags.map((f) => f.label).join(" · ") : undefined}
               style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
               {flags.length > 0 ? "⚠" : ""}
             </span>
-            <span title="PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP."
+            <span title={weightTitle}
               style={{ fontSize: 10.5, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", width: 44, flexShrink: 0, textAlign: "right" }}>
               {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
             </span>
