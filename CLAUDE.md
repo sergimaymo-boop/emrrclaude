@@ -351,6 +351,7 @@ Orden DICTADO por Sergi (16-ago-2026) — no reordenar sin su OK. Separación un
 
 | # | Component | Módulo |
 |---|---|---|
+| 0 | `RallyTestPanel` | 🧪 Rally-Test (laboratorio, arriba del todo bajo la cabecera — mandato 18-ago-2026; ver §10e) |
 | 1 | `StickyMiniHeader` | SCAN EMRR (barra superior, intocable) |
 | 2 | `FearGreedPanel` | Fear & Greed |
 | 3 | (riesgo) | Riesgo de mercado |
@@ -403,6 +404,24 @@ cambian si un estudio walk-forward supera los gates pre-registrados (ver §10c).
 - **Semántica IBK**: invertido = Σ(Posición × Último) = VAL.MDO. · efectivo = EXCESO LIQ. · total = NAV. Posiciones US cotizan en USD, totales de cuenta en EUR → FX implícito = VAL.MDO. / Σ(valores USD).
 - **Espejo servidor**: al cargar fotos con éxito, POST fire-and-forget a `/api/rally-scan/ibk-portfolio` (Redis 180d). Endpoint sin auth (riesgo aceptado, sin datos identificativos).
 - **Export automático**: launchd `com.emrr.cartera-ibk` (cada 5 min) ejecuta `scripts/cartera_ibk_export.py`: con scan nuevo o cartera nueva genera `~/Desktop/CarteraIBK/Cartera_RallyLeaders_<fecha>_<hora>.{xlsx,pdf}` (hora Canarias del scan) con ± posiciones a operar y trailing stop por ticker, y lo ENVÍA POR EMAIL vía Mail.app a sergimaymo@gmail.com (el iCloud del usuario está lleno — el Escritorio NO sincroniza al iPhone). Estado/logs en `~/Library/Application Support/CarteraIBK/`. FORMATO PERMANENTE: columnas de importes € SIN decimales (round() real en la celda, no solo number_format).
+
+---
+
+## 10e. RALLY-TEST — MÓDULO DE LABORATORIO (18-ago-2026)
+
+Mandato de Sergi: *"haz una copia del módulo Rally Leaders que se llame Rally-Test para hacer pruebas
+sobre este último **sin tocar nada** del módulo de Rally Leaders"*. **Rally Leaders (§10b) queda
+CONGELADO**: todo experimento se hace aquí.
+
+| Item | Value |
+|---|---|
+| Endpoints | POST /api/rally-test/{start,continue} · GET /api/rally-test/last → rewrites a `/api/rally-scan?action=test-*` (NO se crea función nueva: el plan Hobby está en su tope de 12) |
+| Backend | handlers `handleTest*` en `api/rally-scan.js` (copia de los de producción, que NO se tocan) · token con versión propia `RALLY_TEST_V1` |
+| Motor | `api/_lib/rallyScoreEngineTest.js` + `api/_lib/rallyBatchProcessorTest.js` — copias byte-idénticas del motor de producción salvo cabecera |
+| Persistencia | Redis `last_rally_test_snapshot` (clave propia: un scan de test NUNCA pisa `last_rally_snapshot`) |
+| Frontend | `src/services/rallyTestRefresh.ts` (tipos reexportados de producción) · `src/components/RallyTestPanel.tsx` (color violeta `#a855f7` para no confundirlo con el ámbar de producción) |
+| Aislamiento UI | NO se registra en el bus de SCAN EMRR (botón propio) y NO dispara `RALLY_SCAN_UPDATED_EVENT` → ni la banda de alineación de cartera ni el export CarteraIBK ven un scan de test |
+| Regla | Mientras el motor de test sea idéntico, su top-10 = el de Rally Leaders. En cuanto cambie un parámetro, las cifras de backtest de §10b DEJAN de aplicar: hay que recalcularlas y pasar los gates de §10c antes de proponer nada para producción |
 
 ---
 

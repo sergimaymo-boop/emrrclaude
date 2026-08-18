@@ -66,6 +66,36 @@ export async function loadLastRallySnapshot() {
   }
 }
 
+// ─── RALLY-TEST (laboratorio) persistence ────────────────────────────────────
+// Clave SEPARADA de la de producción: un scan de Rally-Test NUNCA sobrescribe el
+// último scan de Rally Leaders (del que dependen la banda de alineación y el
+// export CarteraIBK del Mac).
+const KV_RALLY_TEST_KEY = "last_rally_test_snapshot";
+
+export async function saveLastRallyTestSnapshot(snapshot) {
+  try {
+    const redis = getRedis();
+    if (!redis) return false;
+    await redis.set(KV_RALLY_TEST_KEY, snapshot, { ex: KV_TTL_SECONDS });
+    return true;
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function loadLastRallyTestSnapshot() {
+  try {
+    const redis = getRedis();
+    if (!redis) return null;
+    const data = await redis.get(KV_RALLY_TEST_KEY);
+    return data ?? null;
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
+    return null;
+  }
+}
+
 // ─── IBK portfolio snapshot (canal lateral de lectura externa, p.ej. Mac) ────
 // Solo persistencia: NO participa en ningún cálculo de módulos (Rally/Supreme/SP500).
 const KV_IBK_KEY = "last_ibk_portfolio";

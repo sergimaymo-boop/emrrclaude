@@ -47,6 +47,7 @@ import { ScanSummaryBar } from "../components/ScanSummaryBar";
 import { Optimal2026Panel } from "../components/Optimal2026Panel";
 import { PortfolioCard } from "../components/PortfolioCard";
 import { RallyPanel } from "../components/RallyPanel";
+import { RallyTestPanel } from "../components/RallyTestPanel";
 import { SP500Panel } from "../components/SP500Panel";
 import { runAllModuleScans } from "../services/scanBus";
 import {
@@ -1061,6 +1062,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           real ↔ Rally" (informativa) pegada al módulo que referencia. Supreme
           sigue leyendo la MISMA cartera (localStorage único compartido).
           ══════════════════════════════════════════════════════════════════════ */}
+
+      {/* ── MÓDULO 0 — 🧪 RALLY-TEST (laboratorio, 18-ago-2026) ─────────────────
+          Copia del módulo Rally Leaders para experimentar SIN tocarlo (mandato de
+          Sergi). Va arriba del todo por petición expresa. Endpoints (/api/rally-test/*),
+          motor (rallyScoreEngineTest.js) y snapshot (last_rally_test_snapshot) propios:
+          no comparte NADA con producción salvo el universo y los proveedores de datos. */}
+      <ErrorBoundary inline label="Rally-Test">
+        <RallyTestPanel />
+      </ErrorBoundary>
 
       {/* ── MÓDULO 1 — FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
       <ErrorBoundary inline label="Fear & Greed">

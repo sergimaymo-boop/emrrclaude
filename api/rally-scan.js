@@ -21,13 +21,20 @@
 // threshold gate. The monetary cycle correctly modulates the ENTRY decision via
 // Filter 5 (cycleWarning) in OptimalSignalPanel.tsx, not the technical ranking.
 import { buildUniverseResponse } from './universe.js';
-import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio } from './_lib/kvStorage.js';
+import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastRallyTestSnapshot, loadLastRallyTestSnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio } from './_lib/kvStorage.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
 import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
+// RALLY-TEST (laboratorio, 18-ago-2026): motor y batch processor PROPIOS, snapshot en
+// clave KV propia y token con versión propia. Vive en este mismo archivo porque el plan
+// Hobby de Vercel está en su tope de 12 funciones: un api/rally-test.js nuevo no
+// desplegaría. Los handlers de producción de arriba NO se tocan.
+import { runRallyBatch as runRallyTestBatch, fetchSpyBars as fetchSpyBarsTest } from './_lib/rallyBatchProcessorTest.js';
+import { assignSuggestedWeights as assignSuggestedWeightsTest } from './_lib/rallyScoreEngineTest.js';
 import { filterActiveOperableAssets, getActiveMarketsAt, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
 const RALLY_VERSION = 'RALLY_V1';
+const RALLY_TEST_VERSION = 'RALLY_TEST_V1';   // versión propia: un token de test NUNCA vale en producción, ni al revés
 const BATCH_SIZE    = 80;
 const MAX_TOP_CANDIDATES = 10;
 
@@ -167,6 +174,119 @@ async function handleLast(req, res) {
   return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_SCAN_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
 }
 
+// ═══ RALLY-TEST — laboratorio de pruebas (copia aislada de start/continue/last) ══
+// Mandato 18-ago-2026: Rally Leaders NO se toca. Estos handlers son una COPIA de los
+// de arriba; al crearse hacen exactamente lo mismo, pero puntúan con el motor de test
+// (rallyScoreEngineTest.js), guardan en su propia clave KV y firman con su propia
+// versión de token. Todo experimento futuro se hace aquí, no arriba.
+function encodeTestToken(state) {
+  const payloadB64 = Buffer.from(JSON.stringify({ v: RALLY_TEST_VERSION, ...state })).toString('base64url');
+  return signStateToken(payloadB64);
+}
+
+function decodeTestToken(token) {
+  const verified = verifyStateToken(token);
+  if (!verified.ok) return { ok: false, error: verified.error };
+  try {
+    const decoded = JSON.parse(Buffer.from(verified.payloadB64, 'base64url').toString('utf8'));
+    if (decoded.v !== RALLY_TEST_VERSION) return { ok: false, error: 'INVALID_TOKEN_VERSION' };
+    return { ok: true, state: decoded };
+  } catch { return { ok: false, error: 'TOKEN_DECODE_FAILED' }; }
+}
+
+function createTestScanId() { return `rallytest-${Date.now().toString(36)}`; }
+
+async function handleTestStart(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'RALLY_TEST_START');
+  if (!isRealApi()) return sendJson(res, 409, { ok: false, status: 'RALLY_DATA_UNAVAILABLE', error: 'REAL_API_CALLS_DISABLED', message: 'Set ENABLE_REAL_API_CALLS=true to run Rally-Test scan.' }, 'RALLY_TEST_START');
+
+  const scanStartedAtUtc = new Date().toISOString();
+  const scanId = createTestScanId();
+
+  const universe = await buildUniverseResponse({ includeFullAssets: true });
+  if (!universe.ok || universe.assets.length === 0) {
+    return sendJson(res, 409, { ok: false, status: 'RALLY_DATA_UNAVAILABLE', error: universe.error ?? 'UNIVERSE_NOT_READY', message: 'Rally-Test scan requires active universe.' }, 'RALLY_TEST_START');
+  }
+
+  const activeMarkets = getActiveMarketsAt(scanStartedAtUtc);
+  const eligibleAssets = (universe.assets ?? []).filter(a => a?.operabilityStatus === 'OPERABLE');
+  if (eligibleAssets.length === 0) {
+    return sendJson(res, 409, { ok: false, status: 'RALLY_DATA_UNAVAILABLE', error: 'NO_OPERABLE_ASSETS', activeMarkets, message: 'No operable assets in universe.' }, 'RALLY_TEST_START');
+  }
+
+  const spyBars = await fetchSpyBarsTest();
+  const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
+  const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
+
+  const { candidates, providerCalls } = await runRallyTestBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
+  const batchesCompleted = 1;
+  const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
+  const isComplete = batchesCompleted >= batchesTotal;
+  const top10 = assignSuggestedWeightsTest(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
+
+  if (isComplete) {
+    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
+  }
+
+  const rallyToken = encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
+  const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, top10, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_TEST_START');
+}
+
+async function handleTestContinue(req, res) {
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'RALLY_TEST_CONTINUE');
+  if (!isRealApi()) return sendJson(res, 409, { ok: false, error: 'REAL_API_CALLS_DISABLED' }, 'RALLY_TEST_CONTINUE');
+
+  const body = await readBody(req);
+  if (!body.rallyToken) return sendJson(res, 400, { ok: false, error: 'RALLY_TOKEN_REQUIRED' }, 'RALLY_TEST_CONTINUE');
+
+  const decoded = decodeTestToken(body.rallyToken);
+  if (!decoded.ok) return sendJson(res, 400, { ok: false, error: decoded.error }, 'RALLY_TEST_CONTINUE');
+
+  const state = decoded.state;
+  const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers, topCandidates, actualProviderCalls } = state;
+
+  if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
+    return sendJson(res, 400, { ok: false, error: 'SCAN_ALREADY_COMPLETE' }, 'RALLY_TEST_CONTINUE');
+  }
+
+  const universe = await buildUniverseResponse({ includeFullAssets: true });
+  const assetBySymbol = new Map((universe.assets ?? []).map(a => [a.providerSymbol, a]));
+  const eligibleAssets = eligibleTickers.map(ticker => assetBySymbol.get(ticker) ?? ({
+    providerSymbol: ticker, ticker: ticker.split('.')[0], name: ticker.split('.')[0],
+    market: ticker.includes('.US') ? 'Nasdaq/NYSE' : 'Europe', region: ticker.includes('.US') ? 'USA' : 'Europe',
+    exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR',
+  }));
+  const spyBars = await fetchSpyBarsTest();
+  const { candidates, providerCalls: newCalls } = await runRallyTestBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+
+  const newBatchesCompleted = batchesCompleted + 1;
+  const newCoveragePercent  = Math.round((newBatchesCompleted / batchesTotal) * 100);
+  const isComplete  = newBatchesCompleted >= batchesTotal;
+  const totalCalls  = (actualProviderCalls ?? 0) + newCalls;
+  const top10 = assignSuggestedWeightsTest(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
+
+  if (isComplete) {
+    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });
+  }
+
+  const newToken = isComplete ? null : encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length });
+  const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, top10, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_TEST_CONTINUE');
+}
+
+async function handleTestLast(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED', app: APP_NAME, endpoint: 'RALLY_TEST_LAST' });
+
+  const snapshot = await loadLastRallyTestSnapshot();
+  if (!snapshot) {
+    return res.status(404).json({ ok: false, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', error: 'NO_STORED_RALLY_SNAPSHOT', status: 'RALLY_DATA_UNAVAILABLE', message: 'No completed Rally-Test scan found.', timestampUtc: new Date().toISOString() });
+  }
+  return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
+}
+
 // ─── ibk-portfolio handler ────────────────────────────────────────────────────
 // Canal LATERAL de persistencia del snapshot de cartera IBK (subido por fotos
 // desde el navegador) para que un proceso externo (script del Mac) pueda leerlo.
@@ -250,5 +370,8 @@ export default async function handler(req, res) {
   if (action === 'continue') return handleContinue(req, res);
   if (action === 'last')     return handleLast(req, res);
   if (action === 'ibk-portfolio') return handleIbkPortfolio(req, res);
-  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio'] });
+  if (action === 'test-start')    return handleTestStart(req, res);
+  if (action === 'test-continue') return handleTestContinue(req, res);
+  if (action === 'test-last')     return handleTestLast(req, res);
+  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'test-start', 'test-continue', 'test-last'] });
 }
