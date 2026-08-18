@@ -135,6 +135,65 @@ def base_symbol(sym: str) -> str:
     return (sym or "").split(".")[0].strip().upper()
 
 
+# ── plausibilidad de la cartera (anti-envenenamiento del endpoint sin auth) ────
+
+NAV_DRIFT_TOL = 0.40   # el NAV nuevo no debe desviarse > ±40% del último conocido
+NAV_IDENTITY_TOL = 0.10  # NAV ≈ valMdo + cash (±10%)
+POS_VALMDO_TOL = 0.15    # Σ posiciones ≈ valMdo (±15%)
+
+
+def _finite_num(v):
+    return isinstance(v, (int, float)) and math.isfinite(v)
+
+
+def positions_value_eur(portfolio: dict) -> float:
+    """Σ valor de mercado de las posiciones en EUR (usa fx si está; si falta y son USD,
+    no puede convertir con fiabilidad y esas posiciones no suman)."""
+    fx = portfolio.get("fxEurPerUsd")
+    total = 0.0
+    for p in (portfolio.get("positions") or []):
+        try:
+            q, pr = float(p.get("quantity")), float(p.get("lastPrice"))
+        except (TypeError, ValueError):
+            continue
+        if q <= 0 or pr <= 0:
+            continue
+        cur = (p.get("currency") or "USD").upper()
+        rate = 1.0
+        if cur == "USD":
+            if not (_finite_num(fx) and fx > 0):
+                continue
+            rate = float(fx)
+        total += q * pr * rate
+    return total
+
+
+def portfolio_plausible(portfolio: dict, last_good_nav) -> tuple:
+    """Devuelve (ok, motivo). Barrera de sanidad para el snapshot leído del endpoint
+    público sin auth: evita que un dato envenenado dispare un email de rebalanceo."""
+    nav = portfolio.get("navEur")
+    if not (_finite_num(nav) and nav > 0):
+        return False, "navEur ausente o no positivo"
+    if _finite_num(last_good_nav) and last_good_nav > 0:
+        lo, hi = last_good_nav * (1 - NAV_DRIFT_TOL), last_good_nav * (1 + NAV_DRIFT_TOL)
+        if not (lo <= nav <= hi):
+            return False, (f"navEur {nav:,.0f} fuera de ±{NAV_DRIFT_TOL:.0%} del último "
+                           f"conocido ({last_good_nav:,.0f})")
+    val_mdo, cash = portfolio.get("valMdoEur"), portfolio.get("cashEur")
+    if _finite_num(val_mdo) and _finite_num(cash) and val_mdo >= 0 and cash >= 0:
+        expected = val_mdo + cash
+        if expected > 0 and abs(expected - nav) > NAV_IDENTITY_TOL * nav:
+            return False, (f"identidad rota: NAV {nav:,.0f} != valMdo+cash {expected:,.0f} "
+                           f"(+/-{NAV_IDENTITY_TOL:.0%})")
+    positions = portfolio.get("positions") or []
+    if positions and _finite_num(portfolio.get("fxEurPerUsd")) and _finite_num(val_mdo) and val_mdo > 0:
+        pos_eur = positions_value_eur(portfolio)
+        if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):
+            return False, (f"Sigma posiciones {pos_eur:,.0f} != valMdo {val_mdo:,.0f} "
+                           f"(+/-{POS_VALMDO_TOL:.0%})")
+    return True, "ok"
+
+
 # ── cálculo del plan ─────────────────────────────────────────────────────────
 
 def build_plan(scan: dict, portfolio: dict) -> dict:
@@ -579,6 +638,19 @@ def main() -> int:
     if not force and state.get("lastKey") == key:
         return 0  # nada nuevo
 
+    # Barrera de plausibilidad: el snapshot de cartera llega de un endpoint público sin
+    # auth, así que antes de generar/emailear un plan de rebalanceo verificamos que el dato
+    # sea coherente (NAV dentro de ±40% del último conocido, identidad NAV≈valMdo+cash,
+    # Σposiciones≈valMdo). La semilla local es de confianza y no se somete al chequeo.
+    if not portfolio.get("_seeded"):
+        ok, reason = portfolio_plausible(portfolio, state.get("lastGoodNav"))
+        if not ok:
+            log(f"AVISO: cartera del servidor NO plausible ({reason}) — NO se genera ni "
+                f"envía plan. Se conserva el último bueno. Sube fotos correctas para reevaluar.")
+            notify("CarteraIBK: dato ignorado",
+                   f"Cartera recibida no plausible ({reason}). No se ha enviado plan.")
+            return 0
+
     plan = build_plan(scan_resp, portfolio)
     stamp = plan["scan_local"].strftime("%Y-%m-%d_%H-%M")
     xlsx_path = os.path.join(OUT_DIR, f"Cartera_RallyLeaders_{stamp}.xlsx")
@@ -587,7 +659,10 @@ def main() -> int:
     write_xlsx(plan, xlsx_path)
     write_pdf(plan, pdf_path)
 
+    # Persistimos el NAV usado como "último bueno" para el chequeo de deriva del próximo run.
+    last_good_nav = plan["nav"] if _finite_num(plan.get("nav")) and plan["nav"] > 0 else state.get("lastGoodNav")
     save_state({"lastKey": key, "lastFiles": [xlsx_path, pdf_path],
+                "lastGoodNav": last_good_nav,
                 "generatedAt": datetime.now(timezone.utc).isoformat()})
     log(f"Generados: {os.path.basename(xlsx_path)} + PDF (scan {plan['scan_id']}, "
         f"cartera {'semilla' if plan['seeded'] else portfolio.get('loadedAt')})")

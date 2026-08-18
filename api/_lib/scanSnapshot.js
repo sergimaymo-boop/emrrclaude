@@ -79,6 +79,58 @@ export function decodeScanSnapshotToken(token) {
   }
 }
 
+// ─── Firma HMAC de tokens de continuación (compat con fallback) ───────────────
+// A diferencia de encode/decodeScanSnapshotToken (legacy, keyed a EODHD_API_KEY),
+// estas helpers dependen ESTRICTAMENTE de SCAN_SNAPSHOT_SIGNING_SECRET y NO rompen
+// los scans si la variable no está configurada: en ese caso emiten/aceptan tokens
+// sin firma (comportamiento actual) y marcan signingConfigured=false para que el
+// dispatcher devuelva un aviso. Al configurar la variable en Vercel, la firma pasa
+// a exigirse y los tokens forjados quedan rechazados.
+export function getConfiguredSigningSecret() {
+  const env = getEnv();
+  const secret = env.SCAN_SNAPSHOT_SIGNING_SECRET || "";
+  return typeof secret === "string" && secret.trim().length > 0 ? secret : null;
+}
+
+export function isSnapshotSigningConfigured() {
+  return getConfiguredSigningSecret() !== null;
+}
+
+// Firma un payload ya serializado en base64url (el JSON del estado del token).
+// Con secreto → `${payloadB64}.${hmac}`. Sin secreto → el payload crudo (sin firma).
+export function signStateToken(payloadB64) {
+  const secret = getConfiguredSigningSecret();
+  if (!secret) return payloadB64;
+  const sig = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  return `${payloadB64}.${sig}`;
+}
+
+// Verifica y extrae el payload base64url de un token.
+//   - Con secreto configurado: EXIGE firma válida (rechaza sin firma o firma mala).
+//   - Sin secreto: acepta el token tal cual (fallback compat), verified=false.
+// El alfabeto base64url no contiene ".", así que el separador es inequívoco.
+export function verifyStateToken(token) {
+  const secret = getConfiguredSigningSecret();
+  if (typeof token !== "string" || token.length === 0) {
+    return { ok: false, error: "TOKEN_REQUIRED", signingConfigured: secret !== null };
+  }
+  const dot = token.lastIndexOf(".");
+  if (!secret) {
+    const payloadB64 = dot >= 0 ? token.slice(0, dot) : token;
+    return { ok: true, payloadB64, verified: false, signingConfigured: false };
+  }
+  if (dot < 0) return { ok: false, error: "TOKEN_UNSIGNED", signingConfigured: true };
+  const payloadB64 = token.slice(0, dot);
+  const signature = token.slice(dot + 1);
+  const expected = createHmac("sha256", secret).update(payloadB64).digest("base64url");
+  const actual = Buffer.from(signature, "base64url");
+  const exp = Buffer.from(expected, "base64url");
+  if (actual.length !== exp.length || !timingSafeEqual(actual, exp)) {
+    return { ok: false, error: "TOKEN_INVALID_SIGNATURE", signingConfigured: true };
+  }
+  return { ok: true, payloadB64, verified: true, signingConfigured: true };
+}
+
 function clampInteger(value, fallback, min, max) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return fallback;

@@ -22,7 +22,7 @@ import { fetchEodhdSpread } from './_lib/spreadDataProvider.js';
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from './_lib/candidateEvaluationEngine.js';
 import { saveLastScanSnapshot, loadLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from './_lib/kvStorage.js';
 import { raceBenchmarkHistory } from './_lib/providerCascade.js';
-import { filterActiveOperableAssets, getActiveMarketsAt, parseSnapshotBatchSize } from './_lib/scanSnapshot.js';
+import { filterActiveOperableAssets, getActiveMarketsAt, parseSnapshotBatchSize, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME = 'EMRR 2.0 / Tendencias';
 const DEFAULT_BATCH_SIZE = 50;
@@ -177,10 +177,12 @@ async function handleStart(request, response) {
   }
 
   const compactAccumulated = top8.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
-  const snapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex: 1, universeCount: allOperable.length, actualProviderCalls: providerCalls, accProviderOk: providerOkBatch, accProviderFail: providerFailBatch, accumulatedTop8: compactAccumulated })).toString('base64url');
+  const snapshotToken = isGlobalTop8Final ? null : signStateToken(Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex: 1, universeCount: allOperable.length, actualProviderCalls: providerCalls, accProviderOk: providerOkBatch, accProviderFail: providerFailBatch, accumulatedTop8: compactAccumulated })).toString('base64url'));
   const statusCode = isGlobalTop8Final ? 200 : batchesCompleted > 0 ? 206 : 409;
+  const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+  const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(response, statusCode, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : 1, coveragePercent, estimatedProviderCalls: batchSize * 2 + 1, actualProviderCalls: providerCalls, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summary, eligibilityDiagnostics }] }, message: isGlobalTop8Final ? 'Global TOP 8 final — 100% coverage.' : `SCAN FULL batch 1/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_START');
+  return sendJson(response, statusCode, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : 1, coveragePercent, estimatedProviderCalls: batchSize * 2 + 1, actualProviderCalls: providerCalls, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken, tokenSigning, signingWarning, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summary, eligibilityDiagnostics }] }, message: isGlobalTop8Final ? 'Global TOP 8 final — 100% coverage.' : `SCAN FULL batch 1/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_START');
 }
 
 // ─── continue ─────────────────────────────────────────────────────────────────
@@ -190,8 +192,10 @@ async function handleContinue(request, response) {
   const body = await readJsonBody(request);
   if (!body.snapshotToken) return sendJson(response, 400, { ok: false, error: 'SNAPSHOT_TOKEN_REQUIRED' }, 'SCAN_SNAPSHOT_CONTINUE');
 
+  const verified = verifyStateToken(body.snapshotToken);
+  if (!verified.ok) return sendJson(response, 400, { ok: false, error: verified.error, tokenSigning: verified.signingConfigured ? 'SIGNED' : 'UNSIGNED_FALLBACK' }, 'SCAN_SNAPSHOT_CONTINUE');
   let state;
-  try { state = JSON.parse(Buffer.from(body.snapshotToken, 'base64url').toString('utf8')); }
+  try { state = JSON.parse(Buffer.from(verified.payloadB64, 'base64url').toString('utf8')); }
   catch { return sendJson(response, 400, { ok: false, error: 'INVALID_SNAPSHOT_TOKEN' }, 'SCAN_SNAPSHOT_CONTINUE'); }
 
   const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, universeCount, actualProviderCalls: prevCalls, accProviderOk: prevOk = 0, accProviderFail: prevFail = 0, accumulatedTop8: prevAccumulated } = state;
@@ -264,9 +268,11 @@ async function handleContinue(request, response) {
   }
 
   const compactAccumulated = combined.map(c => compactCandidate(c, scanId, scanStartedAtUtc));
-  const newSnapshotToken = isGlobalTop8Final ? null : Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1, universeCount: allOperable.length, actualProviderCalls: totalCalls, accProviderOk: totalOk, accProviderFail: totalFail, accumulatedTop8: compactAccumulated })).toString('base64url');
+  const newSnapshotToken = isGlobalTop8Final ? null : signStateToken(Buffer.from(JSON.stringify({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: nextBatchIndex + 1, universeCount: allOperable.length, actualProviderCalls: totalCalls, accProviderOk: totalOk, accProviderFail: totalFail, accumulatedTop8: compactAccumulated })).toString('base64url'));
+  const tokenSigning = verified.signingConfigured ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+  const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(response, isGlobalTop8Final ? 200 : 206, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1, coveragePercent: newCoverage, actualProviderCalls: totalCalls, dataIntegrityScore, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken: newSnapshotToken, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] }, message: isGlobalTop8Final ? 'Global TOP 8 final.' : `Batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_CONTINUE');
+  return sendJson(response, isGlobalTop8Final ? 200 : 206, { ok: isGlobalTop8Final, mode: 'CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT', status: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', scanId, scanStartedAtUtc, scanCompletedAtUtc, universeHash, activeMarkets, universeDiscovered: allOperable.length, universeAfterFilters: allOperable.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isGlobalTop8Final ? null : nextBatchIndex + 1, coveragePercent: newCoverage, actualProviderCalls: totalCalls, dataIntegrityScore, resultScope: isGlobalTop8Final ? 'GLOBAL_TOP8_FINAL' : 'PARTIAL_BATCH_ONLY', isGlobalTop8Final, isPartialResult: !isGlobalTop8Final, snapshotToken: newSnapshotToken, tokenSigning, signingWarning, topCandidates, assets: topCandidates, diagnostics: { processedBatches: [{ batchIndex: nextBatchIndex + 1, selectedAssets: batch.length, providerCallsPlanned: batch.length * 2 + 1, ok: true, evaluationSummary: summarizeEvaluations(evaluations), eligibilityDiagnostics: buildEligibilityDiagnostics(evaluations, { batchSize: batch.length }) }] }, message: isGlobalTop8Final ? 'Global TOP 8 final.' : `Batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'SCAN_SNAPSHOT_CONTINUE');
 }
 
 // ─── last ─────────────────────────────────────────────────────────────────────

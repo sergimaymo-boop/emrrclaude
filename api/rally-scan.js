@@ -24,7 +24,7 @@ import { buildUniverseResponse } from './universe.js';
 import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio } from './_lib/kvStorage.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
 import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
-import { filterActiveOperableAssets, getActiveMarketsAt } from './_lib/scanSnapshot.js';
+import { filterActiveOperableAssets, getActiveMarketsAt, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
 const RALLY_VERSION = 'RALLY_V1';
@@ -38,13 +38,18 @@ function sendJson(res, status, payload, endpoint) {
   res.status(status).json({ ...payload, app: APP_NAME, endpoint, timestampUtc: new Date().toISOString() });
 }
 
+// Firma HMAC compat (misma helper que scan-snapshot): con SCAN_SNAPSHOT_SIGNING_SECRET
+// el token va firmado y se rechaza cualquier forja; sin la variable, fallback sin firma.
 function encodeToken(state) {
-  return Buffer.from(JSON.stringify({ v: RALLY_VERSION, ...state })).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify({ v: RALLY_VERSION, ...state })).toString('base64url');
+  return signStateToken(payloadB64);
 }
 
 function decodeToken(token) {
+  const verified = verifyStateToken(token);
+  if (!verified.ok) return { ok: false, error: verified.error };
   try {
-    const decoded = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+    const decoded = JSON.parse(Buffer.from(verified.payloadB64, 'base64url').toString('utf8'));
     if (decoded.v !== RALLY_VERSION) return { ok: false, error: 'INVALID_TOKEN_VERSION' };
     return { ok: true, state: decoded };
   } catch { return { ok: false, error: 'TOKEN_DECODE_FAILED' }; }
@@ -94,8 +99,10 @@ async function handleStart(req, res) {
   }
 
   const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
+  const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+  const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
 }
 
 // ─── continue handler ─────────────────────────────────────────────────────────
@@ -143,8 +150,10 @@ async function handleContinue(req, res) {
   }
 
   const newToken = isComplete ? null : encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length });
+  const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
+  const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
 }
 
 // ─── last handler ─────────────────────────────────────────────────────────────
@@ -165,18 +174,51 @@ async function handleLast(req, res) {
 // guarda y devuelve el último snapshot tal cual.
 const IBK_MAX_POSITIONS = 50;
 const IBK_MAX_BYTES = 50 * 1024;
+const IBK_MAX_MONEY = 1e8;   // techo € por importe de cuenta (100M) — bloquea valores absurdos de envenenamiento
+const IBK_MAX_QTY   = 1e7;   // techo por nº de acciones de una posición
+const IBK_MAX_PRICE = 1e7;   // techo por precio unitario
+const IBK_SYMBOL_RE   = /^[A-Za-z0-9.\-]{1,15}$/;
+const IBK_CURRENCY_RE = /^[A-Za-z]{3}$/;
 
-function isFiniteNumberOrNull(v) {
-  return v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v));
+// Importe monetario opcional (null/undefined permitido) o número finito en [0, techo].
+function isMoneyOrNull(v) {
+  if (v === null || v === undefined) return true;
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= IBK_MAX_MONEY;
+}
+// Número acotado opcional (null/undefined) o finito en [0, max].
+function isBoundedNumOrNull(v, max) {
+  if (v === null || v === undefined) return true;
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
+}
+
+function validatePosition(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return 'POSITION_MUST_BE_OBJECT';
+  if (typeof p.symbol !== 'string' || !IBK_SYMBOL_RE.test(p.symbol)) return 'INVALID_POSITION_SYMBOL';
+  if (!isBoundedNumOrNull(p.quantity, IBK_MAX_QTY))  return 'INVALID_POSITION_QUANTITY';
+  if (!isBoundedNumOrNull(p.lastPrice, IBK_MAX_PRICE)) return 'INVALID_POSITION_PRICE';
+  if (p.currency !== undefined && p.currency !== null && (typeof p.currency !== 'string' || !IBK_CURRENCY_RE.test(p.currency))) return 'INVALID_POSITION_CURRENCY';
+  return null;
 }
 
 function validateIbkSnapshot(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'BODY_MUST_BE_OBJECT';
   if (!Array.isArray(body.positions)) return 'POSITIONS_MUST_BE_ARRAY';
   if (body.positions.length > IBK_MAX_POSITIONS) return 'TOO_MANY_POSITIONS';
-  if (!isFiniteNumberOrNull(body.navEur))    return 'INVALID_NAV_EUR';
-  if (!isFiniteNumberOrNull(body.valMdoEur)) return 'INVALID_VAL_MDO_EUR';
-  if (!isFiniteNumberOrNull(body.cashEur))   return 'INVALID_CASH_EUR';
+  if (!isMoneyOrNull(body.navEur))    return 'INVALID_NAV_EUR';
+  if (!isMoneyOrNull(body.valMdoEur)) return 'INVALID_VAL_MDO_EUR';
+  if (!isMoneyOrNull(body.cashEur))   return 'INVALID_CASH_EUR';
+  // FX opcional: si viene, número finito en banda razonable (evita divisiones absurdas aguas abajo).
+  if (body.fxEurPerUsd !== undefined && body.fxEurPerUsd !== null &&
+      !(typeof body.fxEurPerUsd === 'number' && Number.isFinite(body.fxEurPerUsd) && body.fxEurPerUsd > 0.1 && body.fxEurPerUsd < 10)) {
+    return 'INVALID_FX';
+  }
+  if (body.loadedAt !== undefined && body.loadedAt !== null && (typeof body.loadedAt !== 'string' || body.loadedAt.length > 40)) {
+    return 'INVALID_LOADED_AT';
+  }
+  for (const p of body.positions) {
+    const reason = validatePosition(p);
+    if (reason) return reason;
+  }
   try {
     if (Buffer.byteLength(JSON.stringify(body), 'utf8') >= IBK_MAX_BYTES) return 'SNAPSHOT_TOO_LARGE';
   } catch { return 'SNAPSHOT_NOT_SERIALIZABLE'; }
