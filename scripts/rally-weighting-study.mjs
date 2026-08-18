@@ -9,11 +9,15 @@
  * queda bit a bit idéntico entre esquemas (misma selección de tickers, mismos
  * stops, misma rotación, mismos costes 20 pb).
  *
- * ESQUEMAS (caps 4-20% salvo ACTUAL, que replica producción con su 4-18%;
- * sin apalancamiento, pesos suman 100):
+ * ESQUEMAS (caps 4-20% salvo ACTUAL, que replica el esquema por convicción con su
+ * 4-18%; sin apalancamiento, pesos suman 100). NOTA 17-ago-2026: "ACTUAL" =
+ * LEGACY_CONVICCION — era producción hasta el 17-ago-2026; HOY producción = M9_RAW
+ * (el ganador de este mismo estudio). La clave "ACTUAL" se conserva en el código y
+ * el JSON por reproducibilidad bit a bit del artefacto histórico:
  *   EQUAL            1/10 por posición
- *   ACTUAL           réplica de assignSuggestedWeights: ∝ max(0,1, score−50), clamp
- *                    [4,18] de una pasada + renormalización (producción)
+ *   ACTUAL           LEGACY_CONVICCION — réplica de assignSuggestedWeights: ∝
+ *                    max(0,1, score−50), clamp [4,18] de una pasada +
+ *                    renormalización (producción hasta 17-ago-2026)
  *   RUNWAY           ∝ runwayScore (recorrido restante 0-100)
  *   INV_RUNWAY       ∝ 1/runwayScore — CONTROL espejo del anterior
  *   INV_VOL          ∝ 1/ATR% (ATR de producción: media simple 14 TR)
@@ -109,7 +113,7 @@ const ZONA_IDEAL = { IDEAL: 2.0, EN_MAXIMOS: 1.25, LEJOS: 0.75 };
 const ZONA_MAX = { IDEAL: 1.25, EN_MAXIMOS: 2.0, LEJOS: 0.75 };
 const BASE_SCHEMES = {
   EQUAL: { formula: "1/10 por posición", fn: (top) => top.map(() => 100 / top.length) },
-  ACTUAL: { formula: "producción: ∝ max(0,1, score−50), clamp[4,18] + renorm (assignSuggestedWeights)", fn: (top) => convictionWeights(top.map((c) => c.s)) },
+  ACTUAL: { formula: "LEGACY_CONVICCION (producción hasta 17-ago-2026; hoy producción = M9_RAW): ∝ max(0,1, score−50), clamp[4,18] + renorm (assignSuggestedWeights)", fn: (top) => convictionWeights(top.map((c) => c.s)) },
   RUNWAY: { formula: "∝ runwayScore, caps[4,20]", fn: (top) => capNormalize(top.map((c) => Math.max(1, runwayScore(c.f)))) },
   INV_RUNWAY: { formula: "control espejo: ∝ 1/runwayScore, caps[4,20]", fn: (top) => capNormalize(top.map((c) => 1 / Math.max(1, runwayScore(c.f)))) },
   INV_VOL: { formula: "∝ 1/ATR% (atrProd), caps[4,20]", fn: (top) => capNormalize(top.map((c) => 1 / Math.max(0.5, atrOf(c.f)))) },

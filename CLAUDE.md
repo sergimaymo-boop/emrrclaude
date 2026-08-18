@@ -133,11 +133,11 @@ User presses SCAN FULL
     Frontend calls POST /api/scan-snapshot/continue (snapshotToken)
     → Repeat until coveragePercent === 100
 
-  When coveragePercent === 100:
-    Frontend calls POST /api/scan-snapshot/finalize (snapshotToken)
-    ├─ Validates isGlobalTop8Final === true
-    ├─ saveLastScanSnapshot() → Upstash Redis (7-day TTL)
-    └─ Returns final TOP 8 with GLOBAL_TOP8_FINAL scope
+  When coveragePercent === 100 (dentro del propio start/continue que completa):
+    ├─ isGlobalTop8Final = true (batchesCompleted === batchesTotal)
+    ├─ saveLastScanSnapshot() → Upstash Redis (7-day TTL) — la escritura la hace
+    │  el handler de start/continue al completar; NO existe endpoint finalize
+    └─ Respuesta final con scope GLOBAL_TOP8_FINAL (token null, sin continuación)
 
   Frontend merges:
     ├─ buildDashboardTop8FromScanSnapshot() → Top8Asset[]
@@ -290,13 +290,16 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 
 | File | Single Responsibility |
 |---|---|
-| `universe.js` | EODHD exchange-symbol-list → filter → universe |
-| `master-indicators.js` | Real-time quotes: SPY LQD HYG VIX VVIX TNX MOVE |
-| `scan-snapshot/start.js` | Universe → plan → batch 1 → score → partial TOP 8 |
-| `scan-snapshot/continue.js` | Next batch via snapshotToken |
-| `scan-snapshot/finalize.js` | Validate 100% → save Redis → GLOBAL_TOP8_FINAL |
-| `scan-snapshot/last.js` | GET last completed scan from Redis |
+| `scan-snapshot.js` | SCAN FULL vía `?action=start/continue/last` (rewrites `/api/scan-snapshot/*`); al completar 100% guarda en Redis dentro del propio start/continue — NO existe `finalize` |
+| `rally-scan.js` | Rally Leaders vía `?action=start/continue/last` + `?action=ibk-portfolio` GET/POST (snapshot cartera IBK) |
+| `market-data.js` | Multiplexor vía `?source=fear-greed/market-regime/monetary-cycle/master-indicators/optimal2026/sp500` (rewrites `/api/master-indicators`, `/api/optimal2026`, `/api/sp500`, …) |
+| `market-breadth.js` | Amplitud de mercado |
+| `universe.js` | Universo estático filtrado (`_lib/staticUniverse.js`, ~603 tickers) |
 | `visible-top8-quotes.js` | Live prices for TOP 8 post-scan |
+| `sector-leaders-data.js` | Ranking de momentum sectorial |
+| `eps-batch.js` | EPS por lotes |
+| `claude01-scan.js` · `fable01.js` · `fable5.js` | Motores auxiliares |
+| `cron/market-pulse.js` | Cron Vercel (14:00 y 16:00 UTC L-V) |
 | `_lib/scanSnapshot.js` | Batch planning, HMAC tokens, pipeline orchestration |
 | `_lib/kvStorage.js` | Redis singleton: save/load scan snapshot |
 | `_lib/scoreEngine.js` | Composite score 0–100 |
@@ -336,7 +339,7 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 ✅ npx vite build → zero errors → then commit
 ✅ Every commit touches ALL files affected by the change
 ✅ main branch → Vercel auto-deploys
-✅ Commit messages: "feat:", "fix:", "style:", "docs:"
+✅ Commit messages: "feat:", "fix:", "style:", "docs:", "study:", "ux:", "audit:"
 ✅ Never force push
 ```
 
@@ -365,7 +368,7 @@ Orden DICTADO por Sergi (16-ago-2026) — no reordenar sin su OK. Separación un
 Motor independiente del TOP 8 (Redis key propia `last_rally_snapshot`, sin compartir rankings).
 Config C0 EN PRODUCCIÓN, certificada con triple verificación adversarial — ⚠️ los PARÁMETROS DE
 ESTRATEGIA (score, stops, pesos, top-N, cadencia, selección, rotación) están BLOQUEADOS: solo se
-cambian si un estudio walk-forward supera los gates pre-registrados (ver §10d). Nunca "a ojo".
+cambian si un estudio walk-forward supera los gates pre-registrados (ver §10c). Nunca "a ojo".
 
 | Item | Value |
 |---|---|
@@ -384,7 +387,7 @@ cambian si un estudio walk-forward supera los gates pre-registrados (ver §10d).
 
 ## 10c. ESTUDIOS Y BACKTESTS — PROTOCOLO OBLIGATORIO
 
-- **Infraestructura**: `scripts/rally-study-lib.mjs` (réplica de producción + simulador; ruta por defecto = canon C0 bit a bit, opciones `weightsOf`/`jumpWeightOf`) · `data/universe-10y.json` (603 tickers, 10 años, cierres ajustados) · resultados canon en `backtests/*.json`.
+- **Infraestructura**: `scripts/rally-study-lib.mjs` (réplica de producción + simulador) · `data/universe-10y.json` (603 tickers, 10 años, cierres ajustados) · resultados canon en `backtests/*.json`. ⚠️ La ruta POR DEFECTO del simulador (`simulate` sin opciones) reproduce la config LEGACY (pesos por convicción, sin stops H4 ni salto mezcla); el canon C0 exige pasar explícitamente `widthOf` = stop H4 + `pickJump` = mezcla 70/30 + `weightsOf` = M9_RAW — usar el preset `PRESET_C0(T)` exportado por el lib (y sus helpers `stopH4pct`/`pickJumpMix70`/`capNormalizeTarget`/`segMetrics`), prohibido re-tipear las fórmulas en estudios nuevos.
 - **Disciplina**: walk-forward SIEMPRE (elegir en train 2016/17-2021, confirmar en 2022-26), malla 9 celdas (3 fases × 3 cadencias), sin lookahead, determinista. Gate estándar para cambiar producción: batir a C0 en confirmación en CAGR Y peor-celda + mejora material (≥2 pp CAGR o ≥0,08 MAR) + MaxDD ≤ +5 pp + elección por TRAIN entre passers. Sin dominancia → no cambiar (parsimonia).
 - **Tras re-ejecutar cualquier estudio rally-***: correr sus `verify-*` ANTES de leer conclusiones (`verify-joint-recompute.mjs`, `verify-joint-cadence.mjs` a 20 y 50 pb, `verify-coherence-scan-recompute.mjs`, `verify-coherence-data-sanity.mjs`).
 - **Estudios CERRADOS — no repetir** (detalles y cifras en la memoria de sesión, archivo `project_emrr_rally_leaders_estrategia_15ago.md`): pullback score (sin señal OOS), ponderar por riesgo (resta), filtros de selección por estado (0/10 pasa), ceñir stops en máximos (resta), cadencia 63 (trampa test-brillante/train-flojo). **Candidato futuro nº1**: top-8 con topes [5,25] — exige estudio propio pre-registrado.
@@ -410,7 +413,7 @@ These are absolute rules. No exception, no workaround:
 ```
 INV-01  GLOBAL_TOP8_FINAL ← only when coveragePercent === 100
 INV-02  operationalDecisionAllowed ← only when all 9 scoreInputIntegrity = "REAL"
-INV-03  Redis save ← only after finalize() confirms GLOBAL_TOP8_FINAL
+INV-03  Redis save ← only when the completing start/continue batch confirms GLOBAL_TOP8_FINAL
 INV-04  No mock data in production ← ENABLE_REAL_API_CALLS=true is the gate
 INV-05  HTTP 409 when markets closed ← correct behavior, not a bug
 INV-06  snapshotToken ← HMAC-signed, never forge or skip validation
@@ -459,7 +462,7 @@ INV-10  Batch provider calls ≤ 150 ← stay within 10s Vercel timeout
 Key:    "last_scan_snapshot"
 Type:   JSON object (ScanSnapshotResponse)
 TTL:    604800 seconds (7 days)
-Write:  POST /api/scan-snapshot/finalize → isGlobalTop8Final === true
+Write:  POST /api/scan-snapshot/{start,continue} al completar (isGlobalTop8Final === true) — NO existe endpoint finalize
 Read:   GET /api/scan-snapshot/last → on every dashboard load
 Client: Redis singleton in api/_lib/kvStorage.js
 ```
@@ -583,7 +586,7 @@ Radius pill:   999px  (market pills)
 ✅ Run npx vite build before every commit
 ✅ Update ALL affected files in one pass (CSS + components + API)
 ✅ Verify the change doesn't break existing functionality
-✅ Keep the section order in DashboardPage (Master Indicators first)
+✅ Respetar el orden del §10 en DashboardPage (dictado por Sergi 16-ago — no reordenar sin su OK)
 ✅ Use operationalDataPolicy.ts as the single authority for operational status
 ✅ Keep all API calls in services/realDataRefresh.ts
 ✅ Keep all types in shared/types/domain.ts

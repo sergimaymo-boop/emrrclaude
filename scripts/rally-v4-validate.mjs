@@ -205,10 +205,13 @@ function evalCurve(curve, FROM = 280) {
 }
 
 const f1 = (x) => `${(x * 100).toFixed(1)}%`;
-// ── VALIDACIÓN FINAL: la fórmula EXACTA que iría a producción ────────────────
+// ── VALIDACIÓN FINAL — OJO: valida la variante LEGACY por convicción, NO la
+// producción actual M9_RAW (los pesos cambiaron el 17-ago-2026, ver
+// backtests/rally-weighting-study.json). Se conserva sin tocar como artefacto
+// histórico reproducible de la certificación v4 original.
 // score visible = clamp(50 + 50·tanh(m9/75))  → transformación MONÓTONA de m9:
 // el ranking es idéntico al percentil. Los pesos por convicción usan (score−50)
-// acotado a [4%,18%], exactamente como assignSuggestedWeights de producción.
+// acotado a [4%,18%], exactamente como el assignSuggestedWeights de ENTONCES.
 const scoreV4 = (f) => (f && isNum(f.m9) ? clamp(50 + 50 * Math.tanh(f.m9 / 75)) : null);
 
 function portfolioV4({ review, FROM, weighting }) {

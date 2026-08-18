@@ -1,4 +1,9 @@
 # MÓDULO RALLY — auditoría, backtest y rediseño
+
+> ⚠️ **ACTUALIZACIÓN 17-ago-2026: los pesos por convicción de §9-10 fueron
+> SUSTITUIDOS en producción por M9_RAW (momentum 9m crudo, topes 4-20) — ver
+> `backtests/rally-weighting-study.json`; este doc conserva valor histórico.**
+
 _Mandato de Sergi (8-ago-2026): recuperar el módulo de "los 10 tickers con el rally
 alcista más sano", auditarlo, decir en qué se puede mejorar y reactivarlo validado
 con backtest de 10 años._
@@ -214,7 +219,10 @@ esas **solo el 10% acabó recuperándose**.
 del ceñido por ATR. Cuesta ~2,8 puntos anuales y a cambio acota la cola. El panel lo
 etiqueta como "Stop de catástrofe" y explica por qué no debe ceñirse.
 
-## 9. Auditoría de los 3 módulos y optimización (9-ago-2026)
+## 9. Auditoría de los 3 módulos y optimización (9-ago-2026) — HISTÓRICO
+
+> _Los pesos por convicción descritos aquí ya no son producción (sustituidos por
+> M9_RAW el 17-ago-2026 — ver aviso de cabecera)._
 
 Mandato: auditar los tres módulos con backtesting y dejar cada uno en su mejor versión.
 
@@ -277,7 +285,10 @@ Implementado como `assignSuggestedWeights()`; el panel muestra el % sugerido de 
 posición. **Respetar esos pesos es parte de la estrategia**: a partes iguales se vuelve
 a 34,3%.
 
-## 10. SUPER-AUDITORÍA de familias de indicadores → v4.0 (9-ago-2026, noche)
+## 10. SUPER-AUDITORÍA de familias de indicadores → v4.0 (9-ago-2026, noche) — HISTÓRICO
+
+> _El score v4 (momentum 9m) sigue vigente; los pesos por convicción de esta
+> sección fueron sustituidos por M9_RAW el 17-ago-2026 (ver aviso de cabecera)._
 
 Mandato de Sergi: cruzar los 600+ tickers con la mejor selección posible de indicadores
 (EMAs, RSI, los que sean), quitando y poniendo hasta quedarse con los óptimos, siempre

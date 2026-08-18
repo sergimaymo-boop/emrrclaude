@@ -131,7 +131,10 @@ for (const a of top10) {
   const ti = bySym.get(a.providerSymbol);
   if (ti == null) { console.log(`  ${a.ticker}: NO está en el universo local`); continue; }
   const f = T[ti].feat[i];
-  const m9 = f?.m9 ?? null, sc = f ? Math.round(scoreV4(f)) : null, rw = f ? runwayScore(f) : null;
+  const m9 = f?.m9 ?? null;
+  const s0 = f ? scoreV4(f) : null;                      // scoreV4 puede ser null (sin m9): Math.round(null)=0 mentiría
+  const sc = s0 == null ? null : Math.round(s0);
+  const rw = f ? runwayScore(f) : null;
   localRows.push({ sym: a.providerSymbol, m9 });
   console.log(
     `  ${a.ticker.padEnd(6)} prod: m9 ${String(a.metrics.mom9m).padStart(7)} → ${String(a.rallyScore).padStart(3)}  ${String(a.trailingStop).padStart(2)}  ${String(a.suggestedWeightPct).padStart(5)}` +

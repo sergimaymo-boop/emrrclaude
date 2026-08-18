@@ -154,3 +154,24 @@ const OUT = {
 };
 fs.writeFileSync(`backtests/rally-joint-cadence-probe-${COSTBPS}bp.json`, JSON.stringify(OUT, null, 1));
 console.log(`\nGuardado: backtests/rally-joint-cadence-probe-${COSTBPS}bp.json · ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+
+// ─── patch prometido en el header: veredictoFinal en rally-joint-study.json ──
+// MERGE, no sobrescritura: se conserva todo el estudio y cualquier clave previa
+// de veredictoFinal (razones, anula…); solo se actualizan verdict/probes/fecha.
+const JOINT_PATH = "backtests/rally-joint-study.json";
+try {
+  const joint = JSON.parse(fs.readFileSync(JOINT_PATH, "utf8"));
+  const probes = { ...(joint.veredictoFinal?.probes ?? {}), [`${COSTBPS}bp`]: OUT.resultado };
+  // El cambio de cadencia solo se confirmaría con TODOS los criterios evaluados
+  // en CUMPLE (incluido P4, que exige la pasada COST_BPS=50); si falla uno → actual.
+  const evaluados = Object.values(probes).flatMap((p) => Object.values(p).filter((v) => v !== null));
+  const p4Evaluado = Object.values(probes).some((p) => p.P4 !== null && p.P4 !== undefined);
+  const verdict = p4Evaluado && evaluados.length > 0 && evaluados.every(Boolean)
+    ? "CAMBIAR_CADENCIA_63"
+    : "CERTIFICAR_ACTUAL";
+  joint.veredictoFinal = { ...(joint.veredictoFinal ?? {}), verdict, probes, fecha: new Date().toISOString() };
+  fs.writeFileSync(JOINT_PATH, JSON.stringify(joint, null, 1));
+  console.log(`veredictoFinal { verdict: ${verdict}, probes: ${Object.keys(probes).join("+")} } fusionado en ${JOINT_PATH} (resto del estudio intacto)`);
+} catch (e) {
+  console.log(`⚠ No se pudo patchear ${JOINT_PATH}: ${e.message}`);
+}

@@ -176,6 +176,10 @@ for (const [sym, obj] of Object.entries(series)) {
     if (ok) {
       const fct = b.a / b.c;
       c[i] = b.a; h[i] = b.h * fct; l[i] = b.l * fct; vol[i] = isNum(b.v) ? b.v : 0;
+    } else if (i === 0) {
+      // i=0 sin barra previa que forward-fillear: el recorte de cabecera garantiza
+      // c>0 y a>0 aquí (solo h/l pueden ser inválidos) → usar la propia barra.
+      c[0] = b.a; h[0] = b.a; l[0] = b.a; vol[0] = 0; filledBars++;
     } else {
       c[i] = c[i - 1]; h[i] = c[i]; l[i] = c[i]; vol[i] = 0; filledBars++;
     }
@@ -409,7 +413,11 @@ for (const ev of EVENTS) {
 let EV;
 {
   const ok = evRows.filter((e) => e.ok);
-  const best = ok.reduce((a, b) => (b.stab > a.stab ? b : a));
+  if (!ok.length) {
+    console.error("✗ NINGÚN candidato de evento califica (base train fuera de [4%, 35%] en todos): sin evento no hay estudio. Revisar definiciones de evento o los datos del universo antes de re-ejecutar.");
+    process.exit(1);
+  }
+  const best = ok.reduce((a, b) => (b.stab > a.stab ? b : a), ok[0]);
   const e2 = ok.find((e) => e.key === "E2");
   EV = e2 && e2.stab >= best.stab - 0.02 ? e2 : best;
   const tied = ok.filter((e) => Math.abs(e.stab - EV.stab) < 1e-12 && e !== EV);

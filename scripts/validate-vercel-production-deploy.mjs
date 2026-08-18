@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-const baseUrl = (process.argv[2] ?? "https://emrr-2-tendencias.vercel.app").replace(/\/$/, "");
+const baseUrl = (process.argv[2] ?? "https://emrrclaude.vercel.app").replace(/\/$/, "");
 
 const forbiddenBundleMarkers = [
   "Mock visual refresh completed",
@@ -56,15 +56,20 @@ assert.ok(
   "Production bundle must not contain fixed TOP 8 ticker sequences",
 );
 
+// Rutas REALES de producción (12 funciones + rewrites de vercel.json).
+// /api/health, /api/providers-status y /api/scan-snapshot/finalize NO existen.
 const requiredRoutes = [
-  "/api/health",
-  "/api/providers-status",
   "/api/universe",
   "/api/master-indicators",
+  "/api/market-breadth",
+  "/api/optimal2026",
+  "/api/sp500",
+  "/api/fear-greed",
   "/api/visible-top8-quotes",
+  "/api/rally-scan/last",
   "/api/scan-snapshot/start",
   "/api/scan-snapshot/continue",
-  "/api/scan-snapshot/finalize",
+  "/api/scan-snapshot/last",
 ];
 
 for (const route of requiredRoutes) {

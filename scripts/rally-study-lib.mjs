@@ -25,6 +25,15 @@
  *      variantes catATR y queda amortiguado por el clamp de la banda 25-35.
  *
  * Determinista: sin aleatoriedad salvo mulberry32 con semilla fija.
+ *
+ * ⚠ ESTUDIOS NUEVOS (norma 18-ago-2026): usar PRESET_C0(T) y los helpers
+ * exportados (stopH4pct, pickJumpMix70, capNormalizeTarget, segMetrics) —
+ * PROHIBIDO re-tipear estas fórmulas en cada estudio. La ruta POR DEFECTO de
+ * simulate() reproduce la config LEGACY (convicción, sin stops ni salto); el
+ * canon C0 de producción exige pasar explícitamente widthOf (stop H4) +
+ * pickJump (mezcla 70/30) + weightsOf (M9_RAW): simulate(T, D, { FROM, review,
+ * ...PRESET_C0(T) }). Los estudios ya cerrados NO se refactorizan (bit-exactitud
+ * histórica de sus artefactos).
  */
 import fs from "node:fs";
 
@@ -266,13 +275,98 @@ export function trailTight(atr) {
   return clamp(atr * m, 5, 18) / 100;
 }
 
-/** Pesos por convicción (réplica assignSuggestedWeights, renormalizados a 100). */
+/**
+ * Pesos por convicción — LEGACY: réplica del esquema RETIRADO (assignSuggestedWeights
+ * por score−50, clamp[4,18], renormalizados a 100). Producción usa M9_RAW desde el
+ * 17-ago-2026 (∝ m9 crudo, topes [4,20] — ver PRESET_C0/capNormalizeTarget). Se
+ * conserva porque es la ruta por defecto (`conviction: true`) de los estudios
+ * históricos, que deben seguir siendo bit-reproducibles.
+ */
 export function convictionWeights(scores) {
   const raws = scores.map((s) => Math.max(0.1, s - 50));
   const tot = raws.reduce((x, y) => x + y, 0) || 1;
   const cl = raws.map((v) => clamp((v / tot) * 100, 4, 18));
   const sum = cl.reduce((x, y) => x + y, 0) || 1;
   return cl.map((v) => (v / sum) * 100);
+}
+
+// ─── FUENTE ÚNICA para estudios NUEVOS (añadido 18-ago-2026, solo aditivo) ───
+// Réplicas canónicas de la producción C0; la ruta por defecto de simulate() NO
+// cambia (bit-exactitud de los estudios históricos verificada tras añadirlas).
+
+/** Stop H4 de producción en % sobre un runwayScore (0-100): clamp(12+0,35·runway, 15, 45). */
+export function stopH4pct(runway) {
+  return clamp(12 + 0.35 * (isNum(runway) ? runway : 50), 15, 45);
+}
+
+/**
+ * Salto de rotación de producción (réplica de rotationRank, rallyScoreEngine.js):
+ * mejor candidato no-held por 0,7·score + 0,3·runway, con fallback runway=50
+ * (neutro) si el recorrido no fuera calculable. Factory: pásale el T de
+ * loadUniverse() y devuelve el pickJump(i, heldSet) que espera simulate().
+ */
+export function pickJumpMix70(T) {
+  return (i, heldSet) => {
+    let bi = null, bv = -Infinity;
+    for (let ti = 0; ti < T.length; ti++) {
+      if (heldSet.has(ti)) continue;
+      const t = T[ti], f = t.feat[i];
+      if (!f || !isNum(t.adj[i])) continue;
+      const s = scoreV4(f);
+      if (s == null) continue;
+      const rw = runwayScore(f);
+      const v = 0.7 * s + 0.3 * (isNum(rw) ? rw : 50);
+      if (v > bv) { bv = v; bi = ti; }
+    }
+    return bi;
+  };
+}
+
+/**
+ * capNormalize exacto de producción con objetivo parametrizado (copia de
+ * rally-selection-filter-study.mjs): w_i = clamp(raw_i·t, lo, hi) con t único
+ * tal que Σw = target (bisección geométrica determinista; a target=100 es bit a
+ * bit el capNormalize de rally-weighting/joint y el capNormalizeWeights de
+ * producción).
+ */
+export function capNormalizeTarget(raw, lo = 4, hi = 20, target = 100) {
+  const n = raw.length;
+  if (!n) return [];
+  const w = raw.map((v) => (isNum(v) && v > 0 ? v : 1e-6));
+  const f = (t) => w.reduce((s, v) => s + Math.min(hi, Math.max(lo, v * t)), 0);
+  let a = 1e-9, b = 1e9;
+  for (let k = 0; k < 200; k++) { const m = Math.sqrt(a * b); (f(m) < target ? (a = m) : (b = m)); }
+  const t = Math.sqrt(a * b);
+  return w.map((v) => Math.min(hi, Math.max(lo, v * t)));
+}
+
+/** Métricas por tramo [a,b] de una curva (copia de rally-weighting-study.mjs): CAGR, MaxDD, MAR. */
+export function segMetrics(curve, a, b) {
+  const y = (b - a) / 252;
+  const cagr = isNum(curve[a]) && curve[a] > 0 && isNum(curve[b]) ? Math.pow(curve[b] / curve[a], 1 / y) - 1 : null;
+  let peak = 0, mdd = 0;
+  for (let i = a; i <= b; i++) {
+    const v = curve[i];
+    if (v == null) continue;
+    if (v > peak) peak = v;
+    const dd = 1 - v / peak;
+    if (dd > mdd) mdd = dd;
+  }
+  return { cagr, mdd, mar: mdd > 0 && cagr != null ? cagr / mdd : 0 };
+}
+
+/**
+ * PRESET C0 — la config de PRODUCCIÓN lista para simulate():
+ *   simulate(T, D, { FROM, review: 84, ...PRESET_C0(T) })
+ * = top-10 scoreV4 · stop H4 re-fijado en revisión · salto mezcla 70/30 ·
+ *   pesos M9_RAW [4,20]. Es una FUNCIÓN de T porque pickJump necesita el universo.
+ */
+export function PRESET_C0(T) {
+  return {
+    widthOf: (f) => stopH4pct(runwayScore(f)) / 100,
+    pickJump: pickJumpMix70(T),
+    weightsOf: (top) => capNormalizeTarget(top.map((c) => Math.max(1, c.f.m9 ?? 1)), 4, 20, 100),
+  };
 }
 
 /**

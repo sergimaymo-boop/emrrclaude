@@ -125,6 +125,10 @@ for (const [sym, obj] of Object.entries(series)) {
     if (ok) {
       const fct = b.a / b.c;
       c[i] = b.a; h[i] = b.h * fct; l[i] = b.l * fct; vol[i] = isNum(b.v) ? b.v : 0;
+    } else if (i === 0) {
+      // i=0 sin barra previa que forward-fillear: el recorte de cabecera garantiza
+      // c>0 y a>0 aquí (solo h/l pueden ser inválidos) → usar la propia barra.
+      c[0] = b.a; h[0] = b.a; l[0] = b.a; vol[0] = 0; filledBars++;
     } else { c[i] = c[i - 1]; h[i] = c[i]; l[i] = c[i]; vol[i] = 0; filledBars++; }
     const k = dateIdx.get(b.d);
     mK[i] = k === undefined ? -1 : k;
@@ -361,6 +365,10 @@ for (const evKey of DOWN_EVENTS) {
   }
 }
 OUT.cells = cells;
+if (!cells.length) {
+  console.error("✗ El barrido no produjo NINGUNA celda evaluable (poblaciones con <5000 filas de confirmación o AUC incalculable en todas): sin eventos que califiquen no hay lente. Revisar datos/poblaciones antes de re-ejecutar.");
+  process.exit(1);
+}
 
 // ─── protocolo PRIMARIO: selección en train por celda (evento×población) ─────
 console.log("\n═══ PRIMARIO WALK-FORWARD: mejor score POR TRAIN en cada (evento×población) ═══");

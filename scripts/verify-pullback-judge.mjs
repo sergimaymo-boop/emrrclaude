@@ -47,8 +47,11 @@ console.log(`  Rango completo del score (bins 1→10, conf ALL): ${pct(conf[0].f
 console.log("\n(3) Si se publicara la probabilidad del mapeo train, error relativo por bin en conf:");
 for (let i = 0; i < 10; i++) {
   const tr = J.calibracion.train[i], cf = J.calibracion.conf[i];
-  const rel = (tr.freq - cf.freq) / cf.freq;
-  console.log(`  bin ${String(i + 1).padStart(2)}: train ${pct(tr.freq)}  conf ${pct(cf.freq)}  sobre/infra-estimación ${(100 * rel).toFixed(1)}%`);
+  // freq puede venir null (bin sin filas) o 0 → dividir daría Infinity/NaN: reportar n/a
+  const rel = Number.isFinite(cf.freq) && cf.freq > 0 && Number.isFinite(tr.freq)
+    ? (tr.freq - cf.freq) / cf.freq
+    : null;
+  console.log(`  bin ${String(i + 1).padStart(2)}: train ${pct(tr.freq)}  conf ${pct(cf.freq)}  sobre/infra-estimación ${rel == null ? "n/a" : (100 * rel).toFixed(1) + "%"}`);
 }
 
 // ---------- (4) Aviso NO direccional: |mov t+1| > 1×ATR (E1 ∪ U1)
