@@ -170,6 +170,12 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
 
     top10 = scan["top10"]
     w_sum = sum(float(t["suggestedWeightPct"]) for t in top10)
+    # CAP DE SEGURIDAD (18-ago-2026): ningún peso objetivo puede superar el 20% del
+    # NAV tras renormalizar. Cubre el caso de scans con menos de 5 candidatos (el
+    # engine reparte 100/n → posiciones de 25-100%) y cualquier peso anómalo del
+    # servidor. El exceso NO se redistribuye: queda como efectivo (asignación parcial).
+    WEIGHT_CAP = 0.20
+    capped = False
     rows = []
     seen = set()
     for t in top10:
@@ -179,6 +185,9 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
         price_native = float(t["metrics"]["lastClose"])
         price_eur = price_native * (fx if cur == "USD" else 1.0)
         w_norm = float(t["suggestedWeightPct"]) / w_sum
+        if w_norm > WEIGHT_CAP + 1e-9:
+            w_norm = WEIGHT_CAP
+            capped = True
         target_eur = w_norm * nav
         target_qty = target_eur / price_eur if price_eur > 0 else 0.0
         h = holdings.get(tick)
@@ -219,6 +228,16 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
             "currency": h["currency"], "price_eur": h["price"] * (fx if h["currency"] == "USD" else 1.0),
         })
 
+    # Mensaje de aviso si el cap actuó (se muestra en XLSX, PDF y email).
+    cap_warning = None
+    if capped:
+        if len(top10) < 5:
+            cap_warning = ("AVISO — menos de 5 candidatos: asignación parcial, techo 20% "
+                           "aplicado; el resto de la cartera queda como efectivo.")
+        else:
+            cap_warning = ("AVISO — techo de seguridad del 20% del total aplicado a algún "
+                           "peso objetivo; el exceso queda como efectivo.")
+
     utc = datetime.fromisoformat(scan["scanCompletedAtUtc"].replace("Z", "+00:00"))
     local = utc.astimezone(TZ)
     return {
@@ -229,6 +248,7 @@ def build_plan(scan: dict, portfolio: dict) -> dict:
         "rows": rows,
         "seeded": portfolio.get("_seeded", False),
         "dropped": dropped,
+        "cap_warning": cap_warning,
     }
 
 
@@ -362,11 +382,16 @@ def write_xlsx(plan: dict, path: str) -> None:
         "USD: fraccionadas (2 decimales). Datos: scan Rally Leaders + fotos IBK subidas al "
         "dashboard. Valores instantánea del scan; el archivo se regenera en cada scan nuevo.",
     ]
+    if plan.get("cap_warning"):
+        notes.insert(0, plan["cap_warning"])
     nr = tr + 2
     for i, t in enumerate(notes):
         ws.merge_cells(start_row=nr + i, start_column=2, end_row=nr + i, end_column=13)
         c = ws.cell(row=nr + i, column=2, value=t)
-        c.font = F(size=8, italic=True, color=GRAY_TX)
+        if t.startswith("AVISO"):
+            c.font = F(size=9, bold=True, color=RED_TX)
+        else:
+            c.font = F(size=8, italic=True, color=GRAY_TX)
 
     # helper de gráfico: % actual vs objetivo por ticker (columnas auxiliares ocultas)
     HCOL = 16  # P
@@ -507,6 +532,9 @@ def write_pdf(plan: dict, path: str) -> None:
         c.line(M, y, W - M, y)
 
     y -= 9 * mm
+    if plan.get("cap_warning"):
+        text(M, y, plan["cap_warning"], 8, RED, "Helvetica-Bold")
+        y -= 4.5 * mm
     text(M, y, "± POSICIONES: nº de acciones a comprar (+) o vender (−) en IBK para "
                "igualar el último scan de Rally Leaders.", 7.5, FG)
     y -= 4 * mm
@@ -578,6 +606,8 @@ def main() -> int:
         f"Detalle de posiciones (+/-) y trailing stop por ticker en los adjuntos.\n\n"
         f"Generado automaticamente, solo lectura, no afecta a los modulos."
     )
+    if plan.get("cap_warning"):
+        body = plan["cap_warning"] + "\n\n" + body
     sent = send_email(subject, body, [xlsx_path, pdf_path])
     log(f"Email {'enviado' if sent else 'NO enviado (ver aviso arriba)'} a {MAIL_TO}")
     notify("CarteraIBK actualizada",

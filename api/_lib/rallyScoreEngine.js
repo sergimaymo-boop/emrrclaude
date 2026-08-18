@@ -465,9 +465,15 @@ export function assignSuggestedWeights(assets) {
   const FLOOR = 4, CEIL = 20;
   // base_i = momentum 9m crudo en % ya calculado por el engine (metrics.mom9m);
   // suelo 1 para que negativos/planos/ausentes cuenten igual (mínimo del estudio).
+  // Un asset sin mom9m finito aquí es anómalo (el engine descarta sin 189 sesiones):
+  // se avisa por consola con el ticker y se mantiene la base neutra 1.
   const base = assets.map((a) => {
     const m9 = a?.metrics?.mom9m;
-    return Number.isFinite(m9) ? Math.max(1, m9) : 1;
+    if (!Number.isFinite(m9)) {
+      console.warn(`[rallyScoreEngine] assignSuggestedWeights: ${a?.ticker ?? a?.providerSymbol ?? "?"} sin mom9m finito — base neutra 1`);
+      return 1;
+    }
+    return Math.max(1, m9);
   });
 
   let weights;
@@ -480,7 +486,34 @@ export function assignSuggestedWeights(assets) {
   } else {
     weights = capNormalizeWeights(base, FLOOR, CEIL);
   }
-  return assets.map((a, i) => ({ ...a, suggestedWeightPct: Math.round(weights[i] * 10) / 10 }));
+  // Redondeo por MAYOR RESTO a 1 decimal: Σ pesos SERVIDOS = 100,0 EXACTO.
+  // (El redondeo independiente por peso servía 100,2 en scans reales.)
+  const served = roundWeightsTo100(weights);
+  return assets.map((a, i) => ({ ...a, suggestedWeightPct: served[i] }));
+}
+
+/**
+ * Redondeo por MAYOR RESTO (Hamilton) a `decimals` decimales, forzando que la suma
+ * servida sea EXACTAMENTE 100. Cada peso se trunca a su décima inferior y las
+ * décimas que faltan hasta 100,0 se reparten a los mayores restos fraccionales
+ * (empate → primer índice, determinista). Un peso en el techo exacto (frac 0) no
+ * recibe décima extra salvo caso degenerado imposible con Σ=100. Sesgo máximo por
+ * peso: ±0,1. El bucle final cubre el caso de deriva flotante (Σfloors > objetivo).
+ */
+function roundWeightsTo100(weights, decimals = 1) {
+  const factor = 10 ** decimals;
+  const scaled = weights.map((w) => w * factor);
+  const floors = scaled.map((v) => Math.floor(v + 1e-9));
+  const out = floors.slice();
+  let remaining = Math.round(100 * factor) - floors.reduce((s, v) => s + v, 0);
+  const order = scaled
+    .map((v, i) => ({ i, frac: v - floors[i] }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (let k = 0; k < order.length && remaining > 0; k++) { out[order[k].i] += 1; remaining--; }
+  for (let k = order.length - 1; k >= 0 && remaining < 0; k--) {
+    if (out[order[k].i] > 0) { out[order[k].i] -= 1; remaining++; }
+  }
+  return out.map((v) => v / factor);
 }
 
 /**
@@ -493,6 +526,14 @@ export function assignSuggestedWeights(assets) {
 function capNormalizeWeights(raw, lo = 4, hi = 20) {
   const n = raw.length;
   if (!n) return [];
+  // GUARDA DE INFACTIBILIDAD POR EL SUELO: con n·lo > 100 ni poniendo TODOS los
+  // pesos en el suelo se baja a 100 (p.ej. n=26 con suelo 4% → mínimo 104) — no
+  // existe t válido y la bisección devolvería basura. Reparto igualitario 100/n.
+  if (n * lo > 100) return raw.map(() => 100 / n);
+  // Guarda simétrica por el techo (n·hi < 100 → ni todo al techo llega a 100).
+  // assignSuggestedWeights ya la cubre aguas arriba; se repite aquí para que la
+  // función sea segura por sí sola.
+  if (n * hi < 100) return raw.map(() => 100 / n);
   const w = raw.map((v) => (Number.isFinite(v) && v > 0 ? v : 1e-6));
   const f = (t) => w.reduce((s, v) => s + Math.min(hi, Math.max(lo, v * t)), 0);
   let a = 1e-9, b = 1e9;
@@ -550,6 +591,16 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const closes = bars.map(b => b.close).filter(Number.isFinite);
   const volumes = bars.map(b => b.volume ?? 0);
   const lastClose = closes[closes.length - 1];
+
+  // Cambio de SESIÓN: siempre desde las DOS ÚLTIMAS BARRAS ADYACENTES del array
+  // ORIGINAL de barras (no del array `closes` filtrado: si la penúltima barra
+  // viniera inválida, el filtrado saltaría a una barra anterior y el % pasaría a
+  // ser multi-día sin avisar). Si la penúltima barra no tiene close finito → null.
+  const lastBar = bars[bars.length - 1];
+  const prevBar = bars[bars.length - 2];
+  const dayChangePct = (Number.isFinite(lastBar?.close) && Number.isFinite(prevBar?.close) && prevBar.close > 0)
+    ? Math.round((lastBar.close / prevBar.close - 1) * 10000) / 100
+    : null;
 
   if (!lastClose || lastClose <= 0) {
     return { ok: false, rallyScore: 0, label: "DISCARD", color: "#4b5563", blockedReasons: ["INVALID_CLOSE_PRICE"], metrics: null };
@@ -634,12 +685,14 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     blockedReasons: [],
     metrics: {
       lastClose: Math.round(lastClose * 100) / 100,
-      // Rentabilidad de la SESIÓN en el momento del scan (último cierre vs cierre
-      // anterior, serie ajustada). Con mercado cerrado = variación de la última sesión.
+      // Rentabilidad de la SESIÓN en el momento del scan: última barra vs barra
+      // ADYACENTE anterior (null si la penúltima barra es inválida — nunca un %
+      // multi-día disfrazado). Serie según proveedor: cierre AJUSTADO por splits y
+      // dividendos en EODHD (adjusted_close), Yahoo (adjclose, con fallback al close
+      // crudo si no viene) y TwelveData (adjust=all); crudo solo en Stooq (último
+      // recurso). Con mercado cerrado = variación de la última sesión.
       // SOLO informativo para la fila del panel: no entra en score, stops ni pesos.
-      dayChangePct: (closes.length >= 2 && closes[closes.length - 2] > 0)
-        ? Math.round((lastClose / closes[closes.length - 2] - 1) * 10000) / 100
-        : null,
+      dayChangePct,
       ema5:  ema5  ? Math.round(ema5  * 100) / 100 : null,
       ema20: ema20 ? Math.round(ema20 * 100) / 100 : null,
       ema50: ema50 ? Math.round(ema50 * 100) / 100 : null,

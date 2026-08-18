@@ -313,7 +313,11 @@ async function fetchTwelveDataHistory(eodhdSymbol, lookbackDays, apiKey) {
   if (!symbol) return { ok: false, provider: "TwelveData", reason: `No TwelveData mapping for ${eodhdSymbol}` };
 
   const outputsize = Math.min(lookbackDays, 260);
-  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=${outputsize}&apikey=${encodeURIComponent(apiKey)}`;
+  // adjust=all → cierre ajustado por SPLITS Y DIVIDENDOS (verificado en vivo 18-ago-2026:
+  // AAPL 2025-08-19 close 230.56 crudo → 229.6965 con adjust=all). El default de la API
+  // es "splits" (solo splits, SIN dividendos), que NO cuadra con la metodología certificada
+  // de producción (serie ajustada total, como adjusted_close de EODHD y adjclose de Yahoo).
+  const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=${outputsize}&adjust=all&apikey=${encodeURIComponent(apiKey)}`;
   const r = await fetchJson(url);
   if (!r.ok) return { ok: false, provider: "TwelveData", reason: r.reason };
 
@@ -376,17 +380,28 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
 }
 
 // Convierte los datos crudos de Yahoo en un array de barras limpias.
+//
+// CORRECCIÓN 18-ago-2026: close = indicators.adjclose (ajustado por dividendos y
+// splits), NO el close crudo de quote. Producción certifica toda la metodología
+// (mom9m, pesos, stops) sobre serie AJUSTADA — EODHD sirve adjusted_close y esta
+// rama servía close crudo, sesgando a la baja el momentum de tickers con dividendo
+// (KO.US: mom9m 21,6% crudo vs 24,1% ajustado, verificado en vivo).
+// FALLBACK documentado: si Yahoo no envía adjclose para un ticker (índices y
+// algunos símbolos no lo traen), se usa el close crudo de esa barra — mejor barra
+// cruda que perder la barra. open/high/low siguen crudos (mismo criterio que
+// EODHD, que solo ajusta el close; ATR los consume así desde siempre).
 function _parseYahooBars(chartResult) {
   if (!chartResult) return [];
   const ts = chartResult.timestamp ?? [];
   const q = chartResult.indicators?.quote?.[0] ?? {};
+  const adj = chartResult.indicators?.adjclose?.[0]?.adjclose ?? null;
   return ts
     .map((t, i) => ({
       date: new Date(t * 1000).toISOString().slice(0, 10),
       open:   finiteOrNull(q.open?.[i]),
       high:   finiteOrNull(q.high?.[i]),
       low:    finiteOrNull(q.low?.[i]),
-      close:  finiteOrNull(q.close?.[i]),
+      close:  (adj ? finiteOrNull(adj[i]) : null) ?? finiteOrNull(q.close?.[i]),
       volume: finiteOrNull(q.volume?.[i]) ?? 0,
     }))
     .filter(b => b.close && b.close > 0);
