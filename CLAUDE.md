@@ -102,7 +102,7 @@ DashboardPage mounts
          → If not found: show empty TOP 8 state
 ```
 
-### 3.2 SCAN FULL lifecycle (markets must be OPEN)
+### 3.2 SCAN FULL lifecycle (funciona con mercados abiertos o cerrados: el universo NUNCA se filtra por horario — con mercados cerrados puntúa sobre los últimos cierres asentados, que es el mejor momento para el scan oficial)
 ```
 User presses SCAN FULL
   │
