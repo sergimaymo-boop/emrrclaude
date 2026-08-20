@@ -133,20 +133,114 @@ async function buscarYahoo(symbolYahoo) {
   }
 }
 
+
+// ─── traducción al español (NORMA de Sergi, 20-ago-2026: las notas SIEMPRE en español) ───
+// Se traduce con MyMemory (API gratuita, sin clave) y se corrige después con un glosario
+// financiero propio: los traductores automáticos destrozan la jerga de bolsa
+// ("upgrades" → "actualiza", "outperform" → "rendimiento superior"). El resultado se
+// cachea 30 min con el resto de la respuesta, así que son ~10 llamadas por scan.
+const GLOSARIO_ES = [
+  // recomendaciones de analista — lo que peor traducen los motores automáticos
+  [/\bactualiza (la calificación de |el rating de )?/gi, "mejora la recomendación de "],
+  [/\bmejora de categoría\b/gi, "mejora de recomendación"],
+  [/\bdegrada\b/gi, "recorta la recomendación de"],
+  [/\bcalificación de rendimiento superior\b/gi, "recomendación de sobreponderar"],
+  [/\bcalificación de rendimiento inferior\b/gi, "recomendación de infraponderar"],
+  [/\brendimiento superior\b/gi, "recomendación de sobreponderar"],
+  [/\brendimiento inferior\b/gi, "recomendación de infraponderar"],
+  [/\bcalificación de espera\b/gi, "recomendación de mantener"],
+  [/\bcalificación de compra\b/gi, "recomendación de comprar"],
+  [/\bcalificación de venta\b/gi, "recomendación de vender"],
+  [/\bcalificación neutral\b/gi, "recomendación neutral"],
+  [/\bsobrepeso\b/gi, "sobreponderar"],
+  // vocabulario de mercado
+  [/\bprecio de destino\b/gi, "precio objetivo"],
+  [/\bobjetivo de precio\b/gi, "precio objetivo"],
+  [/\bprecio Target\b/g, "precio objetivo"],
+  [/\borientación\b/gi, "previsiones"],
+  [/\bganancias por acción\b/gi, "beneficio por acción"],
+  [/\blas ganancias\b/gi, "los resultados"],
+  [/\brepunte\b/gi, "subida"],
+  [/\bmitin\b/gi, "subida"],
+  [/\bavance de la vacuna\b/gi, "hito de la vacuna"],
+  // formato: "$ 550" → "550 $", sin arrastrar la puntuación siguiente
+  [/\$\s*(\d[\d.,]*)/g, (_m, n) => {
+    const limpio = String(n).replace(/[.,]+$/, "");
+    const cola = String(n).slice(limpio.length);      // conserva la coma o el punto que seguía
+    return `${limpio} $${cola}`;
+  }],
+  [/\bprecio objetivo en\b/gi, "precio objetivo de"],
+  [/\s+([,.;])/g, "$1"],
+  [/\bDesde\b/g, "desde"],
+];
+
+function pulirEspanol(t) {
+  let s = String(t || "");
+  for (const [re, rep] of GLOSARIO_ES) s = s.replace(re, rep);
+  return s.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Traduce protegiendo los NOMBRES PROPIOS: sin esto, "Target" se convierte en "el
+ * objetivo" y "Micron" en "micrón" (visto el 20-ago-2026). Cada nombre a proteger se
+ * sustituye por un testigo que ningún traductor toca, y se restaura al volver.
+ */
+async function traducirAlEspanol(texto, proteger = []) {
+  let q = String(texto || "").slice(0, 480);
+  if (!q) return null;
+  const testigos = [];
+  for (const nombre of proteger) {
+    const n = String(nombre || "").trim();
+    if (n.length < 3) continue;
+    // (?<!price ) evita que proteger la empresa "Target" destroce "price target"
+    const re = new RegExp(`(?<!price\\s)\\b${escapar(n)}\\b`, "gi");
+    if (!re.test(q)) continue;
+    const testigo = `QZX${testigos.length}ZQ`;
+    testigos.push([testigo, n]);
+    q = q.replace(re, testigo);
+  }
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(q)}&langpair=en%7Ces`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: { accept: "application/json" }, signal: ctrl.signal });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const t = d?.responseData?.translatedText;
+    if (typeof t !== "string" || !t.trim()) return null;
+    // MyMemory devuelve a veces el aviso de cuota como si fuera la traducción
+    if (/MYMEMORY WARNING|QUOTA/i.test(t)) return null;
+    let out = t;
+    for (const [testigo, nombre] of testigos) out = out.replace(new RegExp(`${testigo}`, "gi"), nombre);
+    return pulirEspanol(out);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Devuelve el motivo más probable del movimiento de UN ticker, o null si no lo hay.
  * @returns {Promise<{headline:string, publisher:string, url:string, publishedAtUtc:string, score:number}|null>}
  */
 export async function motivoDelMovimiento({ symbolYahoo, ticker, nombre, refDate = null }) {
-  let items = await buscarYahoo(symbolYahoo);
-  // Los valores europeos (.PA, .MI, .DE…) casi nunca traen noticias buscando por
-  // símbolo; se reintenta por NOMBRE de la empresa. La guarda dura de más abajo sigue
-  // exigiendo que el titular nombre a la empresa, así que el reintento no puede
-  // colar noticias ajenas.
-  if (nombre && !items.some((it) => mencionaEmpresa(it?.title, { nombre, ticker }))) {
-    const porNombre = await buscarYahoo(nombre);
-    if (porNombre.length) items = items.concat(porNombre);
-  }
+  // SIEMPRE se consultan las dos vías —símbolo y nombre— y se fusionan. Yahoo devuelve
+  // un conjunto ROTATORIO: probado el 20-ago-2026, la nota de Evercore sobre Dell
+  // estaba en la lista a una hora y había desaparecido media hora después. Con las dos
+  // consultas la cobertura sube bastante, y la caché de 30 min fija el motivo una vez
+  // encontrado para que no baile en pantalla.
+  const [porSimbolo, porNombre] = await Promise.all([
+    buscarYahoo(symbolYahoo),
+    nombre ? buscarYahoo(nombre) : Promise.resolve([]),
+  ]);
+  const vistos = new Set();
+  const items = [...porSimbolo, ...porNombre].filter((it) => {
+    const k = String(it?.title || "").toLowerCase();
+    if (!k || vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
   if (!items.length) return null;
   const ref = refDate ? new Date(refDate).getTime() : Date.now();
   let mejor = null;
@@ -172,7 +266,11 @@ export async function motivoDelMovimiento({ symbolYahoo, ticker, nombre, refDate
       };
     }
   }
-  return mejor && mejor.score >= TOTAL_MINIMO ? mejor : null;
+  if (!mejor || mejor.score < TOTAL_MINIMO) return null;
+  // NORMA: la nota se entrega SIEMPRE en español. Si la traducción falla se conserva
+  // el titular original (mejor eso que quedarnos sin motivo), y `idioma` lo delata.
+  const es = await traducirAlEspanol(mejor.headline, [nombre, ticker]);
+  return { ...mejor, headlineOriginal: mejor.headline, headline: es ?? mejor.headline, idioma: es ? "es" : "en" };
 }
 
 /** Varios tickers en paralelo, tolerante a fallos: lo que falle sale como null. */

@@ -464,7 +464,8 @@ function MotivoDelMovimiento({ news, dayChangePct }: { news: RallyNewsItem | nul
       <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.06em", color, flexShrink: 0, paddingTop: 1, whiteSpace: "nowrap" }}>
         {etiqueta}
       </span>
-      <span style={{ fontSize: 10.5, color: news ? "#e2e8f0" : "#94a3b8", lineHeight: 1.45 }}>
+      <span title={news?.headlineOriginal && news.headlineOriginal !== news.headline ? `Titular original: ${news.headlineOriginal}` : undefined}
+        style={{ fontSize: 10.5, color: news ? "#e2e8f0" : "#94a3b8", lineHeight: 1.45 }}>
         {news?.url ? (
           <a href={news.url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none", borderBottom: `1px dotted ${color}88` }}>
             {cuerpo}

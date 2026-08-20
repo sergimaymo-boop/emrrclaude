@@ -236,7 +236,12 @@ export function initialRallyState(): RallyState {
  * o null si no hay ninguno identificable. NO participa en el análisis.
  */
 export interface RallyNewsItem {
+  /** Titular en ESPAÑOL (norma 20-ago-2026). Si la traducción falla, llega el original. */
   headline: string;
+  /** Titular tal cual lo publicó el medio, para poder contrastar. */
+  headlineOriginal?: string;
+  /** "es" si está traducido, "en" si se sirvió el original por fallo del traductor. */
+  idioma?: "es" | "en";
   publisher: string;
   url: string;
   publishedAtUtc: string;
