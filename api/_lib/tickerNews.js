@@ -38,6 +38,18 @@ const CATALIZADORES = [
   [/\b(guidance cut|profit warning|warns?)\b/i, 5],
 ];
 
+/**
+ * Titulares que NO explican un movimiento aunque hablen de la empresa:
+ * convocatorias y agenda ("Dell celebrará conferencia el 1 de septiembre para
+ * comentar resultados" — visto en producción el 20-ago-2026, colaba porque
+ * contiene "results"), y opiniones de terceros.
+ */
+const AGENDA_U_OPINION = [
+  /\b(to hold|will hold|to report|will report|to announce|to present|to participate)\b/i,
+  /\b(conference call|webcast|investor day|save the date|schedule[ds]?|invites?)\b/i,
+  /\b(says?|comments?|predicts?|sees|expects|thinks|opinion)\b/i,
+];
+
 /** Titulares que NO explican nada de este ticker en particular. */
 const GENERICOS = [
   /\b(dow jones futures|stock market today|market wrap|futures (rise|fall|climb|slip|tick))\b/i,
@@ -88,6 +100,7 @@ export function puntuarTitular(titular, { nombre, ticker, horasDesde }) {
   if (nombreCorto.length >= 3 && new RegExp(`\\b${escapar(nombreCorto)}`, "i").test(t)) p += 4;
   if (ticker && new RegExp(`\\b${escapar(ticker)}\\b`).test(t)) p += 2;
   for (const re of GENERICOS) if (re.test(t)) p -= 6;
+  for (const re of AGENDA_U_OPINION) if (re.test(t)) { p -= 5; catalizador = Math.min(catalizador, 3); }
   if (Number.isFinite(horasDesde)) p += horasDesde <= 24 ? 3 : horasDesde <= 48 ? 1 : -2;
   if (t.length > 140) p -= 2;
   return { total: p, catalizador };

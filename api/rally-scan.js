@@ -302,7 +302,8 @@ async function handleNews(req, res) {
   if (!top10.length) return sendJson(res, 200, { ok: true, news: {}, message: 'No hay scan reciente.' }, 'RALLY_NEWS');
 
   const cacheKey = `${snapshot.scanId ?? 'sin-id'}`;
-  const cached = await loadRallyNews(cacheKey);
+  const saltarCache = req.query?.fresh === '1';   // solo para verificar cambios del selector
+  const cached = saltarCache ? null : await loadRallyNews(cacheKey);
   if (cached) return sendJson(res, 200, { ok: true, news: cached, source: 'CACHE' }, 'RALLY_NEWS');
 
   const assets = top10.map(a => ({
