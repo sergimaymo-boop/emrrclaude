@@ -101,7 +101,7 @@ export function puntuarTitular(titular, { nombre, ticker, horasDesde }) {
   if (ticker && new RegExp(`\\b${escapar(ticker)}\\b`).test(t)) p += 2;
   for (const re of GENERICOS) if (re.test(t)) p -= 6;
   for (const re of AGENDA_U_OPINION) if (re.test(t)) { p -= 5; catalizador = Math.min(catalizador, 3); }
-  if (Number.isFinite(horasDesde)) p += horasDesde <= 24 ? 3 : horasDesde <= 48 ? 1 : -2;
+  if (Number.isFinite(horasDesde)) p += Math.abs(horasDesde) <= 24 ? 3 : Math.abs(horasDesde) <= 48 ? 1 : -2;
   if (t.length > 140) p -= 2;
   return { total: p, catalizador };
 }
@@ -154,7 +154,12 @@ export async function motivoDelMovimiento({ symbolYahoo, ticker, nombre, refDate
     const ts = Number(it?.providerPublishTime) * 1000;
     if (!Number.isFinite(ts)) continue;
     const horasDesde = (ref - ts) / 3_600_000;
-    if (horasDesde < -12 || horasDesde > 96) continue;          // ventana: hasta 4 días antes
+    // Ventana: hasta 4 días ANTES del scan y hasta 2 días DESPUÉS. Lo de después
+    // importa porque la reacción de los analistas al movimiento llega a la mañana
+    // siguiente y suele ser el mejor resumen de lo ocurrido (caso real 20-ago-2026:
+    // la nota de BofA sobre Moderna se publicó 12 h después del scan y con la
+    // ventana anterior, de −12 h, se quedaba fuera por dos minutos).
+    if (horasDesde < -48 || horasDesde > 96) continue;
     const { total, catalizador } = puntuarTitular(it.title, { nombre, ticker, horasDesde });
     if (catalizador < CATALIZADOR_MINIMO) continue;
     if (!mejor || total > mejor.score) {
