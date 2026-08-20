@@ -96,6 +96,34 @@ export async function loadLastRallyTestSnapshot() {
   }
 }
 
+// ─── Caché de "motivo del movimiento" del módulo Rally (solo display) ────────
+// TTL corto: la noticia relevante cambia durante la sesión. Si Redis no está,
+// simplemente no hay caché y se consulta en vivo.
+const KV_RALLY_NEWS_TTL = 30 * 60;
+
+export async function saveRallyNews(scanId, payload) {
+  try {
+    const redis = getRedis();
+    if (!redis || !scanId) return false;
+    await redis.set(`rally_news:${scanId}`, payload, { ex: KV_RALLY_NEWS_TTL });
+    return true;
+  } catch (e) {
+    console.error("[kvStorage] write failed:", e?.message ?? e);
+    return false;
+  }
+}
+
+export async function loadRallyNews(scanId) {
+  try {
+    const redis = getRedis();
+    if (!redis || !scanId) return null;
+    return (await redis.get(`rally_news:${scanId}`)) ?? null;
+  } catch (e) {
+    console.error("[kvStorage] read failed:", e?.message ?? e);
+    return null;
+  }
+}
+
 // ─── IBK portfolio snapshot (canal lateral de lectura externa, p.ej. Mac) ────
 // Solo persistencia: NO participa en ningún cálculo de módulos (Rally/Supreme/SP500).
 const KV_IBK_KEY = "last_ibk_portfolio";

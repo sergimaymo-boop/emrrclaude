@@ -18,6 +18,8 @@ import {
   continueRallyScan,
   estimateNextReview,
   fetchLastRallyScan,
+  fetchRallyNews,
+  type RallyNewsItem,
   initialRallyState,
   startRallyScan,
 } from "../services/rallyRefresh";
@@ -40,6 +42,10 @@ export function RallyPanel() {
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Motivo del movimiento por ticker (solo display; ver api/_lib/tickerNews.js).
+  // Se carga aparte del scan a propósito: si la fuente de noticias falla o tarda,
+  // el módulo enseña sus datos igual — la nota es un extra, nunca un bloqueante.
+  const [news, setNews] = useState<Record<string, RallyNewsItem | null>>({});
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -54,6 +60,13 @@ export function RallyPanel() {
     })();
     return () => { mounted.current = false; };
   }, []);
+
+  // Carga de los motivos: al montar y cada vez que termina un scan nuevo.
+  const cargarNoticias = useCallback(async () => {
+    const n = await fetchRallyNews();
+    if (mounted.current) setNews(n);
+  }, []);
+  useEffect(() => { void cargarNoticias(); }, [cargarNoticias]);
 
   const scanningRef = useRef(false);
   // Devuelve true si el scan terminó con datos, false si falló, null si se saltó por
@@ -83,6 +96,7 @@ export function RallyPanel() {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: res.top10 ?? [], coveragePercent: 100 } as RallyState));
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
           ok = true;
+          void cargarNoticias();   // el scan nuevo trae otros tickers: refrescar motivos
           // Aviso a la tarjeta de alineación cartera↔Rally: hay un scan nuevo persistido.
           // Solo notifica — el módulo Rally no cambia nada de su cálculo ni de su estado.
           window.dispatchEvent(new Event(RALLY_SCAN_UPDATED_EVENT));
@@ -97,7 +111,7 @@ export function RallyPanel() {
       if (mounted.current) setScanning(false);
     }
     return ok;
-  }, []);
+  }, [cargarNoticias]);
 
   // Registro en el bus global: el botón grande SCAN EMRR también escanea este módulo.
   // El wrapper RELANZA el fallo para que el toast global no anuncie un éxito falso
@@ -158,7 +172,7 @@ export function RallyPanel() {
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
             {top10.map((a, i) => (
-              <RallyRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow}
+              <RallyRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow} news={news[a.providerSymbol] ?? null}
                 expanded={expanded === a.providerSymbol}
                 onToggle={() => setExpanded((e) => (e === a.providerSymbol ? null : a.providerSymbol))} />
             ))}
@@ -230,7 +244,7 @@ const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string; short: st
   SIN_DATOS: { color: SLATE, label: "—", short: "—" },
 };
 
-function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void }) {
+function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void; news: RallyNewsItem | null }) {
   const m = asset.metrics;
   const flags = asset.warningFlags ?? [];
   const entry = asset.entryTiming;
@@ -387,6 +401,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
       {expanded && (
         <div style={{ padding: "4px 4px 12px 34px", display: "flex", flexDirection: "column", gap: 8 }}>
           {isNarrow && <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{asset.name}</div>}
+          <MotivoDelMovimiento news={news} dayChangePct={asset.metrics?.dayChangePct ?? null} />
           {entry && (
             <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: entryStyle.color, background: `${entryStyle.color}14`, border: `1px solid ${entryStyle.color}44` }}>
               <b>{entryStyle.label}</b> — {entry.label}
@@ -420,6 +435,47 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyA
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * MOTIVO DEL MOVIMIENTO — una sola línea, el catalizador más probable del día.
+ * Verde si el ticker sube en la sesión del scan, rojo si baja, gris si no hay motivo
+ * identificable. El color lo marca el PRECIO, no el tono de la noticia: es el dato
+ * que el usuario está mirando y evita interpretar sentimiento, que no medimos.
+ * Si no hay noticia se dice explícitamente — nunca se rellena con una explicación
+ * inventada ni se deja el hueco en blanco.
+ */
+function MotivoDelMovimiento({ news, dayChangePct }: { news: RallyNewsItem | null; dayChangePct: number | null | undefined }) {
+  const sube = typeof dayChangePct === "number" && dayChangePct > 0;
+  const baja = typeof dayChangePct === "number" && dayChangePct < 0;
+  const color = !news ? "#64748b" : sube ? GREEN : baja ? RED : SLATE;
+  const etiqueta = !news ? "SIN MOTIVO IDENTIFICADO" : sube ? "MOTIVO ▲" : baja ? "MOTIVO ▼" : "MOTIVO";
+  const cuerpo = news
+    ? news.headline
+    : "Ninguna noticia relevante de la empresa en las últimas sesiones: el movimiento no tiene un catalizador identificable.";
+  const fecha = news?.publishedAtUtc
+    ? new Date(news.publishedAtUtc).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : null;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 10px", borderRadius: 6,
+      background: `${color}12`, border: `1px solid ${color}44` }}>
+      <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.06em", color, flexShrink: 0, paddingTop: 1, whiteSpace: "nowrap" }}>
+        {etiqueta}
+      </span>
+      <span style={{ fontSize: 10.5, color: news ? "#e2e8f0" : "#94a3b8", lineHeight: 1.45 }}>
+        {news?.url ? (
+          <a href={news.url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none", borderBottom: `1px dotted ${color}88` }}>
+            {cuerpo}
+          </a>
+        ) : cuerpo}
+        {news && (
+          <span style={{ color: "#64748b", fontSize: 9 }}>
+            {" · "}{news.publisher}{fecha ? ` · ${fecha}` : ""}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

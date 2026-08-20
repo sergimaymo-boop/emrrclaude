@@ -229,3 +229,26 @@ export function initialRallyState(): RallyState {
     lastRun: new Date().toLocaleString(),
   };
 }
+
+/**
+ * MOTIVO DEL MOVIMIENTO (solo display, solo Rally Leaders).
+ * Un único titular por ticker: el catalizador más probable del movimiento del día,
+ * o null si no hay ninguno identificable. NO participa en el análisis.
+ */
+export interface RallyNewsItem {
+  headline: string;
+  publisher: string;
+  url: string;
+  publishedAtUtc: string;
+}
+
+export async function fetchRallyNews(): Promise<Record<string, RallyNewsItem | null>> {
+  try {
+    const res = await fetch("/api/rally-scan/news", { method: "GET", headers: { accept: "application/json" } });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data?.ok && data.news && typeof data.news === "object" ? data.news : {};
+  } catch {
+    return {};
+  }
+}

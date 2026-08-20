@@ -40,6 +40,7 @@
     { "source": "/api/rally-scan/continue",    "destination": "/api/rally-scan?action=continue"    },
     { "source": "/api/rally-scan/last",        "destination": "/api/rally-scan?action=last"        },
     { "source": "/api/rally-scan/ibk-portfolio", "destination": "/api/rally-scan?action=ibk-portfolio" },
+    { "source": "/api/rally-scan/news",         "destination": "/api/rally-scan?action=news"         },
     { "source": "/api/rally-test/start",       "destination": "/api/rally-scan?action=test-start"    },
     { "source": "/api/rally-test/continue",    "destination": "/api/rally-scan?action=test-continue" },
     { "source": "/api/rally-test/last",        "destination": "/api/rally-scan?action=test-last"     },

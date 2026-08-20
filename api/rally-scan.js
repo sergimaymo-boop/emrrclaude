@@ -21,7 +21,9 @@
 // threshold gate. The monetary cycle correctly modulates the ENTRY decision via
 // Filter 5 (cycleWarning) in OptimalSignalPanel.tsx, not the technical ranking.
 import { buildUniverseResponse } from './universe.js';
-import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastRallyTestSnapshot, loadLastRallyTestSnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio } from './_lib/kvStorage.js';
+import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastRallyTestSnapshot, loadLastRallyTestSnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio, saveRallyNews, loadRallyNews } from './_lib/kvStorage.js';
+import { motivosDelMovimiento } from './_lib/tickerNews.js';
+import { toYahooSymbol } from './_lib/providerCascade.js';
 import { runRallyBatch, fetchSpyBars } from './_lib/rallyBatchProcessor.js';
 import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
 // RALLY-TEST (laboratorio, 18-ago-2026): motor y batch processor PROPIOS, snapshot en
@@ -287,6 +289,33 @@ async function handleTestLast(req, res) {
   return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
 }
 
+
+// ─── news handler (SOLO Rally Leaders, SOLO display) ──────────────────────────
+// Devuelve, para cada ticker del último scan, el motivo más probable de su
+// movimiento — o null si no hay ninguno identificable. NO toca el análisis: no
+// entra en score, pesos, stops ni selección. Si falla, el módulo sigue igual.
+async function handleNews(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'RALLY_NEWS');
+
+  const snapshot = await loadLastRallySnapshot();
+  const top10 = snapshot?.top10 ?? [];
+  if (!top10.length) return sendJson(res, 200, { ok: true, news: {}, message: 'No hay scan reciente.' }, 'RALLY_NEWS');
+
+  const cacheKey = `${snapshot.scanId ?? 'sin-id'}`;
+  const cached = await loadRallyNews(cacheKey);
+  if (cached) return sendJson(res, 200, { ok: true, news: cached, source: 'CACHE' }, 'RALLY_NEWS');
+
+  const assets = top10.map(a => ({
+    providerSymbol: a.providerSymbol,
+    ticker: a.ticker,
+    nombre: a.name,
+    symbolYahoo: toYahooSymbol(a.providerSymbol) || a.ticker,
+  }));
+  const news = await motivosDelMovimiento(assets, { refDate: snapshot.scanCompletedAtUtc ?? null });
+  await saveRallyNews(cacheKey, news);
+  return sendJson(res, 200, { ok: true, news, source: 'LIVE' }, 'RALLY_NEWS');
+}
+
 // ─── ibk-portfolio handler ────────────────────────────────────────────────────
 // Canal LATERAL de persistencia del snapshot de cartera IBK (subido por fotos
 // desde el navegador) para que un proceso externo (script del Mac) pueda leerlo.
@@ -373,5 +402,6 @@ export default async function handler(req, res) {
   if (action === 'test-start')    return handleTestStart(req, res);
   if (action === 'test-continue') return handleTestContinue(req, res);
   if (action === 'test-last')     return handleTestLast(req, res);
-  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'test-start', 'test-continue', 'test-last'] });
+  if (action === 'news')          return handleNews(req, res);
+  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'news', 'test-start', 'test-continue', 'test-last'] });
 }
