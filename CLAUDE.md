@@ -391,6 +391,7 @@ cambian si un estudio walk-forward supera los gates pre-registrados (ver §10c).
 - **Infraestructura**: `scripts/rally-study-lib.mjs` (réplica de producción + simulador) · `data/universe-10y.json` (603 tickers, 10 años, cierres ajustados) · resultados canon en `backtests/*.json`. ⚠️ La ruta POR DEFECTO del simulador (`simulate` sin opciones) reproduce la config LEGACY (pesos por convicción, sin stops H4 ni salto mezcla); el canon C0 exige pasar explícitamente `widthOf` = stop H4 + `pickJump` = mezcla 70/30 + `weightsOf` = M9_RAW — usar el preset `PRESET_C0(T)` exportado por el lib (y sus helpers `stopH4pct`/`pickJumpMix70`/`capNormalizeTarget`/`segMetrics`), prohibido re-tipear las fórmulas en estudios nuevos.
 - **Disciplina**: walk-forward SIEMPRE (elegir en train 2016/17-2021, confirmar en 2022-26), malla 9 celdas (3 fases × 3 cadencias), sin lookahead, determinista. Gate estándar para cambiar producción: batir a C0 en confirmación en CAGR Y peor-celda + mejora material (≥2 pp CAGR o ≥0,08 MAR) + MaxDD ≤ +5 pp + elección por TRAIN entre passers. Sin dominancia → no cambiar (parsimonia).
 - **⚠️ TRAMPA DE COSTES (18-ago-2026)**: `simulate()` NO mete los costes de rotación en `dret` — los aplica directo a `eq`. Reconstruir una curva desde `dret` da ~+1,4 pp/año de CAGR fantasma (49,1% vs 47,7% en la celda canónica). Para overlays a nivel de cartera (objetivo de volatilidad, caja, mezclas) derivar la serie de la PROPIA curva: `netRet[i] = curve[i]/curve[i-1] - 1` (reproduce la curva del simulador con diferencia 0,000000%). Comparar una variante reconstruida contra un C0 tomado de `curve` la favorece indebidamente.
+- **⚠️ EJECUCIÓN: cierres vs intradía (19-ago-2026)**: el simulador canon evalúa el trailing stop sobre CIERRES diarios; una orden real de bróker persigue el máximo INTRADÍA y salta al TOCAR el nivel dentro de la sesión. Medido con `scripts/../lab (sesión 19-ago)/simulate-intradia.mjs` (réplica en malla 9 celdas): las cifras publicadas (47,7% CAGR / 44,9% confirmación / MAR 1,27) son **2-3 pp/año optimistas** frente a ejecución real (43,5-44,8% / 42,3-43,4% / MAR 1,15-1,25) — dato correcto para el texto del panel, PENDIENTE de aplicar (cambio solo de texto, no de estrategia; requiere OK expreso porque toca Rally Leaders). Validado por reproducción bit a bit del estudio `rally-joint-study.json` (edgePorFase de CAD_63 idéntico en los dos modos). Para adjudicar un retador usar SIEMPRE el **ensemble de 10 fases** (arranques 260..350, sondas P1 ≥7/10 fases + P2 ≥+2pp media) — la malla de 3 fases da falsos negativos (top-8 parecía fallar por el estadístico de peor-celda) y falsos positivos (cadencia 63 parecía ganar con jitter de 3 fases). Con el ensemble de 10 fases: **top-8 (5-25) SUPERA** en los dos modos (10/10 fases, +4,2 a +4,6 pp) — candidato con mejor respaldo del proyecto, aún sin pasar a producción (falta decisión de Sergi); cadencia 63 sigue REFUTADA en ambos modos.
 - **Tras re-ejecutar cualquier estudio rally-***: correr sus `verify-*` ANTES de leer conclusiones (`verify-joint-recompute.mjs`, `verify-joint-cadence.mjs` a 20 y 50 pb, `verify-coherence-scan-recompute.mjs`, `verify-coherence-data-sanity.mjs`).
 - **Estudios CERRADOS — no repetir** (detalles y cifras en la memoria de sesión, archivo `project_emrr_rally_leaders_estrategia_15ago.md`): pullback score (sin señal OOS), ponderar por riesgo (resta), filtros de selección por estado (0/10 pasa), ceñir stops en máximos (resta), cadencia 63 (trampa test-brillante/train-flojo). **Candidato futuro nº1**: top-8 con topes [5,25] — exige estudio propio pre-registrado.
 - **Re-auditoría conjunta**: ~feb-2027, o antes si drawdown >25% o cambio de régimen (SPY<EMA200) — en ese caso REPORTAR, no cambiar.
@@ -423,6 +424,33 @@ CONGELADO**: todo experimento se hace aquí.
 | Frontend | `src/services/rallyTestRefresh.ts` (tipos reexportados de producción) · `src/components/RallyTestPanel.tsx` (color violeta `#a855f7` para no confundirlo con el ámbar de producción) |
 | Aislamiento UI | NO se registra en el bus de SCAN EMRR (botón propio) y NO dispara `RALLY_SCAN_UPDATED_EVENT` → ni la banda de alineación de cartera ni el export CarteraIBK ven un scan de test |
 | Regla | Mientras el motor de test sea idéntico, su top-10 = el de Rally Leaders. En cuanto cambie un parámetro, las cifras de backtest de §10b DEJAN de aplicar: hay que recalcularlas y pasar los gates de §10c antes de proponer nada para producción |
+
+---
+
+## 10f. MOTIVO DEL MOVIMIENTO — "¿por qué se ha movido este ticker?" (20-ago-2026)
+
+- **Solo Rally Leaders, solo display.** `api/_lib/tickerNews.js` elige UN titular por ticker
+  de entre los devueltos por el buscador de Yahoo (sin clave); NO participa en score,
+  pesos, stops, selección ni rotación — si falla, el módulo funciona exactamente igual.
+- **Guardas duras** (nacidas de fallos reales vistos en producción el 20-ago): el titular
+  DEBE nombrar a la empresa (Yahoo devolvía noticias de otras compañías para tickers
+  europeos) y DEBE describir un catalizador real — resultados, FDA, fusión, cambio de
+  recomendación (una opinión de tertuliano o un patrocinio de eSports NO cuentan).
+  Convocatorias/agenda ("celebrará conferencia...") restan y topan la puntuación.
+  Sin catalizador → `null` → "sin motivo identificado", nunca se inventa una explicación.
+- **SIEMPRE en español** (norma de Sergi, 20-ago-2026): traducción con MyMemory (gratuita,
+  sin clave) + `GLOSARIO_ES` propio — los traductores automáticos destrozan la jerga
+  financiera ("upgrades"→"actualiza") y los nombres propios ("Target"→"el objetivo");
+  se protegen con testigos antes de traducir y se restauran después. Si la traducción
+  falla se sirve el original y `idioma:"en"` lo delata (visible en el título/tooltip).
+- **Endpoint**: `GET /api/rally-scan/news` (rewrite de `?action=news`, sin función nueva en
+  Vercel) sobre el ÚLTIMO scan persistido; caché Redis 30 min por scanId (`?fresh=1` la
+  salta, solo para verificación). Consulta SIEMPRE por símbolo Y por nombre de empresa y
+  fusiona — Yahoo devuelve un conjunto rotatorio, la misma noticia entra y sale del top
+  entre refrescos.
+- **UI**: nota de una línea en el desplegable de cada ticker (`RallyPanel.tsx`) — verde si
+  el ticker sube en la sesión del scan, roja si baja, gris si no hay motivo. El color lo
+  marca el PRECIO, no el tono de la noticia (no se mide sentimiento).
 
 ---
 

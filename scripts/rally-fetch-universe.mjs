@@ -2,6 +2,14 @@
  * RALLY — descarga durable de 10 años de barras diarias (con volumen) del universo
  * completo de 606 tickers. Se guarda en data/ (NO en /tmp, que se purga) para que
  * el backtest sea reproducible entre sesiones.
+ *
+ * ACTUALIZACIÓN INCREMENTAL (corregido 21-ago-2026): la versión anterior SALTABA
+ * cualquier ticker que ya tuviera barras guardadas — así que una vez descargado el
+ * universo una vez, ninguna ejecución posterior traía datos nuevos, aunque
+ * `fetchedAt` se reescribía con la fecha del día (falso sello de frescura: el
+ * 21-ago se ejecutó y guardó "hoy" con datos que seguían siendo del 7-ago). Ahora
+ * se pide solo un rango corto (60 días) para los tickers que ya existen y se
+ * fusiona por fecha con lo guardado — barato en llamadas y siempre al día.
  */
 import fs from "node:fs";
 import { STATIC_ASSETS_BY_EXCHANGE } from "../api/_lib/staticUniverse.js";
@@ -20,8 +28,8 @@ targets.push({ sym: "SPY.US", yahoo: "SPY", name: "S&P 500 ETF", exchange: "US",
 const existing = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, "utf8")) : { fetchedAt: null, series: {} };
 const series = existing.series ?? {};
 
-async function fetchOne(y) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?range=10y&interval=1d&events=split`;
+async function fetchOne(y, range) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?range=${range}&interval=1d&events=split`;
   for (let a = 1; a <= 3; a++) {
     try {
       const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
@@ -40,7 +48,7 @@ async function fetchOne(y) {
           a: adj?.[i] ?? c, v: q.volume?.[i] ?? 0,
         });
       }
-      return bars.length >= 300 ? bars : null;
+      return bars;
     } catch {
       if (a === 3) return null;
       await sleep(700 * a);
@@ -49,18 +57,35 @@ async function fetchOne(y) {
   return null;
 }
 
-let ok = 0, fail = 0, skip = 0;
+/** Fusiona por fecha: las barras nuevas SUSTITUYEN a las viejas en fechas repetidas
+ *  (Yahoo puede revisar cierres recientes), y se añaden las fechas que faltaban. */
+function fusionar(previas, nuevas) {
+  const porFecha = new Map(previas.map((b) => [b.d, b]));
+  for (const b of nuevas) porFecha.set(b.d, b);
+  return [...porFecha.values()].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+}
+
+let nuevo = 0, actualizado = 0, fail = 0;
 for (let i = 0; i < targets.length; i++) {
   const t = targets[i];
-  if (series[t.sym]?.bars?.length) { skip++; continue; }
-  const bars = await fetchOne(t.yahoo);
-  if (bars) { series[t.sym] = { name: t.name, exchange: t.exchange, currency: t.currency, bars }; ok++; }
-  else fail++;
+  const tieneHistorico = series[t.sym]?.bars?.length >= 300;
+  // Ticker nuevo (o histórico insuficiente) → 10 años completos. Ticker ya conocido
+  // → solo los últimos 60 días naturales, de sobra para cubrir festivos/fines de
+  // semana y fusionar con lo que ya había.
+  const bars = await fetchOne(t.yahoo, tieneHistorico ? "3mo" : "10y");
+  if (bars && bars.length) {
+    const previas = series[t.sym]?.bars ?? [];
+    const fusionadas = tieneHistorico ? fusionar(previas, bars) : bars;
+    if (fusionadas.length >= 300) {
+      series[t.sym] = { name: t.name, exchange: t.exchange, currency: t.currency, bars: fusionadas };
+      tieneHistorico ? actualizado++ : nuevo++;
+    } else fail++;
+  } else fail++;
   if ((i + 1) % 40 === 0) {
     fs.writeFileSync(OUT, JSON.stringify({ fetchedAt: new Date().toISOString(), series }));
-    console.log(`  ${i + 1}/${targets.length} · ok ${ok} · fallos ${fail} · ya estaban ${skip}`);
+    console.log(`  ${i + 1}/${targets.length} · nuevos ${nuevo} · actualizados ${actualizado} · fallos ${fail}`);
   }
   await sleep(260);
 }
 fs.writeFileSync(OUT, JSON.stringify({ fetchedAt: new Date().toISOString(), series }));
-console.log(`\nFIN: ${Object.keys(series).length} tickers con histórico · ok ${ok} · fallos ${fail} · ${(fs.statSync(OUT).size / 1e6).toFixed(0)} MB`);
+console.log(`\nFIN: ${Object.keys(series).length} tickers con histórico · nuevos ${nuevo} · actualizados ${actualizado} · fallos ${fail} · ${(fs.statSync(OUT).size / 1e6).toFixed(0)} MB`);
