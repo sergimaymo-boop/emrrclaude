@@ -32,7 +32,31 @@ PORTFOLIO_URL = f"{BASE_URL}/api/rally-scan/ibk-portfolio"
 MAIL_FROM_ACCOUNT = "sergimaymo@gmail.com"
 MAIL_TO = "sergimaymo@gmail.com"
 
-OUT_DIR = os.path.expanduser("~/Desktop/CarteraIBK")
+# Carpeta de salida. El Escritorio está protegido por TCC (privacidad de macOS) y un
+# agente de launchd NO puede escribir ahí sin "Acceso total al disco": el 18-ago-2026
+# el automatismo se quedó muerto por eso ("Operation not permitted"). Se intenta el
+# Escritorio y, si el sistema lo impide, se cae a Application Support, que siempre es
+# escribible por el agente. El correo es el canal principal, así que la entrega no
+# depende de cuál de las dos se use.
+OUT_DIR_PREFERIDO = os.path.expanduser("~/Desktop/CarteraIBK")
+OUT_DIR_ALTERNATIVO = os.path.expanduser("~/Library/Application Support/CarteraIBK/salidas")
+
+
+def _resolver_out_dir() -> str:
+    for d in (OUT_DIR_PREFERIDO, OUT_DIR_ALTERNATIVO):
+        try:
+            os.makedirs(d, exist_ok=True)
+            testigo = os.path.join(d, ".escritura")
+            with open(testigo, "w") as fh:
+                fh.write("ok")
+            os.remove(testigo)
+            return d
+        except OSError:
+            continue
+    return OUT_DIR_ALTERNATIVO
+
+
+OUT_DIR = _resolver_out_dir()
 STATE_DIR = os.path.expanduser("~/Library/Application Support/CarteraIBK")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 LOG_FILE = os.path.join(STATE_DIR, "generator.log")
