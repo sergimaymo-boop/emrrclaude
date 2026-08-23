@@ -91,9 +91,11 @@
     }
   },
   "verdict": {
-    "decision": "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO",
+    "decision": "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)",
     "champion": "b200_r21_h1.1",
     "challenger": "b100_r21_h1.1",
-    "reason": "MAR 1.92 vs 1.77 (+0.15 > 0.10) y gana 2/3 subperíodos"
+    "reason": "MAR 1.92 vs 1.77 (+0.15 > 0.10) y gana 2/3 subperíodos",
+    "decisionOriginal_BUGGY": "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO",
+    "notaCorreccion": "Corregido a mano el 23-ago: esta ejecución (12:51) se comparó contra el informe de la misma madrugada (01:44), mismo pull de datos → autoconfirmación trivial. La regla exige DOS MUESTRAS INDEPENDIENTES. Cadena real de retadores: 3-ago b100_r21_h1.1 → 19-ago b200_r21_h1.25 → 23-ago b100_r21_h1.1 = el retador líder CAMBIA entre muestras, que es ruido, no persistencia. Campeón SIN CAMBIOS. El script ya exige 72h de separación entre muestras para que no se repita."
   }
 }

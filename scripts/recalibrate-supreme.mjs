@@ -321,8 +321,19 @@ if (verdict.challenger) {
       })
       .filter((x) => x.generatedAt)
       .sort((a, b) => new Date(a.generatedAt) - new Date(b.generatedAt));
-    if (prevFiles.length > 0) {
-      const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, prevFiles[prevFiles.length - 1].f), "utf8"));
+    // ⚠️ SEGUNDO BUG de la misma regla (23-ago-2026): ordenar bien por fecha no basta.
+    // Dos ejecuciones el MISMO día se comparan una contra otra y, como usan el mismo pull
+    // de datos, el retador coincide trivialmente → "CONFIRMADO" automático. Pasó de
+    // verdad hoy: la pasada de la 01:44 dejó informe, la de las 12:51 se confirmó contra
+    // ella. Eso NO son dos muestras independientes, que es justo lo que la regla exige.
+    // Fix: ignorar informes generados en las últimas MIN_HORAS_ENTRE_MUESTRAS horas.
+    const MIN_HORAS_ENTRE_MUESTRAS = 72;
+    const ahora = Date.now();
+    const independientes = prevFiles.filter(
+      (x) => (ahora - new Date(x.generatedAt).getTime()) / 3_600_000 >= MIN_HORAS_ENTRE_MUESTRAS,
+    );
+    if (independientes.length > 0) {
+      const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, independientes[independientes.length - 1].f), "utf8"));
       prevChallenger = prev?.verdict?.challenger ?? null;
     }
   } catch { /* sin informe previo */ }
