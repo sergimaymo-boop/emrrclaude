@@ -210,6 +210,42 @@ def portfolio_plausible(portfolio: dict, last_good_nav) -> tuple:
             return False, (f"identidad rota: NAV {nav:,.0f} != valMdo+cash {expected:,.0f} "
                            f"(+/-{NAV_IDENTITY_TOL:.0%})")
     positions = portfolio.get("positions") or []
+
+    # LECTURA INCOMPLETA (23-ago-2026): una posición con cantidad pero SIN precio es una
+    # lectura fallida del OCR, no una cartera vacía. Si se dejan pasar, build_plan las
+    # descarta y el plan dice "COMPRAR" algo que YA TIENES — ocurrió de verdad el 21-ago
+    # (INTC/MU/LRCX con lastPrice null → email "10 tickers a comprar, 0 a vender").
+    # Ante una lectura incompleta preferimos NO generar informe a generar uno erróneo.
+    sin_precio = [
+        p.get("symbol", "?") for p in positions
+        if _finite_num(p.get("quantity")) and float(p.get("quantity") or 0) > 0
+        and not (_finite_num(p.get("lastPrice")) and float(p.get("lastPrice") or 0) > 0)
+    ]
+    if sin_precio:
+        return False, ("lectura incompleta: posiciones con cantidad pero sin precio "
+                       f"({', '.join(sin_precio[:6])}) — repite la carga de fotos")
+
+    # MAGNITUD SIN DEPENDER DEL FX (23-ago-2026): la comprobación anterior solo corría si
+    # fxEurPerUsd venía informado, y justo cuando falta es cuando el OCR suele estar mal.
+    # El 19-ago pasó MRNA a 39.245 $ (real ~133 $) con fx null y nadie lo detectó. El FX
+    # EUR/USD real vive holgadamente en [0,5, 2,0]: si ni con el extremo más favorable de
+    # esa banda las posiciones cuadran con VAL.MDO., la lectura está corrupta.
+    if positions and _finite_num(val_mdo) and val_mdo > 0:
+        bruto = 0.0
+        for p in positions:
+            try:
+                q, pr = float(p.get("quantity")), float(p.get("lastPrice"))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(q) and math.isfinite(pr) and q > 0 and pr > 0:
+                bruto += q * pr
+        if bruto > 0:
+            minimo_posible = bruto * 0.5   # FX más favorable a que cuadre por abajo
+            maximo_posible = bruto * 2.0
+            if minimo_posible > val_mdo * (1 + POS_VALMDO_TOL) or maximo_posible < val_mdo * (1 - POS_VALMDO_TOL):
+                return False, (f"Sigma posiciones {bruto:,.0f} (unidades de cotizacion) incompatible "
+                               f"con valMdo {val_mdo:,.0f} EUR para cualquier FX en [0,5-2,0]")
+
     if positions and _finite_num(portfolio.get("fxEurPerUsd")) and _finite_num(val_mdo) and val_mdo > 0:
         pos_eur = positions_value_eur(portfolio)
         if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):

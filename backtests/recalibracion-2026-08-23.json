@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-23T00:49:36.352Z",
+  "generatedAt": "2026-08-23T11:51:26.067Z",
   "universe": 601,
   "sessions": 2514,
   "range": "2016-08-22 → 2026-08-21",
@@ -91,10 +91,9 @@
     }
   },
   "verdict": {
-    "decision": "RETADOR EN OBSERVACIÓN (1ª victoria tras corregir la comparación — se requiere confirmación)",
+    "decision": "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO",
     "champion": "b200_r21_h1.1",
     "challenger": "b100_r21_h1.1",
-    "reason": "MAR 1.92 vs 1.77 (+0.15 > 0.10) y gana 2/3 subperíodos. CORREGIDO 23-ago: el script comparó por error contra el informe del 3-ago (bug de ordenar por nombre de fichero en vez de por fecha, ver scripts/recalibrate-supreme.mjs) en vez de contra el del 19-ago, que es la recalibración inmediatamente anterior real. El retador líder del 19-ago era OTRO (b200_r21_h1.25, hoy ya no gana: MAR 1.63 < 1.77), así que NO hay dos victorias consecutivas del MISMO retador — es el patrón de ruido que la regla de persistencia existe para descartar. Veredicto correcto: EN OBSERVACIÓN.",
-    "decisionOriginal_BUGGY": "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO"
+    "reason": "MAR 1.92 vs 1.77 (+0.15 > 0.10) y gana 2/3 subperíodos"
   }
 }

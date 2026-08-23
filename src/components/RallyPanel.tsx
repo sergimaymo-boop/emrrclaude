@@ -32,12 +32,13 @@ const SLATE = "#94a3b8";
 const pct = (v: number | null | undefined, d = 1) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "—");
 
 export function RallyPanel() {
-  // Umbral 748 (antes 680): con la columna de rentabilidad de sesión, el layout de una
-  // línea NO cabe por debajo de ~746px de viewport (medición DOM 18-ago-2026: a 740px
-  // cada fila desborda 4px — scrollWidth 674 vs clientWidth 670 — y el nombre colapsa a
-  // 0px; a 748px desbordamiento 0). El layout de dos líneas absorbe toda la banda
-  // 680-747 sin recorte; desde 748px la fila de una línea cabe completa.
-  const isNarrow = useIsNarrow(748);
+  // Umbral 810 (antes 748): el 23-ago se añadió la columna de PRECIO a la fila de
+  // escritorio (62px de columna + 10px de gap) y el ticker se estrechó de 90 a 78px,
+  // así que el ancho mínimo sube en ~60px netos sobre el umbral anterior, más margen.
+  // DERIVADO DE LOS ANCHOS DECLARADOS (suma de columnas fijas 622px + 11 gaps de 10px
+  // + 32px de padding del panel), NO de una medición DOM como el umbral de 748 —
+  // si alguna fila se recorta entre 800 y 830px, medir en el navegador y ajustar.
+  const isNarrow = useIsNarrow(810);
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
@@ -317,6 +318,17 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
         {dchgText}
       </span>
     );
+  // PRECIO del ticker en la fila COLAPSADA (mandato 23-ago-2026: el precio debe verse
+  // sin desplegar; se retira del desplegable para no duplicarlo). Formato es-ES con 2
+  // decimales; la moneda va implícita en el mercado del ticker (USD en US, EUR en EU).
+  const precio = asset.metrics?.lastClose;
+  const precioEl = (width: number) => (
+    <span title="Último precio de cierre en el momento del scan"
+      style={{ fontSize: 10.5, fontWeight: 700, color: "#cbd5e1", fontVariantNumeric: "tabular-nums",
+        width, flexShrink: 0, textAlign: "right", whiteSpace: "nowrap" }}>
+      {typeof precio === "number" ? precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+    </span>
+  );
   // Tooltip del PESO de inversión — izado (patrón dchgTitle) para que ambas ramas
   // (móvil y escritorio) muestren SIEMPRE el mismo texto.
   const weightTitle = "PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP.";
@@ -339,7 +351,8 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
                 por encima del recorte del panel, sea cual sea el ancho del móvil. */}
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
+              {precioEl(52)}
               {dayChangeEl(48, false)}
               <span style={{ flex: 1, minWidth: 6 }} />
               <span title={weightTitle}
@@ -360,7 +373,8 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
                 renderizan SIEMPRE (aunque falte el dato) y el ⚠ tiene su hueco reservado,
                 para que ninguna columna se desplace según qué campos tenga cada ticker. */}
             <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 90, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 78, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
+            {precioEl(62)}
             {dayChangeEl(52, true)}
             <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>
             <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
@@ -414,7 +428,6 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
-            <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toFixed(2) : "—"} />
             <Stat label="Momento 9m (señal)" value={pct(m?.mom9m)} tone={AMBER} />
             <Stat label="Momento 3m" value={pct(m?.mom3m)} tone={(m?.mom3m ?? 0) > 0 ? GREEN : RED} />
             <Stat label="Momento 6m" value={pct(m?.mom6m)} tone={(m?.mom6m ?? 0) > 0 ? GREEN : RED} />
