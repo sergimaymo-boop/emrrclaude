@@ -42,8 +42,17 @@ const HISTORY_CAP = 180;                       // ~9 meses de ciclos diarios (Up
 // GH corre L-V 21:30 UTC, así que el viernes 21:30 + 26h = sábado 23:30 → los 4 módulos
 // quedaban SIN DATOS todo el fin de semana Y el lunes de mercado hasta el run de las
 // 21:30 (verificado en producción el domingo 23-ago: breadth UNKNOWN, optimal2026 404,
-// fable5/01 vacíos). 80h cubre viernes 21:30 → lunes 21:30 con holgura para reintentos.
-const SNAPSHOT_TTL_S = 80 * 3600;
+// fable5/01 vacíos).
+// 5ª auditoría — 80h cubría el finde normal (72h) con solo 8h de holgura, pero se quedaba
+// corto en los huecos REALES de calendario y de fiabilidad:
+//   · Viernes Santo (jue 21:30 → lun 21:30) = 96h  → apagón
+//   · Navidad / Año Nuevo (mié → lun)        = 120h → apagón
+//   · Finde normal + UN run fallido          = 96h  → apagón
+// Ese último no es hipotético: en este repo hay workflows que fallan de forma recurrente.
+// 7 días (= convención del proyecto para snapshots de scan, §14 CLAUDE.md) absorbe todos.
+// No engaña: el panel imprime SIEMPRE la hora del dato (`cachedAtUtc`), así que un dato
+// viejo se ve viejo — y un panel con el último cierre conocido es más útil que uno vacío.
+const SNAPSHOT_TTL_S = 7 * 24 * 3600;
 
 function getEnv() { return globalThis.process?.env ?? {}; }
 function isRealApi() { return getEnv().ENABLE_REAL_API_CALLS === "true"; }
