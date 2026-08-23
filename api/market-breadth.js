@@ -16,7 +16,7 @@
  * calculateEma. La lógica de amplitud vive en _lib/marketBreadthEngine.js.
  */
 
-import { buildUniverseResponse } from "./universe.js";
+import { buildUniverseResponse } from "./_lib/universeResponse.js";
 import { getActiveMarketsAt } from "./_lib/scanSnapshot.js";
 import { fetchEodhdHistoricalBars } from "./_lib/historicalDataProvider.js";
 import { fetchSpyBars } from "./_lib/rallyBatchProcessor.js";

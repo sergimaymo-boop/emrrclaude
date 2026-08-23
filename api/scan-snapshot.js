@@ -14,7 +14,7 @@
  * Serverless Functions.
  */
 
-import { buildUniverseResponse } from './universe.js';
+import { buildUniverseResponse } from './_lib/universeResponse.js';
 import { STATIC_ASSETS_BY_EXCHANGE } from './_lib/staticUniverse.js';
 import { isEligibleForUniverse, mapUniverseAsset, PROVIDER_EXCHANGES } from './_lib/universeEngine.js';
 import { fetchEodhdHistoricalBars } from './_lib/historicalDataProvider.js';

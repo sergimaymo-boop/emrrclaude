@@ -20,7 +20,7 @@
 // the relative ranking (all tickers shift equally) and there is no absolute rally
 // threshold gate. The monetary cycle correctly modulates the ENTRY decision via
 // Filter 5 (cycleWarning) in OptimalSignalPanel.tsx, not the technical ranking.
-import { buildUniverseResponse } from './universe.js';
+import { buildUniverseResponse } from './_lib/universeResponse.js';
 import { saveLastRallySnapshot, loadLastRallySnapshot, saveLastRallyTestSnapshot, loadLastRallyTestSnapshot, saveLastIBKPortfolio, loadLastIBKPortfolio, saveRallyNews, loadRallyNews } from './_lib/kvStorage.js';
 import { motivosDelMovimiento } from './_lib/tickerNews.js';
 import { toYahooSymbol } from './_lib/providerCascade.js';

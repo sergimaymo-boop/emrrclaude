@@ -7,8 +7,8 @@ import {
   isEligibleForUniverse,
   mapUniverseAsset,
   summarizeUniverseAssets,
-} from "./_lib/universeEngine.js";
-import { getStaticAssetsForExchange, STATIC_UNIVERSE_VERSION, STATIC_TOTAL_COUNT } from "./_lib/staticUniverse.js";
+} from "./universeEngine.js";
+import { getStaticAssetsForExchange, STATIC_UNIVERSE_VERSION, STATIC_TOTAL_COUNT } from "./staticUniverse.js";
 
 const APP_NAME = "EMRR 2.0 / Tendencias";
 const PHASE = "6";

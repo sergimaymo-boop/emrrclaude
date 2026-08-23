@@ -60,15 +60,22 @@ BROWSER (iPhone / Desktop)
 ├── shared/types/domain.ts     ← ALL TypeScript contracts
 └── styles.css                 ← ALL visual styles (navy palette)
 
-VERCEL SERVERLESS FUNCTIONS  (api/) — ⚠️ LÍMITE DURO: 12 funciones (plan Hobby) y ESTAMOS EN EL LÍMITE.
-NUNCA crear archivos nuevos en api/ raíz: toda API nueva se añade como action= dentro de un handler
-existente + rewrite en vercel.json (patrón: /api/rally-scan/last → /api/rally-scan?action=last).
+VERCEL SERVERLESS FUNCTIONS  (api/) — ⚠️ LÍMITE DURO: 12 funciones (plan Hobby). Ahora 11/12.
+El 23-ago-2026 `api/universe.js` se MOVIÓ a `api/_lib/universeResponse.js`: no tenía
+`export default` (como endpoint HTTP devolvía 500 y nadie lo llamaba), pero SÍ exporta
+`buildUniverseResponse`, del que dependen scan-snapshot, rally-scan y market-breadth.
+O sea: ocupaba un hueco de función sin dar servicio HTTP, siendo en realidad una librería.
+⚠️ Un fichero en `api/` raíz cuenta como función AUNQUE nadie lo invoque por HTTP; los de
+`api/_lib/` no. Antes de borrar un "endpoint muerto", comprobar SIEMPRE quién lo importa
+(`grep "from ['\"]./fichero.js"`) — borrarlo habría tumbado los tres scans.
+Queda UN hueco libre. Por defecto, toda API nueva se sigue añadiendo como action= dentro de
+un handler existente + rewrite en vercel.json (/api/rally-scan/last → ?action=last).
 
 ├── scan-snapshot.js   → start/continue/last del SCAN FULL (action=)
 ├── rally-scan.js      → start/continue/last del Rally + ibk-portfolio GET/POST (snapshot cartera IBK)
 ├── market-data.js     → fear-greed / market-regime / monetary-cycle / master-indicators / optimal2026 / sp500 (source=)
 ├── market-breadth.js  → amplitud de mercado
-├── universe.js · visible-top8-quotes.js · sector-leaders-data.js · eps-batch.js
+├── visible-top8-quotes.js · sector-leaders-data.js · eps-batch.js
 ├── claude01-scan.js · fable01.js · fable5.js   → motores auxiliares
 └── cron/market-pulse.js → cron Vercel (14:00 y 16:00 UTC L-V)
 
@@ -294,12 +301,12 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 | `rally-scan.js` | Rally Leaders vía `?action=start/continue/last` + `?action=ibk-portfolio` GET/POST (snapshot cartera IBK) |
 | `market-data.js` | Multiplexor vía `?source=fear-greed/market-regime/monetary-cycle/master-indicators/optimal2026/sp500` (rewrites `/api/master-indicators`, `/api/optimal2026`, `/api/sp500`, …) |
 | `market-breadth.js` | Amplitud de mercado |
-| `universe.js` | Universo estático filtrado (`_lib/staticUniverse.js`, ~603 tickers) |
 | `visible-top8-quotes.js` | Live prices for TOP 8 post-scan |
 | `sector-leaders-data.js` | Ranking de momentum sectorial |
 | `eps-batch.js` | EPS por lotes |
 | `claude01-scan.js` · `fable01.js` · `fable5.js` | Motores auxiliares |
 | `cron/market-pulse.js` | Cron Vercel (14:00 y 16:00 UTC L-V) |
+| `_lib/universeResponse.js` | `buildUniverseResponse()` — universo filtrado que consumen scan-snapshot, rally-scan y market-breadth (era `api/universe.js`, movido 23-ago-2026 para liberar un hueco de función) |
 | `_lib/scanSnapshot.js` | Batch planning, HMAC tokens, pipeline orchestration |
 | `_lib/kvStorage.js` | Redis singleton: save/load scan snapshot |
 | `_lib/scoreEngine.js` | Composite score 0–100 |
