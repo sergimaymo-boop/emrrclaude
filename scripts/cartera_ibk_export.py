@@ -292,20 +292,30 @@ def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tu
     # precio del scan SÍ es fiable: si el ticker está en el top-10, el precio leído debe
     # parecerse (±35%, margen por hora del scan vs foto). Un factor x295 como el de MRNA
     # del 19-ago (39.245 vs ~133) lo caza de sobra.
-    # ⚠️ La 3ª auditoría encontró que cruzar solo por símbolo base da falsos positivos:
-    #   · colisión entre bolsas: BA = Boeing (US) y BAE Systems (Londres) — comparar el
-    #     precio de una con el de la otra bloquea una cartera sana.
-    #   · GBX vs GBP: el scan da Londres en peniques y la foto de IBK en libras (×100).
-    # Se cruza indexando por (base, DIVISA) y solo cuando ambas divisas coinciden, de modo
-    # que Boeing-USD nunca se compara con BAE-GBX ni peniques con libras.
+    # ⚠️ CUARTA reescritura del cruce. La 3ª versión indexaba por (base, DIVISA), pero la
+    # 4ª auditoría demostró que NO SIRVE: la ruta de fotos (optimal2026Refresh.ts:637)
+    # hardcodea currency="USD" en TODA posición, así que STMPA/SPM (europeos del top-10)
+    # nunca casaban con su entrada EUR del scan → el agujero del MRNA seguía abierto para
+    # los europeos. Ahora NO se confía en la divisa de la foto (no es fiable): se cruza por
+    # símbolo base contra el scan, cuya divisa y precio SÍ son fiables. Las colisiones entre
+    # bolsas (BA=Boeing US / BAE Systems LSE) se evitan cruzando solo bases ÚNICAS en el
+    # top-10; y las entradas en divisa de unidad ambigua (GBX/GBP de Londres, ×100 según
+    # IBK dé peniques o libras) se EXCLUYEN del cruce para no dar falsos positivos.
     if scan and isinstance(scan.get("top10"), list):
-        precio_scan = {}   # (base, currency) -> precio
+        from collections import Counter
+        bases_top = Counter()
+        precio_scan = {}   # base -> precio (solo bases únicas y divisa de unidad no ambigua)
+        AMBIGUAS = {"GBX", "GBP", "GBp", "ZAR", "ILA"}   # cotizan en subunidad según fuente
+        for t in scan["top10"]:
+            base = base_symbol(t.get("ticker") or t.get("providerSymbol", ""))
+            if base:
+                bases_top[base] += 1
         for t in scan["top10"]:
             base = base_symbol(t.get("ticker") or t.get("providerSymbol", ""))
             cur = (t.get("currency") or "").upper()
             px = (t.get("metrics") or {}).get("lastClose")
-            if base and cur and _finite_num(px) and px > 0:
-                precio_scan[(base, cur)] = float(px)
+            if base and bases_top[base] == 1 and cur not in {c.upper() for c in AMBIGUAS} and _finite_num(px) and px > 0:
+                precio_scan[base] = float(px)
         for p in positions:
             try:
                 pr = float(p.get("lastPrice"))
@@ -314,11 +324,10 @@ def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tu
             if not (math.isfinite(pr) and pr > 0):
                 continue
             base = base_symbol(p.get("symbol", ""))
-            cur = (p.get("currency") or "USD").upper()
-            ref = precio_scan.get((base, cur))
+            ref = precio_scan.get(base)
             if ref and (pr > ref * 3 or pr < ref / 3):
-                return False, (f"precio de {base} ({cur}) leido {pr:,.2f} incompatible con el "
-                               f"precio del scan {ref:,.2f} (factor {pr/ref:.1f}x) — OCR corrupto")
+                return False, (f"precio de {base} leido {pr:,.2f} incompatible con el precio "
+                               f"del scan {ref:,.2f} (factor {pr/ref:.1f}x) — OCR corrupto")
     # LÍMITE INTRÍNSECO conocido (3ª auditoría): si el OCR intercambia precio y cantidad de
     # un ticker que (a) NO está en el top-10 del scan y (b) preserva el producto q·precio,
     # ninguna guarda puede detectarlo — el valor total en EUR es correcto y no hay precio de

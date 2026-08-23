@@ -327,25 +327,44 @@ if (verdict.challenger) {
   //      se marca, no tumba la serie.
   // La independencia de datos por 72h es un proxy; el comparador reconstructed:true no basta
   // para CONFIRMAR (asimetría deliberada: cambiar el campeón exige más prueba que mantenerlo).
+  // ⚠️ CUARTA reescritura (4ª auditoría adversarial encontró dos bugs en la 3ª):
+  //   · la ventana `ms < ahora-1000` reabría el falso CONFIRMADO: en el flujo real el
+  //     informe de HOY se escribe DESPUÉS de este bloque (línea ~390), así que TODOS los
+  //     de disco ya son previos; excluir "el último segundo" solo podía descartar un
+  //     informe legítimo reciente y saltar a uno viejo. Se elimina: el inmediato anterior
+  //     es simplemente el de mayor fecha, y su edad decide si es de la misma tanda.
+  //   · `serieSucia` global bloqueaba para SIEMPRE si existía CUALQUIER fichero corrupto,
+  //     aunque fuese de 2024 e irrelevante. Ahora "sucio" se acota al que sería el
+  //     INMEDIATO anterior: un corrupto se ubica por la fecha de su NOMBRE
+  //     (recalibracion-YYYY-MM-DD.json); solo ensucia si su fecha de nombre es la más
+  //     reciente (podría ser el inmediato y no sabemos su challenger). Uno viejo se ignora.
   const MIN_HORAS_ENTRE_MUESTRAS = 72;
   const ahora = Date.now();
   const parseMs = (v) => { const t = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
-  let serieSucia = false;   // algún informe con fecha ilegible → no fiarse de la cadena
+  const fechaDelNombre = (f) => { const m = f.match(/recalibracion-(\d{4}-\d{2}-\d{2})/); return m ? Date.parse(m[1] + "T00:00:00Z") : null; };
+  let inmediatoSucio = false;   // el que sería el inmediato anterior no es fiable
   try {
-    const prevFiles = fs.readdirSync(OUT_DIR)
+    const entradas = fs.readdirSync(OUT_DIR)
       .filter((f) => f.startsWith("recalibracion-") && f.endsWith(".json"))
       .map((f) => {
         try {
           const obj = JSON.parse(fs.readFileSync(path.join(OUT_DIR, f), "utf8"));
-          return { f, ms: parseMs(obj?.generatedAt), challenger: obj?.verdict?.challenger ?? null, reconstructed: obj?.reconstructed === true };
-        } catch { serieSucia = true; return { f, ms: null, challenger: null, reconstructed: false }; }
+          return { f, ms: parseMs(obj?.generatedAt), nombreMs: fechaDelNombre(f), ok: true,
+                   challenger: obj?.verdict?.challenger ?? null, reconstructed: obj?.reconstructed === true };
+        } catch { return { f, ms: null, nombreMs: fechaDelNombre(f), ok: false, challenger: null, reconstructed: false }; }
       });
-    if (prevFiles.some((x) => x.ms === null)) serieSucia = true;   // fecha ausente/malformada
-    if (prevFiles.some((x) => x.ms !== null && x.ms > ahora)) serieSucia = true;  // fecha FUTURA (reloj torcido) → el orden no es fiable
-    // Solo informes con fecha VÁLIDA y estrictamente ANTERIOR al instante actual (excluye
-    // el que se acaba de escribir y cualquier fecha futura por reloj torcido).
-    const anteriores = prevFiles.filter((x) => x.ms !== null && x.ms < ahora - 1000).sort((a, b) => a.ms - b.ms);
-    const inmediato = anteriores.length > 0 ? anteriores[anteriores.length - 1] : null;
+    // Orden de recencia: fecha del contenido si es válida, si no la del nombre. Un informe
+    // sin ninguna de las dos (ni contenido ni nombre parseables) va al final como muy viejo.
+    const recencia = (x) => (x.ms !== null ? x.ms : (x.nombreMs !== null ? x.nombreMs : -Infinity));
+    const ordenadas = entradas.slice().sort((a, b) => recencia(a) - recencia(b));
+    const candidato = ordenadas.length > 0 ? ordenadas[ordenadas.length - 1] : null;   // el más reciente por recencia
+    // El "inmediato anterior" fiable es el más reciente con fecha de contenido VÁLIDA y no futura.
+    const validos = entradas.filter((x) => x.ok && x.ms !== null && x.ms <= ahora).sort((a, b) => a.ms - b.ms);
+    const inmediato = validos.length > 0 ? validos[validos.length - 1] : null;
+    // Es sucio si el candidato más reciente (por nombre o contenido) NO es ese inmediato
+    // fiable: significa que hay un fichero más nuevo que no podemos leer/datar → no se
+    // puede confirmar una racha sin saber qué dijo la última ejecución.
+    if (candidato && (!inmediato || candidato.f !== inmediato.f)) inmediatoSucio = true;
     if (inmediato) {
       const horas = (ahora - inmediato.ms) / 3_600_000;
       if (horas < MIN_HORAS_ENTRE_MUESTRAS) {
@@ -362,9 +381,9 @@ if (verdict.challenger) {
   } else if (prevChallenger !== verdict.challenger) {
     verdict.decision = "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)";
     verdict.reason += " · Regla de persistencia: debe repetir victoria en la PRÓXIMA recalibración para destronar (varianza entre pulls de datos > ventaja medida).";
-  } else if (serieSucia && prevChallenger === verdict.challenger) {
-    verdict.decision = "RETADOR EN OBSERVACIÓN (serie de informes con fechas ilegibles — no fiable)";
-    verdict.reason += " · Regla de persistencia: hay informes previos con generatedAt ausente o malformado; no se puede confirmar una racha sobre una cadena sucia.";
+  } else if (inmediatoSucio && prevChallenger === verdict.challenger) {
+    verdict.decision = "RETADOR EN OBSERVACIÓN (última ejecución no legible — no fiable)";
+    verdict.reason += " · Regla de persistencia: hay un informe más reciente que el comparador que no se puede leer/datar; no se confirma una racha sin saber qué dijo la última ejecución.";
   } else if (comparadorReconstruido) {
     // La carga de la prueba para CAMBIAR el campeón es más alta que para mantenerlo: un
     // informe reconstruido a mano (sin cadena de custodia de datos) sirve para ROMPER una

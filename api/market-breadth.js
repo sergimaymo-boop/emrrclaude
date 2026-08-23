@@ -95,7 +95,7 @@ async function resolveSpyContext(openMarkets = [], todayUtc = "") {
       const spyBullish = (Number.isFinite(ema200) && Number.isFinite(last)) ? last > ema200 : null;
       if (spyBullish !== null) {
         // Persistir el régimen para reusarlo si una próxima ejecución no logra el histórico.
-        await kvSet(SPY_REGIME_KEY, { spyBullish, atUtc: new Date().toISOString() }, 72 * 3600).catch(() => {});
+        await kvSet(SPY_REGIME_KEY, { spyBullish, atUtc: new Date().toISOString() }, SNAPSHOT_TTL_S).catch(() => {});  // 4ª auditoría: 72h dejaba 0h de holgura el lunes
         return { spyBars, spyBullish, spyRegimeStale: false };
       }
     }
@@ -258,9 +258,10 @@ async function persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCo
 
 // FABLE01 — enriquece el top-10 (salud de tendencia + asignación de capital blindada) en su PROPIA clave.
 const FABLE01_KEY = "fable01_v1";
-async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish) {
+async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish, analizados = Infinity) {
   const top = (topF01 ?? []).slice(0, 10);
-  if (top.length === 0) return;
+  if (top.length === 0) return;   // ya conserva el snapshot bueno (no sobrescribe con vacío)
+  void analizados;                 // firma homogénea con persistOptimal2026; FABLE01 no lo necesita
   let nameMap = new Map();
   try {
     const uni = await buildUniverseResponse({ includeFullAssets: true });
@@ -317,7 +318,7 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
 
 // OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
 const OPTIMAL2026_KEY = "optimal2026_v1";
-async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish = null) {
+async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish = null, analizados = Infinity) {
   // Régimen: SPY vs EMA200 con las barras de este run. AUDIT FIX: si SPY no llegó
   // (rate-limit puntual) usar el régimen CACHEADO (spyBullish) en vez de caer a
   // RISK_OFF — evitaba incoherencia con FABLE01/breadth en el MISMO run.
@@ -331,6 +332,12 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   // Top 4 para mostrar: 2 invertidos (con allocation) + 2 "en banca" a 0% (candidatos de rotación).
   const top = (topO26 ?? []).slice(0, 4);
   if (top.length === 0) {
+    // DISTINCIÓN CLAVE (4ª auditoría): "sin candidatos" tiene dos causas opuestas. Si se
+    // analizaron <50 tickers, es un APAGÓN de proveedores, no una señal de mercado: NO se
+    // sobrescribe el snapshot bueno con una "estrategia en CAJA" fabricada (el TTL de 80h
+    // sigue sirviendo el último válido). Solo con muestra suficiente y 0 candidatos es una
+    // señal real de caja.
+    if (analizados < 50) return;
     // AUDIT FIX: persistir snapshot VACÍO explícito en vez de dejar el anterior en KV.
     // Sin candidatos elegibles = mercado sin momentum 9m positivo → la estrategia está
     // en caja y el dashboard debe reflejarlo, no mostrar la allocation alcista antigua.
@@ -410,10 +417,14 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   const intraday = Array.isArray(activeMarkets) && activeMarkets.length > 0;
   const { spyBars, spyBullish } = await resolveSpyContext(activeMarkets ?? [], todayUtc);
   // FABLE01 — persiste con el régimen SPY (risk-on/off) para el colchón de caja del overlay blindado.
-  await persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish).catch(() => {});
+  // agg.total = tickers realmente analizados; <50 = apagón de proveedores, NO señal de
+  // mercado. Se pasa para que Supreme/FABLE01 NO sobrescriban su snapshot bueno con una
+  // "estrategia en CAJA" fabricada sobre 0 datos (4ª auditoría, MEDIA-1).
+  const analizados = agg?.total ?? 0;
+  await persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeCount, spyBullish, analizados).catch(() => {});
   // OPTIMAL2026 — dual momentum risk-parity, persiste en su propia clave (independiente).
   // spyBullish (régimen cacheado) como fallback si spyBars llegó vacío este run.
-  await persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish).catch(() => {});
+  await persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish, analizados).catch(() => {});
   const history = (await kvGet(HISTORY_KEY).catch(() => null)) ?? [];
   const adNetSeries = Array.isArray(history) ? history.map((h) => h.adNet).filter((v) => Number.isFinite(v)) : [];
   const weights = await loadWeights();
@@ -423,15 +434,20 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
   const cachedAtUtc = new Date().toISOString();
   const topTickers = await enrichTopRank(topRank);
 
+  // Con muestra insuficiente (proveedores caídos) el score/alertas/indicadores están
+  // fabricados sobre 0 tickers — NO se sirven (la señal contraria leía 0% como sobreventa
+  // extrema → 99/100 + "sesgo de rebote"). Se sirve UNKNOWN con score null y sin alertas.
+  const muestraOk = !verdict.insufficientSample;
   const payload = {
     ok: true,
     verdict: verdict.verdict,
-    score: verdict.score,
+    score: muestraOk ? verdict.score : null,
     color: verdict.color,
     label: verdict.label,
-    indicators: verdict.indicators,
-    subScores: verdict.subScores,
-    alerts: verdict.alerts,
+    indicators: muestraOk ? verdict.indicators : {},
+    subScores: muestraOk ? verdict.subScores : {},
+    alerts: muestraOk ? verdict.alerts : [],
+    insufficientSample: verdict.insufficientSample === true,
     sample: verdict.sample,
     horizonDays: verdict.horizonDays,
     topTickers,
@@ -447,8 +463,10 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
 
   await kvSet(CACHE_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});
 
-  // Histórico append-only (cap), SOLO en runs de cierre → serie homogénea para feedback + McClellan.
-  if (!intraday) {
+  // Histórico append-only (cap), SOLO en runs de cierre Y con muestra suficiente → serie
+  // homogénea. Un UNKNOWN por proveedores caídos NO entra: su adNet=0 fabricado movía el
+  // oscilador McClellan y descuadraba el emparejamiento forward del feedback (3ª/4ª auditoría).
+  if (!intraday && !verdict.insufficientSample) {
     const record = {
       timestampUtc: cachedAtUtc, score: verdict.score, verdict: verdict.verdict,
       adNet: verdict.adNet, pctAboveMA50: verdict.indicators.pctAboveMA50,
