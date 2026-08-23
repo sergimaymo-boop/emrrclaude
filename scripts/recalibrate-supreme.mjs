@@ -347,15 +347,25 @@ if (verdict.challenger) {
     const entradas = fs.readdirSync(OUT_DIR)
       .filter((f) => f.startsWith("recalibracion-") && f.endsWith(".json"))
       .map((f) => {
+        const full = path.join(OUT_DIR, f);
+        // mtime del fichero: 3ª vía de datación para un informe indatable por contenido Y
+        // nombre. Se lee SIEMPRE (también para los corruptos), antes del parse.
+        let mtimeMs = null;
+        try { mtimeMs = fs.statSync(full).mtimeMs; } catch { /* borrado entre readdir y stat */ }
         try {
-          const obj = JSON.parse(fs.readFileSync(path.join(OUT_DIR, f), "utf8"));
-          return { f, ms: parseMs(obj?.generatedAt), nombreMs: fechaDelNombre(f), ok: true,
+          const obj = JSON.parse(fs.readFileSync(full, "utf8"));
+          return { f, ms: parseMs(obj?.generatedAt), nombreMs: fechaDelNombre(f), mtimeMs, ok: true,
                    challenger: obj?.verdict?.challenger ?? null, reconstructed: obj?.reconstructed === true };
-        } catch { return { f, ms: null, nombreMs: fechaDelNombre(f), ok: false, challenger: null, reconstructed: false }; }
+        } catch { return { f, ms: null, nombreMs: fechaDelNombre(f), mtimeMs, ok: false, challenger: null, reconstructed: false }; }
       });
-    // Orden de recencia: fecha del contenido si es válida, si no la del nombre. Un informe
-    // sin ninguna de las dos (ni contenido ni nombre parseables) va al final como muy viejo.
-    const recencia = (x) => (x.ms !== null ? x.ms : (x.nombreMs !== null ? x.nombreMs : -Infinity));
+    // Orden de recencia: fecha del contenido si es válida, si no la del nombre, si no el mtime
+    // del fichero. ⚠️ QUINTA reescritura (5ª auditoría): la 4ª mandaba a -Infinity ("muy viejo")
+    // un corrupto indatable por contenido Y nombre (nombre no-canónico: `-tmp`, mes sin cero-pad).
+    // Eso lo hundía por debajo de un válido viejo → candidato===inmediato → inmediatoSucio NO
+    // saltaba → falso CONFIRMADO. El mtime distingue lo que la 4ª no podía: un corrupto RECIÉN
+    // escrito (mtime≈ahora → sube a candidato → ensucia → ABSTIENE) de uno antiguo de 2024
+    // (mtime viejo → se ignora, sin reabrir el bloqueo-permanente que arregló la 4ª).
+    const recencia = (x) => (x.ms !== null ? x.ms : (x.nombreMs !== null ? x.nombreMs : (x.mtimeMs !== null ? x.mtimeMs : -Infinity)));
     const ordenadas = entradas.slice().sort((a, b) => recencia(a) - recencia(b));
     const candidato = ordenadas.length > 0 ? ordenadas[ordenadas.length - 1] : null;   // el más reciente por recencia
     // El "inmediato anterior" fiable es el más reciente con fecha de contenido VÁLIDA y no futura.

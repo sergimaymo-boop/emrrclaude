@@ -319,6 +319,13 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
 // OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
 const OPTIMAL2026_KEY = "optimal2026_v1";
 async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, universeCount, spyBars, spyBullish = null, analizados = Infinity) {
+  // SUELO DE MUESTRA (5ª auditoría): un apagón de proveedores (<50 tickers analizados) NUNCA
+  // debe sobrescribir el snapshot bueno de Optimal Supreme — ni con "CAJA" (0 candidatos) ni,
+  // sobre todo, con una allocation calculada sobre los pocos supervivientes del apagón (que no
+  // son muestra aleatoria). En la 4ª auditoría esta guarda quedó DENTRO de la rama top.length===0,
+  // así que un apagón que devolvía ≥1 candidato la esquivaba y pisaba el snapshot bueno por la
+  // ruta normal (kvSet final). Subida a la entrada: protege TODAS las rutas de escritura.
+  if (analizados < 50) return;
   // Régimen: SPY vs EMA200 con las barras de este run. AUDIT FIX: si SPY no llegó
   // (rate-limit puntual) usar el régimen CACHEADO (spyBullish) en vez de caer a
   // RISK_OFF — evitaba incoherencia con FABLE01/breadth en el MISMO run.
@@ -332,12 +339,8 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
   // Top 4 para mostrar: 2 invertidos (con allocation) + 2 "en banca" a 0% (candidatos de rotación).
   const top = (topO26 ?? []).slice(0, 4);
   if (top.length === 0) {
-    // DISTINCIÓN CLAVE (4ª auditoría): "sin candidatos" tiene dos causas opuestas. Si se
-    // analizaron <50 tickers, es un APAGÓN de proveedores, no una señal de mercado: NO se
-    // sobrescribe el snapshot bueno con una "estrategia en CAJA" fabricada (el TTL de 80h
-    // sigue sirviendo el último válido). Solo con muestra suficiente y 0 candidatos es una
-    // señal real de caja.
-    if (analizados < 50) return;
+    // Aquí analizados>=50 garantizado por la guarda de entrada: 0 candidatos con muestra
+    // suficiente = señal REAL de caja (no un apagón). Se persiste "estrategia en CAJA".
     // AUDIT FIX: persistir snapshot VACÍO explícito en vez de dejar el anterior en KV.
     // Sin candidatos elegibles = mercado sin momentum 9m positivo → la estrategia está
     // en caja y el dashboard debe reflejarlo, no mostrar la allocation alcista antigua.
