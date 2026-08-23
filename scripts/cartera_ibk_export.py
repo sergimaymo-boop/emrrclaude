@@ -752,6 +752,39 @@ def write_pdf(plan: dict, path: str) -> None:
     c.save()
 
 
+def generar_salidas(plan: dict, stamp: str) -> tuple:
+    """Escribe xlsx+pdf, con reserva REAL de directorio.
+
+    ~/Desktop está sincronizado con iCloud y la cuenta del usuario está llena: macOS puede
+    devolver EDEADLK ("Resource deadlock avoided") A MITAD de la escritura. Pasó el
+    23-ago-2026 a las 13:46 y abortó el run entero → ese día NO llegó el email.
+    `_resolver_out_dir()` ya sondea al arrancar, pero escribe un testigo de 2 bytes: que el
+    sondeo pase no garantiza que el .xlsx real (mucho mayor y más lento) también pase.
+    Aquí la reserva se aplica donde falla de verdad. El email es la vía de entrega real
+    (el Escritorio no llega al iPhone), así que NO puede depender de iCloud.
+    """
+    destinos = list(dict.fromkeys((OUT_DIR, OUT_DIR_ALTERNATIVO)))
+    ultimo = len(destinos) - 1
+    for i, destino in enumerate(destinos):
+        xlsx_path = os.path.join(destino, f"Cartera_RallyLeaders_{stamp}.xlsx")
+        pdf_path = os.path.join(destino, f"Cartera_RallyLeaders_{stamp}.pdf")
+        try:
+            os.makedirs(destino, exist_ok=True)
+            write_xlsx(plan, xlsx_path)
+            write_pdf(plan, pdf_path)
+            return xlsx_path, pdf_path
+        except OSError as exc:
+            # No dejar un fichero a medias que luego se adjunte corrupto al email.
+            for parcial in (xlsx_path, pdf_path):
+                try:
+                    os.remove(parcial)
+                except OSError:
+                    pass
+            if i == ultimo:
+                raise
+            log(f"Aviso: no se pudo escribir en {destino} ({exc}) — reintento en {destinos[i + 1]}")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -798,11 +831,7 @@ def main() -> int:
 
     plan = build_plan(scan_resp, portfolio)
     stamp = plan["scan_local"].strftime("%Y-%m-%d_%H-%M")
-    xlsx_path = os.path.join(OUT_DIR, f"Cartera_RallyLeaders_{stamp}.xlsx")
-    pdf_path = os.path.join(OUT_DIR, f"Cartera_RallyLeaders_{stamp}.pdf")
-
-    write_xlsx(plan, xlsx_path)
-    write_pdf(plan, pdf_path)
+    xlsx_path, pdf_path = generar_salidas(plan, stamp)
 
     # Persistimos el NAV usado como "último bueno" para el chequeo de deriva del próximo run.
     last_good_nav = plan["nav"] if _finite_num(plan.get("nav")) and plan["nav"] > 0 else state.get("lastGoodNav")
