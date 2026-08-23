@@ -1,38 +1,38 @@
 {
- "ranAt": "2026-08-17T14:21:47.784Z",
+ "ranAt": "2026-08-23T00:46:15.720Z",
  "independencia": "features (EMA50/edad/hi252 con deque monótona/m9) y simulador reescritos; solver de pesos water-filling propio cotejado con la bisección del estudio",
  "matchExacto": {
-  "C0": true,
-  "CAD_63": true,
-  "CAD_84": true,
-  "ST_FIJO35": true,
-  "N8_PROP": true,
-  "ROT_RECALC": true
+  "C0": false,
+  "CAD_63": false,
+  "CAD_84": false,
+  "ST_FIJO35": false,
+  "N8_PROP": false,
+  "ROT_RECALC": false
  },
- "worstDelta": 0,
+ "worstDelta": 0.11311613840739754,
  "maxSolverDiff": 1.4210854715202004e-14,
  "ensemble20": {
   "edges": [
-   0.09503907854841454,
-   -0.025313282880148336,
-   -0.09954569278521963,
-   0.016869762572473856,
-   0.04832258689536695,
-   -0.07606555814502625,
-   -0.025248258733573836,
-   0.06606723917538004,
-   0.09360131042097874,
-   0.093782086897779
+   0.11221984480867864,
+   -0.012702600849312962,
+   -0.10385352512003942,
+   0.011018884326353229,
+   0.051510545013513376,
+   -0.07056570817391838,
+   -0.03562859683252917,
+   0.06413754807583127,
+   0.08350149792918526,
+   0.11119956855179636
   ],
   "wins": 6,
-  "media": 0.01875092719664251,
+  "media": 0.02108374577295582,
   "train": -0.006919108794141859,
   "P1": false,
-  "P2": false
+  "P2": true
  },
  "ensemble50": {
-  "media": 0.015411574430545106,
+  "media": 0.017645923291192456,
   "P4": true
  },
- "dVsProbe20": 0
+ "dVsProbe20": 0.017417481654017353
 }

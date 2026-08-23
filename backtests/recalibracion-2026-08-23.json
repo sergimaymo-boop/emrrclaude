@@ -1,0 +1,100 @@
+{
+  "generatedAt": "2026-08-23T00:49:36.352Z",
+  "universe": 601,
+  "sessions": 2514,
+  "range": "2016-08-22 → 2026-08-21",
+  "championKey": "b200_r21_h1.1",
+  "results": {
+    "b200_r21_h1.1": {
+      "cagr": 50.6,
+      "maxDD": 28.6,
+      "mar": 1.77,
+      "sharpe": 1.44,
+      "tradesYr": 50,
+      "sub": [
+        27.8,
+        25.3,
+        113.6
+      ]
+    },
+    "b200_r21_h1.0": {
+      "cagr": 46.4,
+      "maxDD": 26.2,
+      "mar": 1.77,
+      "sharpe": 1.35,
+      "tradesYr": 53,
+      "sub": [
+        30.9,
+        21.4,
+        97.9
+      ]
+    },
+    "b200_r21_h1.25": {
+      "cagr": 48.5,
+      "maxDD": 29.7,
+      "mar": 1.63,
+      "sharpe": 1.39,
+      "tradesYr": 45,
+      "sub": [
+        35.8,
+        13.3,
+        112.9
+      ]
+    },
+    "b100_r21_h1.1": {
+      "cagr": 52.3,
+      "maxDD": 27.2,
+      "mar": 1.92,
+      "sharpe": 1.5,
+      "tradesYr": 50,
+      "sub": [
+        31.4,
+        27.4,
+        111.3
+      ]
+    },
+    "graded_r21_h1.1": {
+      "cagr": 51.5,
+      "maxDD": 27.6,
+      "mar": 1.86,
+      "sharpe": 1.48,
+      "tradesYr": 50,
+      "sub": [
+        29.6,
+        26.1,
+        112.9
+      ]
+    },
+    "b200_r10_h1.1": {
+      "cagr": 35.9,
+      "maxDD": 31,
+      "mar": 1.16,
+      "sharpe": 1.12,
+      "tradesYr": 58,
+      "sub": [
+        19.2,
+        23.4,
+        70.7
+      ]
+    },
+    "b200_r42_h1.1": {
+      "cagr": 44.4,
+      "maxDD": 38.4,
+      "mar": 1.16,
+      "sharpe": 1.23,
+      "tradesYr": 43,
+      "sub": [
+        20.3,
+        27.3,
+        96.8
+      ]
+    }
+  },
+  "verdict": {
+    "decision": "RETADOR EN OBSERVACIÓN (1ª victoria tras corregir la comparación — se requiere confirmación)",
+    "champion": "b200_r21_h1.1",
+    "challenger": "b100_r21_h1.1",
+    "reason": "MAR 1.92 vs 1.77 (+0.15 > 0.10) y gana 2/3 subperíodos. CORREGIDO 23-ago: el script comparó por error contra el informe del 3-ago (bug de ordenar por nombre de fichero en vez de por fecha, ver scripts/recalibrate-supreme.mjs) en vez de contra el del 19-ago, que es la recalibración inmediatamente anterior real. El retador líder del 19-ago era OTRO (b200_r21_h1.25, hoy ya no gana: MAR 1.63 < 1.77), así que NO hay dos victorias consecutivas del MISMO retador — es el patrón de ruido que la regla de persistencia existe para descartar. Veredicto correcto: EN OBSERVACIÓN.",
+    "decisionOriginal_BUGGY": "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO"
+  }
+}

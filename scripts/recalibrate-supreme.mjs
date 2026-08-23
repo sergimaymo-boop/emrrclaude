@@ -292,13 +292,37 @@ if (verdict.decision === "MANTENER") {
 // La varianza ENTRE descargas de datos es enorme (el mismo campeón midió MAR 1.94 en
 // jul-2026 y 1.46 en ago-2026 con pulls distintos de Yahoo). Un retador solo merece el
 // trono si su ventaja PERSISTE: debe superar el umbral en DOS recalibraciones
-// consecutivas (dos muestras independientes). Una sola victoria = "EN OBSERVACIÓN".
+// CONSECUTIVAS (dos muestras independientes, la una justo antes de la otra en el
+// tiempo). Una sola victoria = "EN OBSERVACIÓN".
+//
+// ⚠️ BUG REAL detectado y corregido el 23-ago-2026: ordenar los ficheros por NOMBRE
+// (`recalibracion-<fecha>.json`, orden alfabético) asume que el único fichero ausente
+// es "el de hoy". Pero si una recalibración intermedia se ejecutó y su informe NO se
+// guardó en `backtests/` (pasó de verdad: la del 19-ago se guardó aposta en un
+// scratchpad para no tocar el repo sin permiso), el sort por nombre salta hacia atrás
+// hasta el último fichero que SÍ está — aquí el del 3-ago, 20 días antes — y comparó
+// contra ESE en vez de contra el 19-ago. Como el retador del 3-ago (`b100_r21_h1.1`)
+// coincidió por azar con el del 23-ago, el veredicto salió "CONFIRMADO — CAMBIO
+// RECOMENDADO" cuando en realidad el retador líder había ido cambiando entre medias
+// (3-ago `b100_r21_h1.1` → 19-ago `b200_r21_h1.25` → 23-ago `b100_r21_h1.1`) — el
+// patrón de ruido exacto que esta regla existe para descartar, no para confirmar.
+// Fix: ordenar por `generatedAt` (el propio timestamp del informe), no por nombre de
+// fichero — así un hueco en la serie no hace saltar la comparación a un informe viejo
+// sin que quede evidencia de que se saltó nada.
 if (verdict.challenger) {
   let prevChallenger = null;
   try {
-    const prevFiles = fs.readdirSync(OUT_DIR).filter((f) => f.startsWith("recalibracion-")).sort();
+    const prevFiles = fs.readdirSync(OUT_DIR)
+      .filter((f) => f.startsWith("recalibracion-") && f.endsWith(".json"))
+      .map((f) => {
+        const full = path.join(OUT_DIR, f);
+        const generatedAt = JSON.parse(fs.readFileSync(full, "utf8"))?.generatedAt ?? null;
+        return { f, generatedAt };
+      })
+      .filter((x) => x.generatedAt)
+      .sort((a, b) => new Date(a.generatedAt) - new Date(b.generatedAt));
     if (prevFiles.length > 0) {
-      const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, prevFiles[prevFiles.length - 1]), "utf8"));
+      const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, prevFiles[prevFiles.length - 1].f), "utf8"));
       prevChallenger = prev?.verdict?.challenger ?? null;
     }
   } catch { /* sin informe previo */ }

@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-08-19T02:20:00.000Z",
+  "reconstructed": true,
+  "reconstructedNote": "Esta ejecución real ocurrió el 19-ago-2026 en el chat de laboratorio, pero su informe se guardó a propósito en un scratchpad temporal (fuera del repo, por cautela de no tocar backtests/ sin permiso) y ese scratchpad ya no existe. Reconstruido el 23-ago-2026 con las cifras EXACTAS que se guardaron entonces en la memoria del proyecto (project_emrr_optimal_supreme.md) — no es una nueva ejecución de red. Motivo: sin este fichero, la regla de persistencia (comparar SIEMPRE contra la recalibración inmediatamente anterior) salta por encima de esta fecha y compara contra la del 3-ago, produciendo un falso 'CONFIRMADO' — bug corregido el 23-ago en scripts/recalibrate-supreme.mjs (ordenar por generatedAt, no por nombre de fichero) y documentado aquí para que la serie quede completa.",
+  "championKey": "b200_r21_h1.1",
+  "results": {
+    "b200_r21_h1.1": {
+      "cagr": 50.4,
+      "maxDD": 32.8,
+      "mar": 1.54,
+      "sub": [
+        26.7,
+        37.3,
+        95.7
+      ]
+    },
+    "b200_r21_h1.0": {
+      "cagr": 43.1,
+      "maxDD": 32.8,
+      "mar": 1.31,
+      "sub": [
+        28.9,
+        24.8,
+        82.0
+      ]
+    },
+    "b200_r21_h1.25": {
+      "cagr": 57.8,
+      "maxDD": 29.9,
+      "mar": 1.93,
+      "sub": [
+        30.5,
+        45.7,
+        106.6
+      ]
+    },
+    "b100_r21_h1.1": {
+      "cagr": 49.0,
+      "maxDD": 37.4,
+      "mar": 1.31,
+      "sub": [
+        21.7,
+        36.1,
+        99.7
+      ]
+    },
+    "graded_r21_h1.1": {
+      "cagr": 49.8,
+      "maxDD": 33.2,
+      "mar": 1.5,
+      "sub": [
+        24.2,
+        36.7,
+        98.0
+      ]
+    },
+    "b200_r10_h1.1": {
+      "cagr": 42.5,
+      "maxDD": 36.6,
+      "mar": 1.16,
+      "sub": [
+        34.3,
+        32.2,
+        63.1
+      ]
+    },
+    "b200_r42_h1.1": {
+      "cagr": 54.8,
+      "maxDD": 34.1,
+      "mar": 1.61,
+      "sub": [
+        34.6,
+        33.3,
+        106.7
+      ]
+    }
+  },
+  "verdict": {
+    "decision": "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)",
+    "champion": "b200_r21_h1.1",
+    "challenger": "b200_r21_h1.25",
+    "reason": "MAR 1.93 vs 1.54 (+0.39 > 0.10) y gana 3/3 subperíodos · Regla de persistencia: debe repetir victoria en la PRÓXIMA recalibración para destronar (varianza entre pulls de datos > ventaja medida)."
+  }
+}
