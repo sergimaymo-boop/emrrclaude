@@ -321,25 +321,47 @@ if (verdict.challenger) {
       })
       .filter((x) => x.generatedAt)
       .sort((a, b) => new Date(a.generatedAt) - new Date(b.generatedAt));
-    // ⚠️ SEGUNDO BUG de la misma regla (23-ago-2026): ordenar bien por fecha no basta.
-    // Dos ejecuciones el MISMO día se comparan una contra otra y, como usan el mismo pull
-    // de datos, el retador coincide trivialmente → "CONFIRMADO" automático. Pasó de
-    // verdad hoy: la pasada de la 01:44 dejó informe, la de las 12:51 se confirmó contra
-    // ella. Eso NO son dos muestras independientes, que es justo lo que la regla exige.
-    // Fix: ignorar informes generados en las últimas MIN_HORAS_ENTRE_MUESTRAS horas.
+    // ⚠️ La comparación es SIEMPRE contra la ÚLTIMA ejecución real anterior (la penúltima
+    // de la serie por generatedAt), NUNCA saltándose informes intermedios. Historia de
+    // los dos bugs previos de esta misma regla, para que no vuelvan:
+    //   · 23-ago (fix 3c7fdd4): ordenaba por NOMBRE de fichero, no por fecha → saltaba a
+    //     un informe viejo cuando faltaba uno intermedio.
+    //   · 23-ago (fix 439924a): al filtrar por edad ≥72h, DESCARTABA el informe joven en
+    //     vez de abstenerse → volvía a comparar contra uno viejo saltándose el de en medio
+    //     (bug encontrado por la 2ª auditoría adversarial: A@96h retador X, B@48h MANTENER,
+    //     hoy X → confirmaba contra A ignorando que B rompió la racha).
+    // Regla correcta: mirar SOLO el inmediatamente anterior. Si ese anterior es de la misma
+    // tanda de datos (< MIN_HORAS_ENTRE_MUESTRAS), NO se puede adjudicar persistencia
+    // todavía — se ABSTIENE ("muestras demasiado juntas"), no se salta a uno más viejo.
     const MIN_HORAS_ENTRE_MUESTRAS = 72;
     const ahora = Date.now();
-    const independientes = prevFiles.filter(
-      (x) => (ahora - new Date(x.generatedAt).getTime()) / 3_600_000 >= MIN_HORAS_ENTRE_MUESTRAS,
-    );
-    if (independientes.length > 0) {
-      const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, independientes[independientes.length - 1].f), "utf8"));
-      prevChallenger = prev?.verdict?.challenger ?? null;
+    const anteriores = prevFiles.filter((x) => new Date(x.generatedAt).getTime() < ahora - 1000); // excluye el que se acaba de escribir
+    const inmediato = anteriores.length > 0 ? anteriores[anteriores.length - 1] : null;
+    let anteriorDemasiadoJoven = false;
+    let comparadorReconstruido = false;
+    if (inmediato) {
+      const horas = (ahora - new Date(inmediato.generatedAt).getTime()) / 3_600_000;
+      if (horas < MIN_HORAS_ENTRE_MUESTRAS) {
+        anteriorDemasiadoJoven = true;
+      } else {
+        const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, inmediato.f), "utf8"));
+        prevChallenger = prev?.verdict?.challenger ?? null;
+        comparadorReconstruido = prev?.reconstructed === true;   // ver 2ª auditoría, Q4
+      }
     }
   } catch { /* sin informe previo */ }
-  if (prevChallenger !== verdict.challenger) {
+  if (anteriorDemasiadoJoven) {
+    verdict.decision = "RETADOR EN OBSERVACIÓN (muestra anterior demasiado reciente — misma tanda de datos)";
+    verdict.reason += " · Regla de persistencia: la ejecución previa es de hace <72h; hace falta una recalibración con datos frescos independientes antes de poder confirmar.";
+  } else if (prevChallenger !== verdict.challenger) {
     verdict.decision = "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)";
     verdict.reason += " · Regla de persistencia: debe repetir victoria en la PRÓXIMA recalibración para destronar (varianza entre pulls de datos > ventaja medida).";
+  } else if (comparadorReconstruido) {
+    // La carga de la prueba para CAMBIAR el campeón es más alta que para mantenerlo: un
+    // informe reconstruido a mano (sin cadena de custodia de datos) sirve para ROMPER una
+    // racha, no para ser una de las dos victorias que recomiendan el cambio.
+    verdict.decision = "RETADOR EN OBSERVACIÓN (comparador reconstruido — requiere 2ª muestra ejecutada)";
+    verdict.reason += " · Regla de persistencia: la muestra anterior está marcada reconstructed:true (números por memoria, sin datos verificables); no basta para recomendar cambio.";
   } else {
     verdict.decision = "RETADOR CONFIRMADO EN 2 RECALIBRACIONES — CAMBIO RECOMENDADO";
   }

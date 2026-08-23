@@ -164,6 +164,11 @@ def base_symbol(sym: str) -> str:
 NAV_DRIFT_TOL = 0.40   # el NAV nuevo no debe desviarse > ±40% del último conocido
 NAV_IDENTITY_TOL = 0.10  # NAV ≈ valMdo + cash (±10%)
 POS_VALMDO_TOL = 0.15    # Σ posiciones ≈ valMdo (±15%)
+# Banda REALISTA del FX EUR/USD (no la [0,5-2,0] laxa anterior, que dejaba pasar un OCR
+# 2x mal). EUR/USD lleva 20 años en [0,63, 1,03] EUR por USD; se deja holgura a [0,60, 1,10].
+FX_EUR_USD_MIN, FX_EUR_USD_MAX = 0.60, 1.10
+# Divisas cotizadas en subunidad (peniques): 1 GBX = 0,01 GBP. IBK devuelve GBX en las .L.
+SUBUNIT_PER_MAIN = {"GBX": 0.01, "GBP": 1.0, "USD": 1.0, "EUR": 1.0, "CHF": 1.0}
 
 
 def _finite_num(v):
@@ -192,9 +197,12 @@ def positions_value_eur(portfolio: dict) -> float:
     return total
 
 
-def portfolio_plausible(portfolio: dict, last_good_nav) -> tuple:
+def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tuple:
     """Devuelve (ok, motivo). Barrera de sanidad para el snapshot leído del endpoint
-    público sin auth: evita que un dato envenenado dispare un email de rebalanceo."""
+    público sin auth: evita que un dato envenenado dispare un email de rebalanceo.
+    Si se pasa `scan`, cruza el precio leído por OCR de cada posición contra el precio
+    del scan (fiable) — única forma de cazar un OCR que preserva el producto q·precio
+    (cantidad reconstruida por valor÷precio) y que ninguna guarda de magnitud detecta."""
     nav = portfolio.get("navEur")
     if not (_finite_num(nav) and nav > 0):
         return False, "navEur ausente o no positivo"
@@ -225,32 +233,74 @@ def portfolio_plausible(portfolio: dict, last_good_nav) -> tuple:
         return False, ("lectura incompleta: posiciones con cantidad pero sin precio "
                        f"({', '.join(sin_precio[:6])}) — repite la carga de fotos")
 
-    # MAGNITUD SIN DEPENDER DEL FX (23-ago-2026): la comprobación anterior solo corría si
-    # fxEurPerUsd venía informado, y justo cuando falta es cuando el OCR suele estar mal.
-    # El 19-ago pasó MRNA a 39.245 $ (real ~133 $) con fx null y nadie lo detectó. El FX
-    # EUR/USD real vive holgadamente en [0,5, 2,0]: si ni con el extremo más favorable de
-    # esa banda las posiciones cuadran con VAL.MDO., la lectura está corrupta.
-    if positions and _finite_num(val_mdo) and val_mdo > 0:
-        bruto = 0.0
+    # MAGNITUD POR POSICIÓN, NORMALIZADA POR DIVISA (reescrito 23-ago-2026 tras la 2ª
+    # auditoría adversarial, que encontró DOS agujeros en la versión anterior:
+    #   (a) la comprobación FX-vs-posiciones solo corría si fxEurPerUsd venía informado, y
+    #       el frontend manda null JUSTO cuando el FX "pinta raro" (optimal2026Refresh.ts:
+    #       fxNormalized solo si invested/posValueRaw en (0,5,1,6)); así MRNA@39.245$ con
+    #       fx null se colaba. Ahora se comprueba SIEMPRE, derivando el FX si falta.
+    #   (b) la guarda "sin FX" sumaba unidades nativas mezclando divisas y usaba banda
+    #       [0,5-2,0], lo que (i) dejaba pasar un OCR con la cantidad reconstruida por
+    #       valor÷precio (producto q·precio preservado) y (ii) BLOQUEABA una acción de
+    #       Londres legítima en peniques (GBX, ~100x). Ahora cada posición se lleva a EUR
+    #       con su divisa (peniques incluidos) y un FX EUR/USD que DEBE ser realista.
+    us_positions = [p for p in positions
+                    if _finite_num(p.get("quantity")) and _finite_num(p.get("lastPrice"))
+                    and float(p["quantity"]) > 0 and float(p["lastPrice"]) > 0]
+    if us_positions and _finite_num(val_mdo) and val_mdo > 0:
+        # FX efectivo EUR por USD: el provisto, o el derivado de VAL.MDO. / Σ(valor USD).
+        # En cualquier caso DEBE caer en la banda realista, o la lectura está corrupta.
+        usd_sum = 0.0
+        for p in us_positions:
+            cur = (p.get("currency") or "USD").upper()
+            factor = SUBUNIT_PER_MAIN.get(cur, 1.0)      # peniques → libras, etc.
+            val_nativo = float(p["quantity"]) * float(p["lastPrice"]) * factor
+            # las no-USD (EUR, GBP ya en libras) no dependen del FX EUR/USD: cuentan como EUR≈1
+            if cur == "USD":
+                usd_sum += val_nativo
+        if usd_sum > 0:
+            fx_prov = portfolio.get("fxEurPerUsd")
+            fx_eff = float(fx_prov) if _finite_num(fx_prov) and fx_prov > 0 else (val_mdo / usd_sum)
+            if not (FX_EUR_USD_MIN <= fx_eff <= FX_EUR_USD_MAX):
+                return False, (f"FX EUR/USD efectivo {fx_eff:.3f} fuera de banda realista "
+                               f"[{FX_EUR_USD_MIN}-{FX_EUR_USD_MAX}] — lectura de precios corrupta "
+                               f"(Sigma USD {usd_sum:,.0f}, valMdo {val_mdo:,.0f} EUR)")
+            # Con un FX ya validado, Σ posiciones en EUR debe cuadrar con VAL.MDO.
+            pos_eur = 0.0
+            for p in us_positions:
+                cur = (p.get("currency") or "USD").upper()
+                factor = SUBUNIT_PER_MAIN.get(cur, 1.0)
+                v = float(p["quantity"]) * float(p["lastPrice"]) * factor
+                pos_eur += v * (fx_eff if cur == "USD" else 1.0)
+            if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):
+                return False, (f"Sigma posiciones {pos_eur:,.0f} EUR != valMdo {val_mdo:,.0f} EUR "
+                               f"(+/-{POS_VALMDO_TOL:.0%}) con FX {fx_eff:.3f}")
+
+    # PRECIO CRUZADO CONTRA EL SCAN (23-ago-2026): si el OCR lee mal el precio pero la
+    # cantidad se reconstruye por valor÷precio, el producto q·precio se conserva y NINGUNA
+    # guarda de magnitud lo ve (el valor total en EUR es correcto, solo mal repartido). El
+    # precio del scan SÍ es fiable: si el ticker está en el top-10, el precio leído debe
+    # parecerse (±35%, margen por hora del scan vs foto). Un factor x295 como el de MRNA
+    # del 19-ago (39.245 vs ~133) lo caza de sobra.
+    if scan and isinstance(scan.get("top10"), list):
+        precio_scan = {}
+        for t in scan["top10"]:
+            base = base_symbol(t.get("ticker", ""))
+            px = (t.get("metrics") or {}).get("lastClose")
+            if base and _finite_num(px) and px > 0:
+                precio_scan[base] = float(px)
         for p in positions:
             try:
-                q, pr = float(p.get("quantity")), float(p.get("lastPrice"))
+                pr = float(p.get("lastPrice"))
             except (TypeError, ValueError):
                 continue
-            if math.isfinite(q) and math.isfinite(pr) and q > 0 and pr > 0:
-                bruto += q * pr
-        if bruto > 0:
-            minimo_posible = bruto * 0.5   # FX más favorable a que cuadre por abajo
-            maximo_posible = bruto * 2.0
-            if minimo_posible > val_mdo * (1 + POS_VALMDO_TOL) or maximo_posible < val_mdo * (1 - POS_VALMDO_TOL):
-                return False, (f"Sigma posiciones {bruto:,.0f} (unidades de cotizacion) incompatible "
-                               f"con valMdo {val_mdo:,.0f} EUR para cualquier FX en [0,5-2,0]")
-
-    if positions and _finite_num(portfolio.get("fxEurPerUsd")) and _finite_num(val_mdo) and val_mdo > 0:
-        pos_eur = positions_value_eur(portfolio)
-        if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):
-            return False, (f"Sigma posiciones {pos_eur:,.0f} != valMdo {val_mdo:,.0f} "
-                           f"(+/-{POS_VALMDO_TOL:.0%})")
+            if not (math.isfinite(pr) and pr > 0):
+                continue
+            base = base_symbol(p.get("symbol", ""))
+            ref = precio_scan.get(base)
+            if ref and (pr > ref * 3 or pr < ref / 3):
+                return False, (f"precio de {base} leido {pr:,.2f} incompatible con el "
+                               f"precio del scan {ref:,.2f} (factor {pr/ref:.1f}x) — OCR corrupto")
     return True, "ok"
 
 
@@ -703,7 +753,7 @@ def main() -> int:
     # sea coherente (NAV dentro de ±40% del último conocido, identidad NAV≈valMdo+cash,
     # Σposiciones≈valMdo). La semilla local es de confianza y no se somete al chequeo.
     if not portfolio.get("_seeded"):
-        ok, reason = portfolio_plausible(portfolio, state.get("lastGoodNav"))
+        ok, reason = portfolio_plausible(portfolio, state.get("lastGoodNav"), scan)
         if not ok:
             log(f"AVISO: cartera del servidor NO plausible ({reason}) — NO se genera ni "
                 f"envía plan. Se conserva el último bueno. Sube fotos correctas para reevaluar.")
