@@ -38,6 +38,12 @@ const HISTORY_KEY = "market_breadth_history_v1"; // histórico append-only (feed
 const WEIGHTS_KEY = "market_breadth_weights_v1"; // pesos recalibrados (auditados); fallback a los congelados
 const BATCH_SIZE = 50;
 const HISTORY_CAP = 180;                       // ~9 meses de ciclos diarios (Upstash free ~1MB/valor)
+// TTL de los snapshots (breadth, Optimal Supreme, FABLE5, FABLE01). Antes 26h: el cron
+// GH corre L-V 21:30 UTC, así que el viernes 21:30 + 26h = sábado 23:30 → los 4 módulos
+// quedaban SIN DATOS todo el fin de semana Y el lunes de mercado hasta el run de las
+// 21:30 (verificado en producción el domingo 23-ago: breadth UNKNOWN, optimal2026 404,
+// fable5/01 vacíos). 80h cubre viernes 21:30 → lunes 21:30 con holgura para reintentos.
+const SNAPSHOT_TTL_S = 80 * 3600;
 
 function getEnv() { return globalThis.process?.env ?? {}; }
 function isRealApi() { return getEnv().ENABLE_REAL_API_CALLS === "true"; }
@@ -247,7 +253,7 @@ async function persistFable5(topFab, scanStartedAtUtc, activeMarkets, universeCo
     horizon: FABLE5_CALIBRATION.horizonSessions,
     scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
   };
-  await kvSet(FABLE5_KEY, payload, 26 * 3600).catch(() => {});
+  await kvSet(FABLE5_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});
 }
 
 // FABLE01 — enriquece el top-10 (salud de tendencia + asignación de capital blindada) en su PROPIA clave.
@@ -306,7 +312,7 @@ async function persistFable01(topF01, scanStartedAtUtc, activeMarkets, universeC
     deploymentPct, regimeRiskOn,
     scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
   };
-  await kvSet(FABLE01_KEY, payload, 26 * 3600).catch(() => {});
+  await kvSet(FABLE01_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});
 }
 
 // OPTIMAL2026 — persiste el top-3 (dual momentum risk-parity) en su PROPIA clave.
@@ -335,7 +341,7 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
       badge: OPTIMAL_SUPREME_CALIBRATION.badge,
       oos: OPTIMAL_SUPREME_CALIBRATION.oos,
       scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
-    }, 26 * 3600).catch(() => {});
+    }, SNAPSHOT_TTL_S).catch(() => {});
     return;
   }
   let nameMap = new Map();
@@ -391,7 +397,7 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
     oos: OPTIMAL_SUPREME_CALIBRATION.oos,
     scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
   };
-  await kvSet(OPTIMAL2026_KEY, payload, 26 * 3600).catch(() => {});
+  await kvSet(OPTIMAL2026_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});
 }
 
 // Al completar el loop: calcula veredicto, persiste cache + histórico (serie A/D para McClellan).
@@ -439,7 +445,7 @@ async function finalizeAndPersist(agg, scanStartedAtUtc, activeMarkets, universe
     cachedAtUtc,
   };
 
-  await kvSet(CACHE_KEY, payload, 26 * 3600).catch(() => {});
+  await kvSet(CACHE_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});
 
   // Histórico append-only (cap), SOLO en runs de cierre → serie homogénea para feedback + McClellan.
   if (!intraday) {

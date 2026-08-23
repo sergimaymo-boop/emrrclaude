@@ -311,51 +311,60 @@ if (verdict.decision === "MANTENER") {
 // sin que quede evidencia de que se saltó nada.
 if (verdict.challenger) {
   let prevChallenger = null;
+  let anteriorDemasiadoJoven = false;      // izadas FUERA del try: se leen tras el catch
+  let comparadorReconstruido = false;
+  // ⚠️ TERCERA reescritura (3ª auditoría adversarial). Reglas duras contra los 4 bugs
+  // que han tenido las versiones anteriores de esta lógica:
+  //   1. NO ordenar por nombre de fichero (fix 3c7fdd4) — se ordena por generatedAt.
+  //   2. NO descartar informes jóvenes para saltar a uno viejo (fix 439924a) — se compara
+  //      SOLO el inmediato anterior; si es de la misma tanda (<72h) se ABSTIENE.
+  //   3. NO leer generatedAt sin validar (bug 3ª auditoría): una fecha futura, malformada
+  //      o ausente hacía que el filtro por edad expulsara ESE informe y saltara al viejo,
+  //      dando falso CONFIRMADO. Ahora un informe con fecha inválida NO se descarta: si es
+  //      candidato a inmediato anterior y su fecha no es válida, se ABSTIENE (dato sucio).
+  //   4. NO dejar que un JSON corrupto de CUALQUIER informe rompa el .map y devuelva
+  //      prevChallenger=null para siempre — cada fichero se parsea aislado y el ilegible
+  //      se marca, no tumba la serie.
+  // La independencia de datos por 72h es un proxy; el comparador reconstructed:true no basta
+  // para CONFIRMAR (asimetría deliberada: cambiar el campeón exige más prueba que mantenerlo).
+  const MIN_HORAS_ENTRE_MUESTRAS = 72;
+  const ahora = Date.now();
+  const parseMs = (v) => { const t = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
+  let serieSucia = false;   // algún informe con fecha ilegible → no fiarse de la cadena
   try {
     const prevFiles = fs.readdirSync(OUT_DIR)
       .filter((f) => f.startsWith("recalibracion-") && f.endsWith(".json"))
       .map((f) => {
-        const full = path.join(OUT_DIR, f);
-        const generatedAt = JSON.parse(fs.readFileSync(full, "utf8"))?.generatedAt ?? null;
-        return { f, generatedAt };
-      })
-      .filter((x) => x.generatedAt)
-      .sort((a, b) => new Date(a.generatedAt) - new Date(b.generatedAt));
-    // ⚠️ La comparación es SIEMPRE contra la ÚLTIMA ejecución real anterior (la penúltima
-    // de la serie por generatedAt), NUNCA saltándose informes intermedios. Historia de
-    // los dos bugs previos de esta misma regla, para que no vuelvan:
-    //   · 23-ago (fix 3c7fdd4): ordenaba por NOMBRE de fichero, no por fecha → saltaba a
-    //     un informe viejo cuando faltaba uno intermedio.
-    //   · 23-ago (fix 439924a): al filtrar por edad ≥72h, DESCARTABA el informe joven en
-    //     vez de abstenerse → volvía a comparar contra uno viejo saltándose el de en medio
-    //     (bug encontrado por la 2ª auditoría adversarial: A@96h retador X, B@48h MANTENER,
-    //     hoy X → confirmaba contra A ignorando que B rompió la racha).
-    // Regla correcta: mirar SOLO el inmediatamente anterior. Si ese anterior es de la misma
-    // tanda de datos (< MIN_HORAS_ENTRE_MUESTRAS), NO se puede adjudicar persistencia
-    // todavía — se ABSTIENE ("muestras demasiado juntas"), no se salta a uno más viejo.
-    const MIN_HORAS_ENTRE_MUESTRAS = 72;
-    const ahora = Date.now();
-    const anteriores = prevFiles.filter((x) => new Date(x.generatedAt).getTime() < ahora - 1000); // excluye el que se acaba de escribir
+        try {
+          const obj = JSON.parse(fs.readFileSync(path.join(OUT_DIR, f), "utf8"));
+          return { f, ms: parseMs(obj?.generatedAt), challenger: obj?.verdict?.challenger ?? null, reconstructed: obj?.reconstructed === true };
+        } catch { serieSucia = true; return { f, ms: null, challenger: null, reconstructed: false }; }
+      });
+    if (prevFiles.some((x) => x.ms === null)) serieSucia = true;   // fecha ausente/malformada
+    if (prevFiles.some((x) => x.ms !== null && x.ms > ahora)) serieSucia = true;  // fecha FUTURA (reloj torcido) → el orden no es fiable
+    // Solo informes con fecha VÁLIDA y estrictamente ANTERIOR al instante actual (excluye
+    // el que se acaba de escribir y cualquier fecha futura por reloj torcido).
+    const anteriores = prevFiles.filter((x) => x.ms !== null && x.ms < ahora - 1000).sort((a, b) => a.ms - b.ms);
     const inmediato = anteriores.length > 0 ? anteriores[anteriores.length - 1] : null;
-    let anteriorDemasiadoJoven = false;
-    let comparadorReconstruido = false;
     if (inmediato) {
-      const horas = (ahora - new Date(inmediato.generatedAt).getTime()) / 3_600_000;
+      const horas = (ahora - inmediato.ms) / 3_600_000;
       if (horas < MIN_HORAS_ENTRE_MUESTRAS) {
         anteriorDemasiadoJoven = true;
       } else {
-        const prev = JSON.parse(fs.readFileSync(path.join(OUT_DIR, inmediato.f), "utf8"));
-        prevChallenger = prev?.verdict?.challenger ?? null;
-        comparadorReconstruido = prev?.reconstructed === true;   // ver 2ª auditoría, Q4
+        prevChallenger = inmediato.challenger;
+        comparadorReconstruido = inmediato.reconstructed;
       }
     }
-  } catch { /* sin informe previo */ }
+  } catch { /* sin directorio de informes → primera ejecución */ }
   if (anteriorDemasiadoJoven) {
     verdict.decision = "RETADOR EN OBSERVACIÓN (muestra anterior demasiado reciente — misma tanda de datos)";
     verdict.reason += " · Regla de persistencia: la ejecución previa es de hace <72h; hace falta una recalibración con datos frescos independientes antes de poder confirmar.";
   } else if (prevChallenger !== verdict.challenger) {
     verdict.decision = "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)";
     verdict.reason += " · Regla de persistencia: debe repetir victoria en la PRÓXIMA recalibración para destronar (varianza entre pulls de datos > ventaja medida).";
+  } else if (serieSucia && prevChallenger === verdict.challenger) {
+    verdict.decision = "RETADOR EN OBSERVACIÓN (serie de informes con fechas ilegibles — no fiable)";
+    verdict.reason += " · Regla de persistencia: hay informes previos con generatedAt ausente o malformado; no se puede confirmar una racha sobre una cadena sucia.";
   } else if (comparadorReconstruido) {
     // La carga de la prueba para CAMBIAR el campeón es más alta que para mantenerlo: un
     // informe reconstruido a mano (sin cadena de custodia de datos) sirve para ROMPER una

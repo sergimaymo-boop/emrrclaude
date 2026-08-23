@@ -244,37 +244,47 @@ def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tu
     #       valor÷precio (producto q·precio preservado) y (ii) BLOQUEABA una acción de
     #       Londres legítima en peniques (GBX, ~100x). Ahora cada posición se lleva a EUR
     #       con su divisa (peniques incluidos) y un FX EUR/USD que DEBE ser realista.
-    us_positions = [p for p in positions
-                    if _finite_num(p.get("quantity")) and _finite_num(p.get("lastPrice"))
-                    and float(p["quantity"]) > 0 and float(p["lastPrice"]) > 0]
-    if us_positions and _finite_num(val_mdo) and val_mdo > 0:
-        # FX efectivo EUR por USD: el provisto, o el derivado de VAL.MDO. / Σ(valor USD).
-        # En cualquier caso DEBE caer en la banda realista, o la lectura está corrupta.
-        usd_sum = 0.0
-        for p in us_positions:
+    # La 3ª auditoría demostró que verificar SOLO cuando hay USD deja pasar carteras 100%
+    # EUR corruptas (Σposiciones 4,5x valMdo) y bloquea mixtas EUR+USD legítimas (el FX
+    # derivado se contaminaba con la parte EUR). Ahora se descompone SIEMPRE:
+    #   valMdo (EUR) = Σ(no-USD en EUR)  +  fx · Σ(USD en USD)
+    # Se despeja el fx IMPLÍCITO de esa identidad y debe caer en banda realista. Divisa
+    # desconocida (no en el mapa) → no se puede verificar con fiabilidad → se rechaza el
+    # informe (mejor no operar que operar a ciegas), salvo que no haya val_mdo con que cruzar.
+    valid_pos = [p for p in positions
+                 if _finite_num(p.get("quantity")) and _finite_num(p.get("lastPrice"))
+                 and float(p["quantity"]) > 0 and float(p["lastPrice"]) > 0]
+    if valid_pos and _finite_num(val_mdo) and val_mdo > 0:
+        eur_sum = 0.0   # valor en EUR de lo que NO depende del FX EUR/USD (EUR, GBP, CHF, peniques…)
+        usd_sum = 0.0   # valor en USD de lo cotizado en dólares
+        desconocidas = []
+        for p in valid_pos:
             cur = (p.get("currency") or "USD").upper()
-            factor = SUBUNIT_PER_MAIN.get(cur, 1.0)      # peniques → libras, etc.
-            val_nativo = float(p["quantity"]) * float(p["lastPrice"]) * factor
-            # las no-USD (EUR, GBP ya en libras) no dependen del FX EUR/USD: cuentan como EUR≈1
+            q, pr = float(p["quantity"]), float(p["lastPrice"])
             if cur == "USD":
-                usd_sum += val_nativo
+                usd_sum += q * pr
+            elif cur in SUBUNIT_PER_MAIN:
+                eur_sum += q * pr * SUBUNIT_PER_MAIN[cur]   # peniques→libras≈EUR, CHF≈EUR, EUR=1
+            else:
+                desconocidas.append(f"{p.get('symbol','?')}:{cur}")
+        if desconocidas:
+            return False, (f"divisa no reconocida en {', '.join(desconocidas[:6])} — no se puede "
+                           f"verificar la magnitud de la cartera; sube fotos o revisa el dato")
+        # fx implícito que hace cuadrar la identidad valMdo = eur_sum + fx·usd_sum
+        fx_prov = portfolio.get("fxEurPerUsd")
         if usd_sum > 0:
-            fx_prov = portfolio.get("fxEurPerUsd")
-            fx_eff = float(fx_prov) if _finite_num(fx_prov) and fx_prov > 0 else (val_mdo / usd_sum)
+            fx_eff = float(fx_prov) if _finite_num(fx_prov) and fx_prov > 0 else ((val_mdo - eur_sum) / usd_sum)
             if not (FX_EUR_USD_MIN <= fx_eff <= FX_EUR_USD_MAX):
-                return False, (f"FX EUR/USD efectivo {fx_eff:.3f} fuera de banda realista "
+                return False, (f"FX EUR/USD implícito {fx_eff:.3f} fuera de banda realista "
                                f"[{FX_EUR_USD_MIN}-{FX_EUR_USD_MAX}] — lectura de precios corrupta "
-                               f"(Sigma USD {usd_sum:,.0f}, valMdo {val_mdo:,.0f} EUR)")
-            # Con un FX ya validado, Σ posiciones en EUR debe cuadrar con VAL.MDO.
-            pos_eur = 0.0
-            for p in us_positions:
-                cur = (p.get("currency") or "USD").upper()
-                factor = SUBUNIT_PER_MAIN.get(cur, 1.0)
-                v = float(p["quantity"]) * float(p["lastPrice"]) * factor
-                pos_eur += v * (fx_eff if cur == "USD" else 1.0)
-            if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):
-                return False, (f"Sigma posiciones {pos_eur:,.0f} EUR != valMdo {val_mdo:,.0f} EUR "
-                               f"(+/-{POS_VALMDO_TOL:.0%}) con FX {fx_eff:.3f}")
+                               f"(EUR {eur_sum:,.0f} + USD {usd_sum:,.0f}, valMdo {val_mdo:,.0f})")
+            pos_eur = eur_sum + fx_eff * usd_sum
+        else:
+            # cartera sin USD: no hay FX que derivar, la identidad es directa en EUR
+            pos_eur = eur_sum
+        if pos_eur > 0 and abs(pos_eur - val_mdo) > POS_VALMDO_TOL * max(val_mdo, pos_eur):
+            return False, (f"Sigma posiciones {pos_eur:,.0f} EUR != valMdo {val_mdo:,.0f} EUR "
+                           f"(+/-{POS_VALMDO_TOL:.0%})")
 
     # PRECIO CRUZADO CONTRA EL SCAN (23-ago-2026): si el OCR lee mal el precio pero la
     # cantidad se reconstruye por valor÷precio, el producto q·precio se conserva y NINGUNA
@@ -282,13 +292,20 @@ def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tu
     # precio del scan SÍ es fiable: si el ticker está en el top-10, el precio leído debe
     # parecerse (±35%, margen por hora del scan vs foto). Un factor x295 como el de MRNA
     # del 19-ago (39.245 vs ~133) lo caza de sobra.
+    # ⚠️ La 3ª auditoría encontró que cruzar solo por símbolo base da falsos positivos:
+    #   · colisión entre bolsas: BA = Boeing (US) y BAE Systems (Londres) — comparar el
+    #     precio de una con el de la otra bloquea una cartera sana.
+    #   · GBX vs GBP: el scan da Londres en peniques y la foto de IBK en libras (×100).
+    # Se cruza indexando por (base, DIVISA) y solo cuando ambas divisas coinciden, de modo
+    # que Boeing-USD nunca se compara con BAE-GBX ni peniques con libras.
     if scan and isinstance(scan.get("top10"), list):
-        precio_scan = {}
+        precio_scan = {}   # (base, currency) -> precio
         for t in scan["top10"]:
-            base = base_symbol(t.get("ticker", ""))
+            base = base_symbol(t.get("ticker") or t.get("providerSymbol", ""))
+            cur = (t.get("currency") or "").upper()
             px = (t.get("metrics") or {}).get("lastClose")
-            if base and _finite_num(px) and px > 0:
-                precio_scan[base] = float(px)
+            if base and cur and _finite_num(px) and px > 0:
+                precio_scan[(base, cur)] = float(px)
         for p in positions:
             try:
                 pr = float(p.get("lastPrice"))
@@ -297,10 +314,19 @@ def portfolio_plausible(portfolio: dict, last_good_nav, scan: dict = None) -> tu
             if not (math.isfinite(pr) and pr > 0):
                 continue
             base = base_symbol(p.get("symbol", ""))
-            ref = precio_scan.get(base)
+            cur = (p.get("currency") or "USD").upper()
+            ref = precio_scan.get((base, cur))
             if ref and (pr > ref * 3 or pr < ref / 3):
-                return False, (f"precio de {base} leido {pr:,.2f} incompatible con el "
+                return False, (f"precio de {base} ({cur}) leido {pr:,.2f} incompatible con el "
                                f"precio del scan {ref:,.2f} (factor {pr/ref:.1f}x) — OCR corrupto")
+    # LÍMITE INTRÍNSECO conocido (3ª auditoría): si el OCR intercambia precio y cantidad de
+    # un ticker que (a) NO está en el top-10 del scan y (b) preserva el producto q·precio,
+    # ninguna guarda puede detectarlo — el valor total en EUR es correcto y no hay precio de
+    # referencia con que cruzar. Impacto acotado: el plan solo dimensiona mal ESE ticker, y
+    # al no estar en el top-10 la orden sería "vender todo" de una posición que de todos
+    # modos hay que liquidar por no ser líder. No se inventa un umbral de precio (rompería
+    # acciones legítimamente caras: MU 973 USD, Booking ~5000). Cubierto donde importa: el
+    # top-10, que concentra el riesgo real, sí se cruza por precio.
     return True, "ok"
 
 
@@ -753,7 +779,7 @@ def main() -> int:
     # sea coherente (NAV dentro de ±40% del último conocido, identidad NAV≈valMdo+cash,
     # Σposiciones≈valMdo). La semilla local es de confianza y no se somete al chequeo.
     if not portfolio.get("_seeded"):
-        ok, reason = portfolio_plausible(portfolio, state.get("lastGoodNav"), scan)
+        ok, reason = portfolio_plausible(portfolio, state.get("lastGoodNav"), scan_resp)
         if not ok:
             log(f"AVISO: cartera del servidor NO plausible ({reason}) — NO se genera ni "
                 f"envía plan. Se conserva el último bueno. Sube fotos correctas para reevaluar.")

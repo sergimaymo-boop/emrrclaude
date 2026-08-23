@@ -233,7 +233,15 @@ export function computeBreadthVerdict(agg, opts = {}) {
   const slope = 20 / ((q66 - q33) || 1);
   const score = Math.round(clamp(50 + (raw - q33) * slope));
 
-  const verdict = score >= thr.bullish ? "BULLISH"
+  // SUELO DE MUESTRA (23-ago-2026): con la calibración CONTRARIA, 0 tickers analizados
+  // (proveedores caídos → todos los batches null) daría advPct/newHighPct/… = 0, que la
+  // señal contraria lee como "sobreventa extrema" → score máximo → BULLISH 99/100 sobre
+  // NADA. Sin un mínimo de universo el veredicto no es fiable: se marca UNKNOWN para que
+  // no se sirva ni se anexe al histórico (McClellan/feedback) un verde fabricado.
+  const MIN_ANALYZED = 50;
+  const insufficientSample = (agg.total ?? 0) < MIN_ANALYZED;
+  const verdict = insufficientSample ? "UNKNOWN"
+    : score >= thr.bullish ? "BULLISH"
     : score >= thr.deteriorating ? "DETERIORATING"
     : "PULLBACK_IMMINENT";
 
@@ -250,10 +258,12 @@ export function computeBreadthVerdict(agg, opts = {}) {
 
   return {
     score,
-    verdict, // BULLISH=favorable | DETERIORATING=neutral | PULLBACK_IMMINENT=riesgo corrección (~1-2 meses)
+    verdict, // BULLISH=favorable | DETERIORATING=neutral | PULLBACK_IMMINENT=riesgo corrección (~1-2 meses) | UNKNOWN=muestra insuficiente
+    insufficientSample,
     horizonDays: cal.horizonDays,
-    color: verdict === "BULLISH" ? "#10b981" : verdict === "DETERIORATING" ? "#eab308" : "#ef4444",
-    label: verdict === "BULLISH" ? "Favorable — sesgo alcista (~1-2 meses)"
+    color: verdict === "UNKNOWN" ? "#64748b" : verdict === "BULLISH" ? "#10b981" : verdict === "DETERIORATING" ? "#eab308" : "#ef4444",
+    label: verdict === "UNKNOWN" ? "Sin datos suficientes — proveedores no disponibles"
+      : verdict === "BULLISH" ? "Favorable — sesgo alcista (~1-2 meses)"
       : verdict === "DETERIORATING" ? "Neutral — amplitud en zona media"
       : "Riesgo de corrección — sobrecompra (~1-2 meses)",
     indicators: {
