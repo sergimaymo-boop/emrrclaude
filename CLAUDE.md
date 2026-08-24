@@ -9,7 +9,9 @@
 ## 0. PRIME DIRECTIVES
 
 1. **Functionality is sacred.** Never break what works. A visual improvement is not worth a broken scan.
-2. **Build must pass before every commit.** Run `npx vite build` and verify zero errors.
+2. **Build must pass before every commit.** Run `npx vite build` and verify zero errors. ⚠️
+   `vite build` SOLO compila `src/` — no toca `api/` en absoluto. Si el commit tocó algo en
+   `api/`, hace falta ADEMÁS `node scripts/validate-api-endpoints-import.mjs` (ver nota final).
 3. **When in doubt, do not change.** Propose first, implement after confirmation.
 4. **Update ALL affected files together.** CSS + components + pages + API in one coherent pass.
 5. **No mock data in production, ever.** `ENABLE_REAL_API_CALLS=true` is the hard gate.
@@ -344,6 +346,8 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 ### Git & Deploy
 ```
 ✅ npx vite build → zero errors → then commit
+✅ Si el commit tocó api/: node scripts/validate-api-endpoints-import.mjs → zero errors
+   (vite build no lo cubre — ver §0.2 y la nota final)
 ✅ Every commit touches ALL files affected by the change
 ✅ main branch → Vercel auto-deploys
 ✅ Commit messages: "feat:", "fix:", "style:", "docs:", "study:", "ux:", "audit:"
@@ -678,3 +682,20 @@ npx tsc -p tsconfig.app.json --noEmit
 El 11-ago-2026 este no-op ocultó dos identificadores sin importar en la ruta de subida
 de fotos (Optimal2026Panel), rotos en producción durante ~1 semana. Vite build NO
 typechecka: no confiar en que "compila" signifique "tipos correctos".
+
+## Validación de api/ (IMPORTANTE)
+La misma trampa, versión backend: `npx vite build` NO toca `api/` en absoluto — solo
+compila `src/`. Un import roto o un endpoint sin `export default` en `api/` pasa el
+build limpio y solo revienta en runtime, en producción. El 23-ago-2026 esto casi tumbó
+scan-snapshot, rally-scan y market-breadth al mover `api/universe.js` a `_lib/`: el
+build no dio ningún aviso, y solo grepear "quién importa este fichero" destapó el riesgo
+a tiempo. El validador que lo habría cazado solo:
+```
+node scripts/validate-api-endpoints-import.mjs
+```
+Carga en runtime CADA función de `api/` raíz + `api/cron/` (import real, sin ejecutar
+ningún handler ni tocar Redis/proveedores) y falla si algún import no resuelve o falta
+`export default`. También avisa si se supera el límite de 12 funciones del plan Hobby.
+Ejecutar SIEMPRE que un commit toque algo dentro de `api/` — se descubre automáticamente
+en `npm run validate:all` por el prefijo `validate-`, o suelto con
+`npm run validate-api-endpoints-import`.

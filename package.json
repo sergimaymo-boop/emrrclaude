@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "validate-api-endpoints-import": "node scripts/validate-api-endpoints-import.mjs",
     "build": "node scripts/build-production.mjs",
     "validate:all": "node scripts/run-all-validators.mjs",
     "check:phase6": "node scripts/validate-phase6.mjs",
