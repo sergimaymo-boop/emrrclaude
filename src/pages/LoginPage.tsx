@@ -10,7 +10,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <h1 className="login-title">EMRR</h1>
         <div className="login-divider" />
         <div className="login-meta">
-          <span className="login-meta-item"><span className="login-dot" />EODHD</span>
+          <span className="login-meta-item"><span className="login-dot" />YAHOO</span>
           <span className="login-meta-sep" />
           <span className="login-meta-item"><span className="login-dot" />FINNHUB</span>
           <span className="login-meta-sep" />
