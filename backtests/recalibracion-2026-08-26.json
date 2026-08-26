@@ -1,0 +1,99 @@
+{
+  "generatedAt": "2026-08-26T21:12:47.635Z",
+  "universe": 600,
+  "sessions": 2512,
+  "range": "2016-08-29 → 2026-08-26",
+  "championKey": "b200_r21_h1.1",
+  "results": {
+    "b200_r21_h1.1": {
+      "cagr": 42.3,
+      "maxDD": 38.3,
+      "mar": 1.1,
+      "sharpe": 1.27,
+      "tradesYr": 44,
+      "sub": [
+        25.5,
+        13.8,
+        101.8
+      ]
+    },
+    "b200_r21_h1.0": {
+      "cagr": 31.9,
+      "maxDD": 45,
+      "mar": 0.71,
+      "sharpe": 1.03,
+      "tradesYr": 51,
+      "sub": [
+        19.7,
+        2,
+        87.9
+      ]
+    },
+    "b200_r21_h1.25": {
+      "cagr": 49.6,
+      "maxDD": 35.8,
+      "mar": 1.39,
+      "sharpe": 1.4,
+      "tradesYr": 40,
+      "sub": [
+        28.2,
+        21.7,
+        114.6
+      ]
+    },
+    "b100_r21_h1.1": {
+      "cagr": 45.5,
+      "maxDD": 32.5,
+      "mar": 1.4,
+      "sharpe": 1.36,
+      "tradesYr": 44,
+      "sub": [
+        27.9,
+        20.2,
+        100.4
+      ]
+    },
+    "graded_r21_h1.1": {
+      "cagr": 43.8,
+      "maxDD": 34,
+      "mar": 1.29,
+      "sharpe": 1.32,
+      "tradesYr": 44,
+      "sub": [
+        26.8,
+        16.6,
+        101.2
+      ]
+    },
+    "b200_r10_h1.1": {
+      "cagr": 47.5,
+      "maxDD": 31.7,
+      "mar": 1.5,
+      "sharpe": 1.39,
+      "tradesYr": 57,
+      "sub": [
+        27.3,
+        29.4,
+        94.9
+      ]
+    },
+    "b200_r42_h1.1": {
+      "cagr": 47.1,
+      "maxDD": 36.4,
+      "mar": 1.29,
+      "sharpe": 1.34,
+      "tradesYr": 41,
+      "sub": [
+        35.5,
+        25.2,
+        87.6
+      ]
+    }
+  },
+  "verdict": {
+    "decision": "RETADOR EN OBSERVACIÓN (1ª victoria — se requiere confirmación)",
+    "champion": "b200_r21_h1.1",
+    "challenger": "b200_r10_h1.1",
+    "reason": "MAR 1.5 vs 1.1 (+0.40 > 0.10) y gana 2/3 subperíodos · Regla de persistencia: debe repetir victoria en la PRÓXIMA recalibración para destronar (varianza entre pulls de datos > ventaja medida)."
+  }
+}
