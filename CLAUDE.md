@@ -463,6 +463,16 @@ CONGELADO**: todo experimento se hace aquí.
 - **UI**: nota de una línea en el desplegable de cada ticker (`RallyPanel.tsx`) — verde si
   el ticker sube en la sesión del scan, roja si baja, gris si no hay motivo. El color lo
   marca el PRECIO, no el tono de la noticia (no se mide sentimiento).
+- **AVISO EN LA FILA COLAPSADA (mandato 27-ago-2026)**: punto `●` ÁMBAR junto al chevron
+  cuando ese ticker TIENE motivo; si no lo hay, NINGÚN símbolo (orden expresa de Sergi:
+  antes había que desplegar los 10 uno a uno para saber cuáles tenían catalizador). Ámbar
+  y no verde/rojo porque el aviso es de PRESENCIA, no de dirección — la dirección ya la da
+  el % de sesión al lado. El hueco (width 9) se reserva SIEMPRE aunque no haya motivo: la
+  regla de columnas fijas (§ mandato 11-ago) exige que ninguna fila se desplace respecto a
+  la de arriba (verificado en producción: chevron a la MISMA x en las 10 filas, móvil y
+  escritorio). Tooltip con el titular (se lee sin desplegar en escritorio) + leyenda de una
+  línea en el bloque de metodología, que solo aparece si algún ticker del top-10 tiene
+  motivo. Solo Rally Leaders: `RallyTestPanel` tiene su propia copia de la fila (§10e).
 
 ---
 
