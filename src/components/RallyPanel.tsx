@@ -169,6 +169,12 @@ export function RallyPanel() {
             )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
             <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2017-2026.</span>
+            {/* Leyenda del aviso de motivo: en móvil no hay tooltip, así que el símbolo
+                tiene que explicarse en algún sitio. Solo se muestra si ALGÚN ticker del
+                top-10 tiene motivo — sin motivos no hay puntos que explicar. */}
+            {Object.values(news).some(Boolean) && (
+              <span><b style={{ color: AMBER }}>●</b> junto al ▼ = ese ticker tiene <b style={{ color: "#cbd5e1" }}>motivo del movimiento</b>: despliégalo para leerlo.</span>
+            )}
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
@@ -332,6 +338,21 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
   // Tooltip del PESO de inversión — izado (patrón dchgTitle) para que ambas ramas
   // (móvil y escritorio) muestren SIEMPRE el mismo texto.
   const weightTitle = "PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP.";
+  // AVISO DE MOTIVO en la fila COLAPSADA (mandato 27-ago-2026): saber si hay algo que
+  // leer ANTES de desplegar. Punto ámbar junto al chevron — el ámbar es el acento de
+  // "atención" del dashboard (y el color del terminal Bloomberg); un punto no compite
+  // con las cifras de alrededor, que ya llevan verde/rojo direccional.
+  // Sin motivo → NINGÚN símbolo (orden expresa), pero el HUECO se reserva igual: la
+  // regla de columnas fijas del panel (11-ago) exige que nada se desplace entre filas.
+  // El tooltip adelanta el titular: en escritorio se lee sin desplegar siquiera.
+  const motivoEl = (
+    <span title={news ? `Motivo del movimiento: ${news.headline}` : undefined}
+      aria-label={news ? "Tiene motivo del movimiento" : undefined}
+      style={{ width: 9, flexShrink: 0, textAlign: "center", fontSize: 7.5,
+        color: AMBER, lineHeight: 1, whiteSpace: "nowrap" }}>
+      {news ? "●" : ""}
+    </span>
+  );
 
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -360,6 +381,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
                 {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
               </span>
               <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right", minWidth: 24 }}>{asset.rallyScore}</span>
+              {motivoEl}
               <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
             </span>
             {/* Línea 2 — badges de recorrido/entrada/stop/aviso, con hueco de sobra en
@@ -407,6 +429,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
               {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
             </span>
             <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 30, flexShrink: 0, textAlign: "right" }}>{asset.rallyScore}</span>
+            {motivoEl}
             <span style={{ fontSize: 9, color: "#64748b", width: 14, flexShrink: 0, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
           </>
         )}
