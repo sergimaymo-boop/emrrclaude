@@ -461,6 +461,21 @@ CONGELADO**: todo experimento se hace aquí.
   salta, solo para verificación). Consulta SIEMPRE por símbolo Y por nombre de empresa y
   fusiona — Yahoo devuelve un conjunto rotatorio, la misma noticia entra y sale del top
   entre refrescos.
+- **⚠️ VENTANA TEMPORAL −48h/+96h (api/_lib/tickerNews.js línea ~256): SOLO explica el
+  movimiento DEL DÍA DEL SCAN, NUNCA un catalizador antiguo.** Un titular fuera de esa
+  ventana se descarta y el módulo devuelve el mejor catalizador RECIENTE disponible —
+  que puede ser una noticia real pero DISTINTA y NO relacionada con un salto de precio
+  de hace más de ~4 días. Error real cometido el 28-ago-2026: consultado el motivo de
+  MRNA días después de su +177% del 19-ago (evento Fase 3 melanoma Moderna/Merck,
+  INTerpath-001 — verificado por WebSearch contra CNBC/Axios/Forbes/Motley Fool), el
+  endpoint sirvió un titular real pero SIN RELACIÓN sobre una vacuna COVID (correcto:
+  estaba dentro de SU ventana, respondía a la pregunta que SÍ contesta — el −4,6% de
+  ESE día, no el +177% de 8 sesiones antes) y se presentó como si explicara el salto
+  histórico. **Regla operativa: para el motivo de un movimiento de más de un par de
+  días, o cuando hay dinero real en juego, verificar con WebSearch contra fuentes
+  externas (CNBC, Reuters, Yahoo Finance, Motley Fool…) ANTES de afirmar un
+  catalizador — nunca fiarse solo de este endpoint para eventos ya rotados fuera de
+  su ventana.**
 - **UI**: nota de una línea en el desplegable de cada ticker (`RallyPanel.tsx`) — verde si
   el ticker sube en la sesión del scan, roja si baja, gris si no hay motivo. El color lo
   marca el PRECIO, no el tono de la noticia (no se mide sentimiento).
