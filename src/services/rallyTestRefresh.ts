@@ -42,7 +42,7 @@ import type { RallyScanResponse } from "./rallyRefresh";
  */
 export const RALLY_TEST_BASELINE = {
   formula: "LAB-M189 v1.0 — momentum 189 sesiones saltando las últimas 10 · top-10 mostrado, INVERTIDOS los 5 primeros (pesos por score 10-40%) · revisión ~cada 2 meses (42 sesiones) · sin stops (salida por rebalanceo)",
-  origen: "motor PROPIO del laboratorio (2-sep-2026) — ya NO es copia de producción",
+  origen: "PROPIO del laboratorio (LAB-M189 v1.0, 2-sep-2026) — ya NO es copia de producción",
   // Backtest del motor (scripts/rally-test-engine-study2.mjs, ensemble 10 fases,
   // walk-forward elegido por 2017-21 y confirmado en 2022-26, 20 pb/lado) con las
   // CORRECCIONES de la auditoría adversarial independiente (2-sep-2026):
