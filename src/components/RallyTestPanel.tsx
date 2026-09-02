@@ -192,11 +192,14 @@ export function RallyTestPanel() {
             <br />
             <b style={{ color: RED }}>El acta del auditor (léela antes de ilusionarte):</b> la ventaja NO es del motor — es de
             la <b style={{ color: "#cbd5e1" }}>concentración top-5</b> (a igual tamaño de libro, K=10, este motor pierde contra
-            Rally Leaders en 64/64 configuraciones). El riesgo real: peor fase{" "}
-            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.ddRealPeorFase}</b> de pico a valle, y en el año 2022
-            perdió <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.dd2022}</b> donde Rally Leaders perdió{" "}
-            {RALLY_TEST_BASELINE.backtest.dd2022C0} — más retorno comprando más caída. Esperanza honesta tras descuentos por
-            universo superviviente y sesgo de diseño: <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.edgeHonesto}</b>.
+            Rally Leaders en 64/64 configuraciones). Esperanza honesta tras descuentos por universo superviviente y sesgo de
+            diseño: <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.edgeHonesto}</b>. El trailing 45% de la v1.1
+            (estudio 3, pedido por Sergi) mitigó el año malo: 2022{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.dd2022}</b> vs {RALLY_TEST_BASELINE.backtest.dd2022C0} de
+            Rally Leaders (en tablas), con DD real pico-valle{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.ddRealPeorFase}</b>. Lo que el stop NO arregla: un
+            crash en V tipo COVID (−53%) — un trailing a cierres no esquiva un desplome de 3 semanas. Stops ceñidos (15-25%)
+            probados y descartados: whipsaw destructivo.
             <br />
             <b style={{ color: SLATE }}>Además:</b> universo superviviente → niveles inflados, solo valen comparaciones
             relativas. Sin stops: una caída fuerte se soporta hasta el siguiente rebalanceo. ~7-8 de 10 tickers suelen

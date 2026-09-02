@@ -1,5 +1,5 @@
 /**
- * RALLY-TEST — MOTOR PROPIO "LAB-M189" v1.0 (mandato de Sergi, 2-sep-2026)
+ * RALLY-TEST — MOTOR PROPIO "LAB-M189" v1.1 (mandato de Sergi, 2-sep-2026)
  * ========================================================================
  * Este archivo YA NO es la copia del motor de producción. Por mandato expreso,
  * Rally-Test lleva un motor de análisis diseñado en el laboratorio con una sola
@@ -19,22 +19,37 @@
  *              +150% ≈ 82, saturación ≈ 100. Elegible solo con m > 0.
  *   · CARTERA: top-10 mostrado; INVERTIDOS los 5 primeros con pesos proporcionales
  *              al score (topes 10-40%, Σ=100); los puestos 6-10 son RESERVA (0%).
- *   · RITMO  : rebalanceo sugerido cada ~42 sesiones (≈2 meses), SIN stops
- *              intradía — la salida es por caerse del top en el siguiente scan.
- * Backtest (2016-2026, 603 tickers supervivientes, 20 pb/lado, ensemble 10 fases):
- * confirmación 2022-26 media 64,1% CAGR · peor fase 53,6%
- * (referencia C0 producción en los mismos datos: 53,3% · 43,7%).
- * A 50 pb/lado: 61,4% · 51,1% (C0: 51,2% · 41,5%).
+ *   · RITMO  : rebalanceo sugerido cada ~63 sesiones (≈3 meses).
+ *   · RED    : trailing stop del 45% POR POSICIÓN, evaluado a CIERRES, fijado
+ *              al pico desde la entrada (v1.1, estudio 3 a petición de Sergi:
+ *              "sin stop loss no tienes red"). PROTOCOLO al saltar: re-escanear
+ *              y reinvertir TODO según los pesos del scan nuevo (RESCAN2 del
+ *              estudio — el reloj del rebalanceo periódico NO se resetea).
+ *              El estudio 3 probó anchuras 15-45% y adaptativas: las ceñidas
+ *              (15-25%) son whipsaw destructivo (−28% en 2022, 22 saltos/año);
+ *              la ancha 45% salta ~0,8 veces/año y es la única que mejora
+ *              train, confirm, DD real y 2022 A LA VEZ. En COVID (crash en V)
+ *              no protege (−53% vs −50%): un trailing a cierres no esquiva
+ *              un desplome de 3 semanas.
+ * Backtest v1.1 (2016-2026, 603 tickers supervivientes, 20 pb/lado, ensemble 10
+ * fases; scripts/rally-test-engine-study3.mjs, elegido por TRAIN):
+ * confirmación 2022-26 media 64,6% CAGR · peor fase 56,1% · DD real pico-valle
+ * 38,8% · año 2022 −11,6% (v1.0 sin stops: 64,1% · 53,6% · 42,9% · −16,5%;
+ * C0 producción: 53,3% · 43,7% · 36,9% · −12,9%). A 50 pb: 62,3% · 54,0%.
  *
- * ⚠ ACTA DE LA AUDITORÍA ADVERSARIAL (2-sep-2026, obligatoria de leer):
+ * ⚠ ACTA DE LA AUDITORÍA ADVERSARIAL del estudio 2 (2-sep-2026, sigue vigente):
  * mecánica LIMPIA (sin lookahead — sobrevive a lag de ejecución de +1 día —,
- * costes de dos patas correctos, bit-reproducible), pero el edge nominal de
- * +10,8 pp NO es del motor: es de la CONCENTRACIÓN K=5 — a igual tamaño de
- * libro (K=10) este motor pierde contra C0 en 64/64 configs. Riesgo real
- * des-ventaneado: peor fase −42,9% pico-valle; año 2022 −34,5% (C0: −18,7%).
- * Esperanza honesta tras descuentos (supervivencia + fuga de diseño del 2º
- * asalto): +2 a +4 pp/año comprando más drawdown. PROHIBIDO proponerlo para
- * producción sin estudio con gates pre-registrados y commiteados (§10c).
+ * costes de dos patas correctos, bit-reproducible), pero el edge nominal NO es
+ * del motor: es de la CONCENTRACIÓN K=5 — a igual tamaño de libro (K=10) este
+ * motor pierde contra C0 en 64/64 configs. Esperanza honesta tras descuentos
+ * (supervivencia + fuga de diseño del 2º asalto): +2 a +4 pp/año. La v1.1
+ * (trailing 45%) MITIGÓ el punto más duro del acta: el año 2022 pasa de −34,5%
+ * (v1.0 K5 R42 sin stops... nota: la cifra del acta era de la config R42; la
+ * base R63 sin stops hizo −16,5%) a −11,6%, en tablas con C0 (−12,9%); el DD
+ * real queda en −38,8% vs −36,9% de C0. El colapso de fases del modo RESCAN
+ * original (10 fases → 1 trayectoria) se detectó y se descartó ese modo: la
+ * config adoptada (RESCAN2) mantiene 10/10 fases distintas. PROHIBIDO
+ * proponerlo para producción sin gates pre-registrados y commiteados (§10c).
  * ⚠ Universo superviviente: niveles inflados, solo comparaciones relativas.
  *
  * Métricas informativas emitidas (NO participan en el score): calidad de
@@ -44,7 +59,7 @@
  * Rally Leaders NO usa este archivo. Producción intacta (§10e).
  */
 
-export const RALLY_ENGINE_VERSION = "LABM189-1.0";
+export const RALLY_ENGINE_VERSION = "LABM189-1.1";
 
 const MOM_W = 189;          // ventana de momentum (sesiones)
 const MOM_SKIP = 10;        // salto: se ignoran las últimas 10 sesiones en la señal
@@ -134,7 +149,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     ok: true,
     rallyScore: score,
     label, color,
-    trailingStop: null,                 // este motor NO usa stops — salida por rebalanceo
+    trailingStop: 45,                   // v1.1: trailing ANCHO a cierres; al saltar → re-scan y reinvertir
     warningFlags,
     entryTiming: null,
     runway: null,
