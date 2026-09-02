@@ -36,7 +36,7 @@ import { filterActiveOperableAssets, getActiveMarketsAt, signStateToken, verifyS
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
 const RALLY_VERSION = 'RALLY_V1';
-const RALLY_TEST_VERSION = 'RALLY_TEST_V1';   // versión propia: un token de test NUNCA vale en producción, ni al revés
+const RALLY_TEST_VERSION = 'RALLY_TEST_V2_LABM189';   // v2 = motor propio LAB-M189 (2-sep-2026); un token de test NUNCA vale en producción, ni al revés — y un token del motor viejo muere aquí
 const BATCH_SIZE    = 80;
 const MAX_TOP_CANDIDATES = 10;
 

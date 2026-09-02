@@ -1,7 +1,8 @@
 /**
- * RALLY-TEST — batch processor de laboratorio (copia de rallyBatchProcessor.js, 18-ago-2026).
- * Idéntico al de producción salvo que puntúa con rallyScoreEngineTest.js.
- * Rally Leaders NO usa este archivo.
+ * RALLY-TEST — batch processor del motor propio LAB-M189 (2-sep-2026).
+ * Esqueleto del de producción (lotes paralelos, merge top-10, SPY cacheado) pero
+ * puntúa con el motor del laboratorio (rallyScoreEngineTest.js = LAB-M189) y su
+ * umbral/desempate propios. Rally Leaders NO usa este archivo.
  *
  * Rally Leaders Engine — batch processor (shared between start and continue)
  * IMPORTANT: assets are processed IN PARALLEL (Promise.all), NOT sequentially.
@@ -24,9 +25,9 @@ export function mergeRallyCandidates(existing, newOnes) {
     if (!prev || c.rallyScore > prev.rallyScore) map.set(c.providerSymbol, c);
   }
   return [...map.values()]
-    // Desempate por el momento 9m CRUDO: el score satura en 100 con momentos >150%
-    // (tanh), y sin esto el orden entre los mega-líderes quedaba arbitrario.
-    .sort((a, b) => b.rallyScore - a.rallyScore || (b.metrics?.mom9m ?? 0) - (a.metrics?.mom9m ?? 0))
+    // Desempate por la señal CRUDA del motor LAB-M189 (momRaw, 189s10): el score
+    // satura en 100 con momentos grandes y sin esto el orden quedaba arbitrario.
+    .sort((a, b) => b.rallyScore - a.rallyScore || (b.metrics?.momRaw ?? 0) - (a.metrics?.momRaw ?? 0))
     .slice(0, MAX_TOP_CANDIDATES);
 }
 
@@ -53,7 +54,7 @@ export async function fetchSpyBars() {
 }
 
 // PARALLEL batch — all assets fetched simultaneously, not one-by-one
-export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, existingCandidates, spyBars, minScore = 60 }) {
+export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, existingCandidates, spyBars, minScore = 12 }) {
   const batch = eligibleAssets.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
 
   // Process ALL assets in parallel — critical to stay within 10s Vercel limit
@@ -61,7 +62,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
     batch.map(async (asset) => {
       try {
         const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
-        if (!histResult.ok || histResult.bars.length < 130) return null;
+        if (!histResult.ok || histResult.bars.length < 200) return null;   // LAB-M189: 189+10+1
 
         const rallyResult = calculateRallyScore({
           bars: histResult.bars,

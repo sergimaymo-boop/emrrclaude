@@ -20,7 +20,17 @@ export type {
   RallyState,
   RallyWarningFlag,
 } from "./rallyRefresh";
-export { estimateNextReview, initialRallyState } from "./rallyRefresh";
+export { initialRallyState } from "./rallyRefresh";
+
+// Cadencia de revisión del motor LAB-M189: ~42 sesiones ≈ 61 días naturales
+// (producción usa 84 sesiones/121 días — por eso NO se reexporta la suya).
+export function estimateNextReview(scanCompletedAtUtc: string | null | undefined): string | null {
+  if (!scanCompletedAtUtc) return null;
+  const d = new Date(scanCompletedAtUtc);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + 61);
+  return d.toISOString().slice(0, 10);
+}
 
 import type { RallyScanResponse } from "./rallyRefresh";
 
@@ -31,8 +41,22 @@ import type { RallyScanResponse } from "./rallyRefresh";
  * que recalcularlas con su propio backtest antes de enseñarlas como resultado.
  */
 export const RALLY_TEST_BASELINE = {
-  formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m crudo (4-20%)",
-  origen: "copia byte-idéntica del motor de producción el 18-ago-2026",
+  formula: "LAB-M189 v1.0 — momentum 189 sesiones saltando las últimas 10 · top-10 mostrado, INVERTIDOS los 5 primeros (pesos por score 10-40%) · revisión ~cada 2 meses (42 sesiones) · sin stops (salida por rebalanceo)",
+  origen: "motor PROPIO del laboratorio (2-sep-2026) — ya NO es copia de producción",
+  // Backtest del motor (scripts/rally-test-engine-study2.mjs, ensemble 10 fases,
+  // walk-forward elegido por 2017-21 y confirmado en 2022-26, 20 pb/lado) con las
+  // CORRECCIONES de la auditoría adversarial independiente (2-sep-2026):
+  backtest: {
+    confirmMedia: "64,1%", confirmPeorFase: "53,6%",
+    refC0: "53,3% / 43,7%",
+    a50pb: "61,4% media · 51,1% peor fase",
+    // El riesgo REAL (pico-valle sin ventanear, hallazgo del auditor):
+    ddRealPeorFase: "−42,9%", dd2022: "−34,5%", dd2022C0: "−18,7%",
+    // La verdad sobre el edge: a igual tamaño de libro (K=10) este motor PIERDE
+    // contra C0 en 64/64 configs — la ventaja es de la CONCENTRACIÓN top-5, no
+    // del motor; esperanza honesta tras descuentos: +2 a +4 pp/año.
+    edgeHonesto: "+2 a +4 pp/año esperados (no los +10,8 nominales)",
+  },
 } as const;
 
 const TIMEOUT_MS = 25000;

@@ -8,16 +8,19 @@
  *   · endpoints propios  /api/rally-test/{start,continue,last}
  *   · motor propio       api/_lib/rallyScoreEngineTest.js  (copia del de producción)
  *   · snapshot propio    clave Redis last_rally_test_snapshot
- *   · NO se registra en el bus del botón SCAN EMRR (se escanea con su propio botón)
+ *   · SÍ se registra en el bus del botón SCAN EMRR (mandato 2-sep-2026: el botón
+ *     grande también escanea este módulo; el botón pequeño propio sigue existiendo)
  *   · NO avisa a la banda de alineación de cartera, así que ni esa tarjeta ni el
  *     export CarteraIBK del Mac ven jamás un scan de test.
  *
- * Al crearse produce EXACTAMENTE el mismo top-10 que Rally Leaders: es una copia fiel.
- * A partir de aquí, cualquier diferencia viene solo de los experimentos que se hagan
- * sobre el motor de test.
+ * DESDE EL 2-sep-2026 el motor ya NO es copia: por mandato de Sergi lleva el motor
+ * propio LAB-M189 v1.0 (momentum 189s10 · top-5 invertido por score · reserva 6-10 ·
+ * rebalanceo ~42 sesiones · sin stops). Ver api/_lib/rallyScoreEngineTest.js y
+ * scripts/rally-test-engine-study2.mjs. El top-10 ya NO coincide con producción.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { registerModuleScan } from "../services/scanBus";
 import {
   RALLY_TEST_BASELINE,
   type RallyAsset,
@@ -109,6 +112,14 @@ export function RallyTestPanel() {
   // escaneando SOLO los módulos de producción. Rally-Test se escanea a mano, con su
   // propio botón, para que un experimento a medias nunca ensucie el scan global.
 
+  // Registro en el bus global (mandato 2-sep-2026): el botón grande SCAN EMRR
+  // también escanea el laboratorio. El wrapper relanza el fallo para que el toast
+  // global no anuncie un éxito falso (el bus aísla con allSettled).
+  useEffect(() => registerModuleScan("Rally-Test", async () => {
+    const ok = await runScan();
+    if (ok === false) throw new Error("El scan de Rally-Test terminó sin datos");
+  }), [runScan]);
+
   const top10 = state.top10 ?? [];
   const hasData = top10.length > 0;
   const nextReview = estimateNextReview(lastScanCompletedAt);
@@ -156,7 +167,7 @@ export function RallyTestPanel() {
               <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
             )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
-            <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido por posición (pondera por <b style={{ color: "#cbd5e1" }}>momentum 9m</b>, entre 4% y 20%), heredado de la configuración de producción.</span>
+            <span>La columna <b style={{ color: AMBER }}>%</b>: SOLO los <b style={{ color: "#cbd5e1" }}>5 primeros invierten</b> (peso por score, 10-40%, Σ=100); los puestos 6-10 son <b style={{ color: "#cbd5e1" }}>reserva a 0%</b> — sustitutos naturales del próximo rebalanceo.</span>
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
@@ -168,15 +179,31 @@ export function RallyTestPanel() {
           </div>
 
           <div style={{ padding: "8px 16px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", fontSize: 9.5, color: "#64748b", lineHeight: 1.6 }}>
-            <b style={{ color: AMBER }}>⚠ Módulo de laboratorio — no es una recomendación para operar.</b> Rally-Test es una
-            copia del módulo Rally Leaders ({RALLY_TEST_BASELINE.origen}) con endpoints, motor y almacenamiento propios: nada
-            de lo que se haga aquí afecta a Rally Leaders, a la banda de alineación de cartera ni al informe CarteraIBK.
+            <b style={{ color: AMBER }}>⚠ Módulo de laboratorio — no es una recomendación para operar.</b> Rally-Test lleva un
+            motor {RALLY_TEST_BASELINE.origen}, con endpoints, motor y almacenamiento propios: nada de lo que se haga aquí
+            afecta a Rally Leaders, a la banda de alineación de cartera ni al informe CarteraIBK.
             <br />
-            Mientras el motor de test siga siendo idéntico al de producción, este top-10 coincide con el de Rally Leaders y le
-            aplican sus cifras validadas. <b style={{ color: SLATE }}>En cuanto se cambie aquí cualquier parámetro</b> (señal,
-            pesos, stops, filtros de régimen o de mercado), esas cifras <b>dejan de describir lo que muestra este panel</b>: el
-            cambio no vale nada hasta que pase su propio backtest y los gates pre-registrados. Rentabilidad pasada; no garantiza
-            la futura.
+            <b style={{ color: SLATE }}>Backtest del motor LAB-M189</b> (2016-2026, 603 tickers, walk-forward: elegido con
+            2017-21, confirmado en 2022-26 sin re-elegir; ensemble de 10 fases; 20 pb/lado; verificado por auditoría
+            adversarial independiente — sin lookahead, costes correctos, bit-reproducible): confirmación media{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.confirmMedia}</b> CAGR · peor fase{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.confirmPeorFase}</b> — Rally Leaders (C0) en los
+            mismos datos: {RALLY_TEST_BASELINE.backtest.refC0}. A costes dobles (50 pb): {RALLY_TEST_BASELINE.backtest.a50pb}.
+            <br />
+            <b style={{ color: RED }}>El acta del auditor (léela antes de ilusionarte):</b> la ventaja NO es del motor — es de
+            la <b style={{ color: "#cbd5e1" }}>concentración top-5</b> (a igual tamaño de libro, K=10, este motor pierde contra
+            Rally Leaders en 64/64 configuraciones). El riesgo real: peor fase{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.ddRealPeorFase}</b> de pico a valle, y en el año 2022
+            perdió <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.dd2022}</b> donde Rally Leaders perdió{" "}
+            {RALLY_TEST_BASELINE.backtest.dd2022C0} — más retorno comprando más caída. Esperanza honesta tras descuentos por
+            universo superviviente y sesgo de diseño: <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.edgeHonesto}</b>.
+            <br />
+            <b style={{ color: SLATE }}>Además:</b> universo superviviente → niveles inflados, solo valen comparaciones
+            relativas. Sin stops: una caída fuerte se soporta hasta el siguiente rebalanceo. ~7-8 de 10 tickers suelen
+            coincidir con Rally Leaders (ambos leen momentum largo); difieren el salto de 10 sesiones (descuenta eventos
+            binarios tipo MRNA), la concentración y el ritmo. <b style={{ color: SLATE }}>Este motor NO puede proponerse para
+            producción</b> sin un estudio con gates pre-registrados y commiteados (§10c). Rentabilidad pasada; no garantiza la
+            futura.
           </div>
         </>
       )}
