@@ -304,7 +304,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
     );
   // Tooltip del PESO de inversión — izado (patrón dchgTitle) para que ambas ramas
   // (móvil y escritorio) muestren SIEMPRE el mismo texto.
-  const weightTitle = "PESO de inversión: % del capital del módulo sugerido para esta posición (4-20% por momentum). No es el trailing stop — el stop tiene su propio badge STOP.";
+  const weightTitle = "PESO de inversión LAB-M189: % del capital del módulo sugerido para esta posición — SOLO los 5 primeros invierten (por score, 10-40%, Σ=100); los puestos 6-10 son reserva a 0%. No es el trailing stop — el stop tiene su propio badge STOP.";
 
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
