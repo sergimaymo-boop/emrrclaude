@@ -215,6 +215,10 @@ export function simular(cfg) {
       ti: s.ti, w: ws[k],
       peak: prev.get(s.ti)?.peak != null ? Math.max(prev.get(s.ti).peak, T[s.ti].adj[i]) : T[s.ti].adj[i],
       trail: stopWidth(s.ti, i, scfg),
+      // entryPx: precio de la PRIMERA compra de esta tenencia (informativo, para el
+      // libro de eventos — concepto de Sergi 4-sep: el trailing persigue beneficios,
+      // así que el P&L del salto se mide contra la ENTRADA, no contra el pico)
+      entryPx: prev.get(s.ti)?.entryPx ?? T[s.ti].adj[i],
     }));
     const all = new Set([...prev.keys(), ...next.map((h) => h.ti)]);
     for (const ti of all) dSum += Math.abs((next.find((h) => h.ti === ti)?.w ?? 0) - (prev.get(ti)?.w ?? 0));
@@ -248,6 +252,7 @@ export function simular(cfg) {
             if (px > h.peak) h.peak = px;
             if (px <= h.peak * (1 - h.trail)) {
               stops++; salto = true;
+              if (cfg.registro) cfg.registro.push({ i, ti: h.ti, entryPx: h.entryPx ?? null, exitPx: px, peak: h.peak });
               eq *= 1 - COST_BPS * (h.w / 100);
               heldSet.delete(h.ti);
               if (cooldown > 0) vetadoHasta.set(h.ti, i + cooldown);
@@ -255,7 +260,7 @@ export function simular(cfg) {
                 const cand = scoreDia(i, signalFn, sigKey).find((c) => !heldSet.has(c.ti) && (vetadoHasta.get(c.ti) ?? -1) < i);
                 if (cand) {
                   eq *= 1 - COST_BPS * (h.w / 100);
-                  next.push({ ti: cand.ti, w: h.w, peak: T[cand.ti].adj[i], trail: stopWidth(cand.ti, i, scfg) });
+                  next.push({ ti: cand.ti, w: h.w, peak: T[cand.ti].adj[i], trail: stopWidth(cand.ti, i, scfg), entryPx: T[cand.ti].adj[i] });
                   heldSet.add(cand.ti);
                 } else if (expoFn) cashW += h.w;   // sin candidato: el peso libre va a caja (solo modo overlay)
               } else if (expoFn) cashW += h.w;     // RESCAN2 con overlay: a caja hasta que formar() reinvierta
