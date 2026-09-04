@@ -8,8 +8,22 @@
  * SPY (2020-02-19) a la recuperación de ese mismo nivel (2020-08-10) — 120
  * sesiones, 4,7% de la muestra. ⚠ IDA Y VUELTA COMPLETA: excluir solo el
  * desplome y conservar el rebote sería sesgo grosero (quitar todo el dolor y
- * quedarse toda la recuperación). Al excluir el round trip completo, ninguna
- * estrategia gana ni pierde por el mero hecho de la exclusión.
+ * quedarse toda la recuperación).
+ *
+ * ⛔ PREMISA FALSA CORREGIDA (auditoría 4-sep-2026) — LEER ANTES DE USAR:
+ * este fichero afirmaba que "al excluir el round trip completo, ninguna
+ * estrategia gana ni pierde por el mero hecho de la exclusión". Es cierto para
+ * el SPY (vuelve a su nivel) pero **FALSO para una cartera de momentum**: v1.1
+ * hizo **+42,5% DENTRO de la ventana** (estaba invertida en el rebote).
+ * Excluirla NO es neutral: penaliza a quien estuvo invertido y PREMIA a quien
+ * estuvo en caja. Con el cortacircuitos de cartera el regalo medido fue de
+ * **48,6 pp** de diferencia relativa, convirtiendo un coste real de −8,3 pp/año
+ * en un falso "coste cero" de −1,05 pp.
+ * ⇒ REGLA: `segMetricsEx` solo vale para comparar estrategias con EXPOSICIÓN
+ * EQUIVALENTE durante la ventana. Para cualquier cosa que cambie la exposición
+ * (cortacircuitos, overlays, timing, caja), beneficio y coste DEBEN medirse en
+ * la MISMA muestra, y esa muestra debe ser la COMPLETA — porque el beneficio de
+ * protegerse vive precisamente dentro del crash que se estaría excluyendo.
  *
  * MÉTODO: se EMPALMA la serie de retornos DIARIOS DERIVADOS DE LA CURVA
  * (netRet[i] = curve[i]/curve[i-1] − 1 — la convención correcta de la casa:
@@ -50,6 +64,14 @@ export function segMetricsEx(curve, a, b) {
 }
 
 // ─── barrido del stop, doble lectura ─────────────────────────────────────────
+// ⚠ BUG CORREGIDO (auditoría 4-sep-2026): este bloque se ejecutaba COMO EFECTO DE
+// IMPORTACIÓN — cualquier script que importara `segMetricsEx` corría el estudio
+// entero y SOBRESCRIBÍA backtests/lab-excovid-stop.json (además, siempre al mismo
+// nombre, así que una corrida a 20 pb pisaba el artefacto de 50 pb). Ahora solo
+// corre cuando el fichero es el punto de entrada.
+const esEntrada = import.meta.url === new URL(`file://${process.argv[1]}`).href;
+if (!esEntrada) { /* importado solo por sus utilidades: no ejecutar el estudio */ }
+else await (async () => {
 const BASE = { R: 63, K: 5, wcfg: { modo: "SCORE" }, modoStop: "RESCAN2", cooldown: 0 };
 const CONFIGS = [
   { name: "SIN stop", scfg: { tipo: "NONE" } },
@@ -125,3 +147,4 @@ fs.writeFileSync("backtests/lab-excovid-stop.json", JSON.stringify({
   results: RES,
 }, null, 1));
 console.log("\nGuardado: backtests/lab-excovid-stop.json");
+})();

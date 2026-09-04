@@ -164,12 +164,19 @@ function stopWidth(ti, i, scfg) {
  *   cooldown: 0,                       — sesiones sin poder recomprar un ticker parado
  *   expoFn: null | (i)=>0..1,          — overlay de exposición (fracción invertida objetivo,
  *                                        aplicada en cada REFORMA; el resto queda en caja)
+ *   breaker: null | {dd, reentry}      — CORTACIRCUITOS DE CARTERA (red para dormir):
+ *       si el equity cae `dd` desde su máximo → liquidar TODO a caja (con coste).
+ *       Reentrada: {tipo:"DELAY", n} tras n sesiones · {tipo:"BREADTH", umbral, fn}
+ *       cuando la amplitud del universo recupera. Mientras está FUERA no se
+ *       forma cartera y el equity queda plano. El pico se re-ancla al reentrar
+ *       (si no, un solo crash dejaría el cortacircuitos disparado para siempre).
+ *       breaker null ⇒ codepath EXACTO del original (anclas intactas).
  * }
  */
 export function simular(cfg) {
   const { FROM, R, K = 5, signalFn = sigM189s10, sigKey = "M189s10",
     wcfg = { modo: "SCORE" }, scfg = { tipo: "NONE" }, modoStop = "RESCAN2",
-    cooldown = 0, expoFn = null } = cfg;
+    cooldown = 0, expoFn = null, breaker = null } = cfg;
   let eq = 1;
   const curve = new Array(D).fill(null); curve[FROM] = 1;
   let hold = [];                       // {ti, w, peak, trail}
@@ -180,6 +187,8 @@ export function simular(cfg) {
   let cashW = 0;
   let stops = 0, rebals = 0, expoMin = 1;
   let nextReb = FROM;
+  // cortacircuitos de cartera
+  let eqPeak = 1, fuera = false, salidaEn = -1, disparos = 0, diasFuera = 0;
   const vetadoHasta = new Map();       // ti → sesión hasta la que no se puede recomprar
 
   const formar = (i, resetClock = true) => {
@@ -259,10 +268,28 @@ export function simular(cfg) {
         if (modoStop === "RESCAN2" && salto) formar(i, false);
       }
     }
-    if (i >= nextReb) formar(i);
+    // ── CORTACIRCUITOS DE CARTERA (tras el retorno del día) ──
+    if (breaker && i > FROM) {
+      if (eq > eqPeak) eqPeak = eq;
+      if (!fuera && eq <= eqPeak * (1 - breaker.dd)) {
+        // liquidar todo a caja: coste de venta sobre lo invertido
+        const inv = hold.reduce((s, h) => s + h.w, 0);
+        if (inv > 0) eq *= 1 - COST_BPS * (inv / 100);
+        hold = []; cashW = 100;
+        fuera = true; salidaEn = i; disparos++;
+      } else if (fuera) {
+        diasFuera++;
+        const re = breaker.reentry;
+        const puede = re.tipo === "DELAY" ? (i - salidaEn) >= re.n
+          : re.tipo === "BREADTH" ? ((re.fn(i) ?? 0) >= re.umbral)
+          : false;
+        if (puede) { fuera = false; eqPeak = eq; nextReb = i; }   // re-anclar el pico al reentrar
+      }
+    }
+    if (!fuera && i >= nextReb) formar(i);
   }
   const years = (TO - FROM) / 252;
-  return { curve, stopsY: stops / years, rebals, expoMin };
+  return { curve, stopsY: stops / years, rebals, expoMin, disparos, pctFuera: diasFuera / (TO - FROM) };
 }
 
 // ─── métricas y evaluación de ensemble con anti-colapso ──────────────────────

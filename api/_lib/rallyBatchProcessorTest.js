@@ -56,6 +56,7 @@ export async function fetchSpyBars() {
 // PARALLEL batch — all assets fetched simultaneously, not one-by-one
 export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, existingCandidates, spyBars, minScore = 12 }) {
   const batch = eligibleAssets.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
+  const amplitud = { analizados: 0, positivos: 0 };   // observable de salud del mercado
 
   // Process ALL assets in parallel — critical to stay within 10s Vercel limit
   const results = await Promise.all(
@@ -70,6 +71,15 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           spreadPercent: null,
           region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
         });
+
+        // AMPLITUD (4-sep-2026): se cuenta cada ticker con histórico suficiente y si
+        // su tendencia es positiva. Es un OBSERVABLE de salud del mercado — NO entra
+        // en score, pesos ni selección. El motor rechaza mom<=0 con NO_POSITIVE_TREND,
+        // así que ese motivo distingue "sin tendencia" de "sin datos".
+        if (rallyResult.ok) amplitud.positivos++;
+        else if (rallyResult.reason === "NO_POSITIVE_TREND") { /* analizado, sin tendencia */ }
+        else return null;                        // sin datos suficientes: no cuenta
+        amplitud.analizados++;
 
         if (!rallyResult.ok || rallyResult.rallyScore < minScore) return null;
 
@@ -106,5 +116,6 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
   return {
     candidates: mergeRallyCandidates(existingCandidates, newCandidates),
     providerCalls: batch.length,
+    amplitud,
   };
 }

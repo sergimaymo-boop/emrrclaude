@@ -40,6 +40,12 @@ import type { RallyScanResponse } from "./rallyRefresh";
  * cambie cualquier parámetro (señal, pesos, stops, filtros), DEJAN DE APLICAR y hay
  * que recalcularlas con su propio backtest antes de enseñarlas como resultado.
  */
+/** Amplitud del universo medida durante el scan — OBSERVABLE de salud del
+ *  mercado (4-sep-2026). NO entra en score, pesos ni selección: es información
+ *  para el lector. `analizados` = tickers con histórico suficiente; `positivos`
+ *  = los que tienen tendencia positiva. */
+export interface AmplitudUniverso { analizados: number; positivos: number }
+
 export const RALLY_TEST_BASELINE = {
   formula: "LAB-M189 v1.1 — momentum 189 sesiones saltando las últimas 10 · top-10 mostrado, INVERTIDOS los 5 primeros (pesos por score 10-40%) · revisión ~cada 3 meses (63 sesiones) · trailing stop 45% a cierres: si salta, RE-ESCANEA y reinvierte todo según los pesos nuevos",
   origen: "PROPIO del laboratorio (LAB-M189 v1.1, 2-sep-2026) — ya NO es copia de producción",

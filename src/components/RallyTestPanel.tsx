@@ -14,9 +14,16 @@
  *     export CarteraIBK del Mac ven jamás un scan de test.
  *
  * DESDE EL 2-sep-2026 el motor ya NO es copia: por mandato de Sergi lleva el motor
- * propio LAB-M189 v1.0 (momentum 189s10 · top-5 invertido por score · reserva 6-10 ·
- * rebalanceo ~42 sesiones · sin stops). Ver api/_lib/rallyScoreEngineTest.js y
- * scripts/rally-test-engine-study2.mjs. El top-10 ya NO coincide con producción.
+ * propio LAB-M189 (momentum 189s10 · top-5 invertido por score · reserva 6-10),
+ * v1.1 desde el 3-sep con trailing 45% y revisión ~63 sesiones. Ver
+ * api/_lib/rallyScoreEngineTest.js y scripts/rally-test-engine-study{2,3}.mjs.
+ * El top-10 ya NO coincide con producción.
+ *
+ * AMPLITUD DEL UNIVERSO (4-sep-2026): el panel muestra qué % del universo tiene
+ * tendencia positiva. Es un OBSERVABLE de contexto, no una regla — el
+ * cortacircuitos de cartera que la usaba para salir a caja se estudió y se
+ * REFUTÓ (§10e: coste real −8,3 pp/año con contabilidad coherente, n efectivo 1
+ * por colapso de fases). Se pinta para informar, nunca para operar.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
@@ -49,6 +56,10 @@ export function RallyTestPanel() {
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
+  // Amplitud del universo: observable de salud del mercado (4-sep-2026). Solo se
+  // MUESTRA — ninguna regla automática la usa (ver §10e: el cortacircuitos de
+  // cartera se estudió y se REFUTÓ; esto es el observable que sí quedó en pie).
+  const [amplitud, setAmplitud] = useState<{ analizados: number; positivos: number } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const mounted = useRef(true);
 
@@ -60,6 +71,7 @@ export function RallyTestPanel() {
       if (last?.top10?.length) {
         setState((s) => ({ ...s, status: "RALLY_FINAL", top10: last.top10 ?? [], isRallyFinal: true } as RallyState));
         setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
+        setAmplitud((last as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
       }
     })();
     return () => { mounted.current = false; };
@@ -92,6 +104,7 @@ export function RallyTestPanel() {
         if (res.top10?.length) {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: res.top10 ?? [], coveragePercent: 100 } as RallyState));
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
+          setAmplitud((res as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
           ok = true;
           // A propósito NO se avisa a la banda de alineación de cartera (evento de
           // producción): un scan de laboratorio no debe refrescar nada de producción.
@@ -107,10 +120,6 @@ export function RallyTestPanel() {
     }
     return ok;
   }, []);
-
-  // A propósito NO se registra en el bus de SCAN EMRR: el botón grande sigue
-  // escaneando SOLO los módulos de producción. Rally-Test se escanea a mano, con su
-  // propio botón, para que un experimento a medias nunca ensucie el scan global.
 
   // Registro en el bus global (mandato 2-sep-2026): el botón grande SCAN EMRR
   // también escanea el laboratorio. El wrapper relanza el fallo para que el toast
@@ -167,6 +176,23 @@ export function RallyTestPanel() {
               <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
             )}
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
+            {amplitud && amplitud.analizados > 0 && (() => {
+              // AMPLITUD DEL UNIVERSO — observable de salud del mercado (4-sep-2026).
+              // Es INFORMACIÓN, no una regla: el cortacircuitos automático que la usaba
+              // se estudió y se REFUTÓ (coste real −8,3 pp/año, n efectivo 1). Se pinta
+              // para que el lector juzgue el contexto, nunca para operar por él.
+              const p = amplitud.positivos / amplitud.analizados;
+              const col = p >= 0.55 ? GREEN : p >= 0.35 ? AMBER : RED;
+              const etq = p >= 0.55 ? "mercado ancho" : p >= 0.35 ? "mercado mixto" : "mercado estrecho";
+              return (
+                <span title={`${amplitud.positivos} de ${amplitud.analizados} valores del universo tienen tendencia positiva. Observable de contexto: NO dispara ninguna regla automática.`}>
+                  Amplitud del universo:{" "}
+                  <b style={{ color: col }}>{(p * 100).toFixed(0)}%</b>{" "}
+                  <span style={{ color: col }}>({etq})</span>{" "}
+                  <span style={{ color: "#64748b" }}>— {amplitud.positivos}/{amplitud.analizados} con tendencia · solo informativo</span>
+                </span>
+              );
+            })()}
             <span>La columna <b style={{ color: AMBER }}>%</b>: SOLO los <b style={{ color: "#cbd5e1" }}>5 primeros invierten</b> (peso por score, 10-40%, Σ=100); los puestos 6-10 son <b style={{ color: "#cbd5e1" }}>reserva a 0%</b> — sustitutos naturales del próximo rebalanceo.</span>
           </div>
 
