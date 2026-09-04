@@ -127,7 +127,6 @@ async function handleContinue(req, res) {
 
   const state = decoded.state;
   const { scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted, nextBatchIndex, eligibleTickers, topCandidates, actualProviderCalls } = state;
-  const amplitudPrevia = state.amplitud ?? { analizados: 0, positivos: 0 };
 
   if (nextBatchIndex === null || batchesCompleted >= batchesTotal) {
     return sendJson(res, 400, { ok: false, error: 'SCAN_ALREADY_COMPLETE' }, 'RALLY_SCAN_CONTINUE');
@@ -262,6 +261,8 @@ async function handleTestContinue(req, res) {
     exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR',
   }));
   const spyBars = await fetchSpyBarsTest();
+  // amplitud acumulada de los lotes anteriores (viene en el token de test)
+  const amplitudPrevia = state.amplitud ?? { analizados: 0, positivos: 0 };
   const { candidates, providerCalls: newCalls, amplitud: amplitudLote } = await runRallyTestBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
   const amplitud = {
     analizados: amplitudPrevia.analizados + (amplitudLote?.analizados ?? 0),
