@@ -56,12 +56,13 @@ const SLATE = "#94a3b8";
 const pct = (v: number | null | undefined, d = 1) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(d)}%` : "—");
 
 export function RallyTestPanel() {
-  // Umbral 748 (antes 680): con la columna de rentabilidad de sesión, el layout de una
-  // línea NO cabe por debajo de ~746px de viewport (medición DOM 18-ago-2026: a 740px
-  // cada fila desborda 4px — scrollWidth 674 vs clientWidth 670 — y el nombre colapsa a
-  // 0px; a 748px desbordamiento 0). El layout de dos líneas absorbe toda la banda
-  // 680-747 sin recorte; desde 748px la fila de una línea cabe completa.
-  const isNarrow = useIsNarrow(748);
+  // Umbral 780 (antes 748, y antes 680): el punto de motivo (9px + gap 10) añadido el
+  // 7-sep-2026 subió el mínimo de la fila de una línea de ~746 a ~765px de viewport
+  // (581px de columnas fijas + 11 gaps de 10 + 74px de chrome; auditoría del mismo día:
+  // a 748px la fila desbordaba 15px con el nombre colapsado a 0 y el chevron al borde
+  // del recorte, desbordamiento 0 desde 763px). 780 = 765 + margen para la scrollbar
+  // clásica (~15-17px) que resta viewport CSS en escritorios con barra permanente.
+  const isNarrow = useIsNarrow(780);
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);

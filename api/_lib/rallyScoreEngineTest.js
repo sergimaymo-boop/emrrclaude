@@ -187,15 +187,25 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const look = Math.min(n - 1, 252);
   const high52w = Math.max(...closes.slice(-look));
   const prox52 = high52w > 0 ? pNow / high52w : null;
-  const ema50Series = new Array(n);
-  {
+  // EMA50 con la MISMA convención que producción (emaSeries: semilla = SMA de los
+  // primeros 50 cierres, serie desde la barra 50). Auditoría 7-sep-2026: la versión
+  // inicial sembraba con el primer cierre y trendAge divergía en tickers de
+  // historial corto (~200-250 barras), volteando la zona del recorrido mostrado.
+  const ema50Series = new Array(n).fill(null);
+  if (n >= 50) {
     const k = 2 / 51;
-    let e = null;
-    for (let i = 0; i < n; i++) { e = e == null ? closes[i] : closes[i] * k + e * (1 - k); ema50Series[i] = e; }
+    let e = 0;
+    for (let i = 0; i < 50; i++) e += closes[i];
+    e /= 50;
+    for (let i = 50; i < n; i++) { e = closes[i] * k + e * (1 - k); ema50Series[i] = e; }
   }
   const ema50 = ema50Series[n - 1];
   let trendAge = 0;
-  for (let i = n - 1; i >= 0 && closes[i] >= ema50Series[i]; i--) trendAge++;
+  for (let i = n - 1; i >= 0; i--) {
+    const ev = ema50Series[i];
+    if (ev == null || closes[i] < ev) break;
+    trendAge++;
+  }
 
   const p126 = closes[n - 127];
   const mom126 = isNum(p126) && p126 > 0 ? pNow / p126 - 1 : null;
