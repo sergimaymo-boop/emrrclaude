@@ -15,12 +15,43 @@ export type {
   RallyEntryTiming,
   RallyEntryZone,
   RallyMetrics,
+  RallyNewsItem,
   RallyRunway,
   RallyScanResponse,
   RallyState,
   RallyWarningFlag,
 } from "./rallyRefresh";
 export { initialRallyState } from "./rallyRefresh";
+
+import type { RallyAsset, RallyNewsItem } from "./rallyRefresh";
+
+/**
+ * MÉTRICAS PROPIAS del motor LAB-M189 (declaradas aquí el 7-sep-2026, cuando la
+ * forma del dato dejó de coincidir con producción — tal y como anuncia la nota
+ * de arriba). Todas opcionales: el panel pinta "—" ante cualquier ausencia.
+ * momRaw/mom63/mom126 en %, vol126 anualizada en %, prox52w = % del máximo de
+ * 52 semanas, ext50 = % sobre la EMA50. tq/r2 = calidad de tendencia 126d.
+ */
+export interface RallyTestMetrics {
+  lastClose?: number | null;
+  dayChangePct?: number | null;
+  momRaw?: number | null;
+  mom63?: number | null;
+  mom126?: number | null;
+  vol126?: number | null;
+  tq?: number | null;
+  r2?: number | null;
+  maxDay21?: number | null;
+  prox52w?: number | null;
+  ext50?: number | null;
+  trailingStop?: number | null;
+  version?: string;
+}
+
+/** Activo del top-10 de Rally-Test: misma forma que producción salvo las métricas. */
+export interface RallyTestAsset extends Omit<RallyAsset, "metrics"> {
+  metrics: RallyTestMetrics | null;
+}
 
 // Cadencia de revisión del motor LAB-M189 v1.1: ~63 sesiones ≈ 91 días naturales
 // (producción usa 84 sesiones/121 días — por eso NO se reexporta la suya).
@@ -107,5 +138,22 @@ export async function fetchLastRallyTestScan(): Promise<RallyScanResponse | null
     return data as RallyScanResponse;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Motivo del movimiento por ticker del ÚLTIMO scan de test (7-sep-2026).
+ * Endpoint propio del laboratorio (/api/rally-test/news → action=test-news,
+ * caché Redis con prefijo test:): jamás lee ni pisa las noticias de producción.
+ * Solo display — si falla, el panel funciona exactamente igual.
+ */
+export async function fetchRallyTestNews(): Promise<Record<string, RallyNewsItem | null>> {
+  try {
+    const res = await fetch("/api/rally-test/news", { method: "GET", headers: { accept: "application/json" } });
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data?.ok && data.news && typeof data.news === "object" ? data.news : {};
+  } catch {
+    return {};
   }
 }

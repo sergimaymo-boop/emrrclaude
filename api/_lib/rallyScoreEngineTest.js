@@ -81,6 +81,55 @@ export function getRallyLabel(score) {
   return { label: "EN RADAR", color: "#94a3b8" };
 }
 
+/* ── INDICADORES DE VISUALIZACIÓN (mandato Sergi 7-sep-2026) ──────────────────
+ * Paridad INFORMATIVA con Rally Leaders sin tocar el motor: zona de entrada
+ * (proximidad al máximo de 52 semanas) y recorrido restante (edad de la
+ * tendencia + extensión sobre la media de 50 + cercanía a máximos). Son copias
+ * PROPIAS del laboratorio de la lógica de display de producción — el módulo no
+ * importa nada de rallyScoreEngine.js. NADA de esto entra en score, selección,
+ * pesos ni stop: el trailing de LAB-M189 sigue FIJO en 45% (v1.1) y la cartera
+ * top-5 se elige solo por score/momRaw. Si estos campos faltaran, el módulo
+ * funcionaría exactamente igual (el panel reserva el hueco).
+ * Las referencias "en el estudio" de las etiquetas son los estudios de display
+ * a nivel de ticker (entrada: 260 episodios; recorrido: 1.060) — describen el
+ * comportamiento del ticker, no la estrategia del laboratorio. */
+
+function computeEntryTimingTest(proximity52w) {
+  if (!isNum(proximity52w)) {
+    return { score: null, zone: "SIN_DATOS", label: "Sin histórico suficiente para valorar el momento de entrada" };
+  }
+  if (proximity52w >= 0.96 && proximity52w <= 0.997) {
+    return { score: 90, zone: "IDEAL", label: "Cerca de su máximo de 52 semanas sin haberlo tocado — la zona con mejor rentabilidad y menor caída en el estudio" };
+  }
+  if (proximity52w > 0.997) {
+    return { score: 45, zone: "EN_MAXIMOS", label: "En máximos históricos o rompiéndolos ahora mismo — el estudio muestra más riesgo de retroceso a corto plazo" };
+  }
+  return { score: 55, zone: "LEJOS", label: "Alejado de su máximo de 52 semanas — el estudio muestra menor rentabilidad esperada que la zona ideal" };
+}
+
+function computeRunwayTest(price, ema50, trendAge, proximity52w) {
+  let score = 50;
+  const reasons = [];
+  if (isNum(trendAge)) {
+    if (trendAge < 40) { score += 25; reasons.push(`Tendencia joven (${trendAge} sesiones sobre su media de 50) — históricamente la que más recorrido deja`); }
+    else if (trendAge < 100) { score += 5; reasons.push(`Tendencia de ${trendAge} sesiones — recorrido intermedio`); }
+    else { score -= 5; reasons.push(`Tendencia madura (${trendAge} sesiones) — buena parte del recorrido puede estar hecha`); }
+  }
+  const ext50 = isNum(ema50) && ema50 > 0 && isNum(price) ? (price - ema50) / ema50 : null;
+  if (ext50 != null) {
+    if (ext50 < 0.05) { score += 20; reasons.push(`Solo un ${(ext50 * 100).toFixed(0)}% sobre su media de 50 — el tramo aún no se ha estirado`); }
+    else if (ext50 < 0.15) { score += 5; }
+    else if (ext50 > 0.30) { score -= 10; reasons.push(`Un ${(ext50 * 100).toFixed(0)}% por encima de su media de 50 — tramo muy estirado`); }
+  }
+  if (isNum(proximity52w) && proximity52w > 0.997) {
+    score -= 15;
+    reasons.push("Justo en máximos de 52 semanas — en el estudio es la peor zona para lo que queda de recorrido");
+  }
+  score = Math.max(0, Math.min(100, score));
+  const level = score >= 75 ? "ALTO" : score >= 55 ? "MEDIO" : "BAJO";
+  return { score: Math.round(score), level, trendAge: isNum(trendAge) ? trendAge : null, reasons };
+}
+
 /**
  * Puntúa UN ticker con la fórmula LAB-M189. Firma compatible con el batch
  * processor (bars del proveedor con cierres AJUSTADOS; spyBars se acepta y se
@@ -133,6 +182,24 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     if (closes[i - 1] > 0) maxDay21 = Math.max(maxDay21, Math.abs(closes[i] / closes[i - 1] - 1));
   }
 
+  // ── visualización (7-sep-2026): máximo 52s, EMA50 propia y edad de tendencia.
+  // Solo alimentan entryTiming/runway/metrics de display — jamás la cartera.
+  const look = Math.min(n - 1, 252);
+  const high52w = Math.max(...closes.slice(-look));
+  const prox52 = high52w > 0 ? pNow / high52w : null;
+  const ema50Series = new Array(n);
+  {
+    const k = 2 / 51;
+    let e = null;
+    for (let i = 0; i < n; i++) { e = e == null ? closes[i] : closes[i] * k + e * (1 - k); ema50Series[i] = e; }
+  }
+  const ema50 = ema50Series[n - 1];
+  let trendAge = 0;
+  for (let i = n - 1; i >= 0 && closes[i] >= ema50Series[i]; i--) trendAge++;
+
+  const p126 = closes[n - 127];
+  const mom126 = isNum(p126) && p126 > 0 ? pNow / p126 - 1 : null;
+
   const warningFlags = [];
   if (maxDay21 > 0.20) warningFlags.push({
     code: "JUMP_EVENT",
@@ -151,17 +218,22 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     label, color,
     trailingStop: 45,                   // v1.1: trailing ANCHO a cierres; al saltar → re-scan y reinvertir
     warningFlags,
-    entryTiming: null,
-    runway: null,
+    // Display (7-sep-2026): mismos indicadores informativos que Rally Leaders,
+    // calculados con las copias PROPIAS de arriba. NO tocan la cartera.
+    entryTiming: computeEntryTimingTest(prox52),
+    runway: computeRunwayTest(pNow, ema50, trendAge, prox52),
     metrics: {
       lastClose: Math.round(pNow * 100) / 100,
       dayChangePct: isNum(prev) && prev > 0 ? round1((pNow / prev - 1) * 100) : null,
       momRaw: round1(mom * 100),        // % de la señal 189s10 — desempate del merge
       mom63: mom63 != null ? round1(mom63 * 100) : null,
+      mom126: mom126 != null ? round1(mom126 * 100) : null,
       vol126: round1(vol126 * 100),
       tq: tq != null ? Math.round(tq * 100) / 100 : null,
       r2: r2 != null ? Math.round(r2 * 100) / 100 : null,
       maxDay21: round1(maxDay21 * 100),
+      prox52w: prox52 != null ? round1(prox52 * 100) : null,   // % del máximo de 52 semanas
+      ext50: isNum(ema50) && ema50 > 0 ? round1(((pNow - ema50) / ema50) * 100) : null,
       version: RALLY_ENGINE_VERSION,
     },
   };

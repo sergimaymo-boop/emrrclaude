@@ -295,6 +295,35 @@ async function handleTestLast(req, res) {
   return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
 }
 
+// ─── news handler del LABORATORIO (7-sep-2026, SOLO display) ─────────────────
+// Copia de handleNews sobre el snapshot de Rally-TEST (last_rally_test_snapshot):
+// motivo del movimiento por ticker del último scan del laboratorio. Comparte la
+// utilidad tickerNews.js (infraestructura display-only, como kvStorage) pero con
+// clave de caché PROPIA prefijada 'test:' — un scan de test jamás pisa la caché
+// de noticias de producción ni al revés. Si falla, Rally-Test funciona igual.
+async function handleTestNews(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'RALLY_TEST_NEWS');
+
+  const snapshot = await loadLastRallyTestSnapshot();
+  const top10 = snapshot?.top10 ?? [];
+  if (!top10.length) return sendJson(res, 200, { ok: true, news: {}, message: 'No hay scan de test reciente.' }, 'RALLY_TEST_NEWS');
+
+  const cacheKey = `test:${snapshot.scanId ?? 'sin-id'}`;
+  const saltarCache = req.query?.fresh === '1';   // solo para verificar cambios del selector
+  const cached = saltarCache ? null : await loadRallyNews(cacheKey);
+  if (cached) return sendJson(res, 200, { ok: true, news: cached, source: 'CACHE' }, 'RALLY_TEST_NEWS');
+
+  const assets = top10.map(a => ({
+    providerSymbol: a.providerSymbol,
+    ticker: a.ticker,
+    nombre: a.name,
+    symbolYahoo: toYahooSymbol(a.providerSymbol) || a.ticker,
+  }));
+  const news = await motivosDelMovimiento(assets, { refDate: snapshot.scanCompletedAtUtc ?? null });
+  await saveRallyNews(cacheKey, news);
+  return sendJson(res, 200, { ok: true, news, source: 'LIVE' }, 'RALLY_TEST_NEWS');
+}
+
 
 // ─── news handler (SOLO Rally Leaders, SOLO display) ──────────────────────────
 // Devuelve, para cada ticker del último scan, el motivo más probable de su
@@ -409,6 +438,7 @@ export default async function handler(req, res) {
   if (action === 'test-start')    return handleTestStart(req, res);
   if (action === 'test-continue') return handleTestContinue(req, res);
   if (action === 'test-last')     return handleTestLast(req, res);
+  if (action === 'test-news')     return handleTestNews(req, res);
   if (action === 'news')          return handleNews(req, res);
-  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'news', 'test-start', 'test-continue', 'test-last'] });
+  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'news', 'test-start', 'test-continue', 'test-last', 'test-news'] });
 }

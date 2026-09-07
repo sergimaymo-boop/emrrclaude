@@ -24,17 +24,26 @@
  * cortacircuitos de cartera que la usaba para salir a caja se estudió y se
  * REFUTÓ (§10e: coste real −8,3 pp/año con contabilidad coherente, n efectivo 1
  * por colapso de fases). Se pinta para informar, nunca para operar.
+ *
+ * PARIDAD VISUAL (7-sep-2026, mandato Sergi): mismas capas de información por
+ * ticker que Rally Leaders — zona de entrada, recorrido restante, motivo del
+ * movimiento (punto ● + desplegable) — con calculadoras y endpoint PROPIOS
+ * (computeEntryTimingTest/computeRunwayTest en el motor de test; /api/rally-test/news
+ * con caché test:). SOLO display: el motor LAB-M189 no cambió ni un byte de su
+ * score, selección, pesos ni stop.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { registerModuleScan } from "../services/scanBus";
 import {
   RALLY_TEST_BASELINE,
-  type RallyAsset,
+  type RallyNewsItem,
   type RallyState,
+  type RallyTestAsset,
   continueRallyTestScan,
   estimateNextReview,
   fetchLastRallyTestScan,
+  fetchRallyTestNews,
   initialRallyState,
   startRallyTestScan,
 } from "../services/rallyTestRefresh";
@@ -61,6 +70,10 @@ export function RallyTestPanel() {
   // cartera se estudió y se REFUTÓ; esto es el observable que sí quedó en pie).
   const [amplitud, setAmplitud] = useState<{ analizados: number; positivos: number } | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Motivo del movimiento por ticker (7-sep-2026, solo display; endpoint y caché
+  // PROPIOS del laboratorio — ver fetchRallyTestNews). Se carga aparte del scan:
+  // si la fuente de noticias falla o tarda, el módulo enseña sus datos igual.
+  const [news, setNews] = useState<Record<string, RallyNewsItem | null>>({});
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -76,6 +89,13 @@ export function RallyTestPanel() {
     })();
     return () => { mounted.current = false; };
   }, []);
+
+  // Carga de los motivos: al montar y cada vez que termina un scan de test nuevo.
+  const cargarNoticias = useCallback(async () => {
+    const n = await fetchRallyTestNews();
+    if (mounted.current) setNews(n);
+  }, []);
+  useEffect(() => { void cargarNoticias(); }, [cargarNoticias]);
 
   const scanningRef = useRef(false);
   // Devuelve true si el scan terminó con datos, false si falló, null si se saltó por
@@ -106,6 +126,7 @@ export function RallyTestPanel() {
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
           setAmplitud((res as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
           ok = true;
+          void cargarNoticias();   // el scan nuevo trae otros tickers: refrescar motivos
           // A propósito NO se avisa a la banda de alineación de cartera (evento de
           // producción): un scan de laboratorio no debe refrescar nada de producción.
         } else {
@@ -119,7 +140,7 @@ export function RallyTestPanel() {
       if (mounted.current) setScanning(false);
     }
     return ok;
-  }, []);
+  }, [cargarNoticias]);
 
   // Registro en el bus global (mandato 2-sep-2026): el botón grande SCAN EMRR
   // también escanea el laboratorio. El wrapper relanza el fallo para que el toast
@@ -194,11 +215,17 @@ export function RallyTestPanel() {
               );
             })()}
             <span>La columna <b style={{ color: AMBER }}>%</b>: SOLO los <b style={{ color: "#cbd5e1" }}>5 primeros invierten</b> (peso por score, 10-40%, Σ=100); los puestos 6-10 son <b style={{ color: "#cbd5e1" }}>reserva a 0%</b> — sustitutos naturales del próximo rebalanceo.</span>
+            {/* Leyenda del aviso de motivo (7-sep-2026, misma convención que Rally
+                Leaders): en móvil no hay tooltip, así que el símbolo se explica aquí.
+                Solo aparece si ALGÚN ticker del top-10 tiene motivo. */}
+            {Object.values(news).some(Boolean) && (
+              <span><b style={{ color: AMBER }}>●</b> junto al ▼ = ese ticker tiene <b style={{ color: "#cbd5e1" }}>motivo del movimiento</b>: despliégalo para leerlo.</span>
+            )}
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
             {top10.map((a, i) => (
-              <RallyTestRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow}
+              <RallyTestRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow} news={news[a.providerSymbol] ?? null}
                 expanded={expanded === a.providerSymbol}
                 onToggle={() => setExpanded((e) => (e === a.providerSymbol ? null : a.providerSymbol))} />
             ))}
@@ -255,20 +282,24 @@ const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string; short: st
   SIN_DATOS: { color: SLATE, label: "—", short: "—" },
 };
 
-function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void }) {
+function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: RallyTestAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void; news: RallyNewsItem | null }) {
   const m = asset.metrics;
   const flags = asset.warningFlags ?? [];
   const entry = asset.entryTiming;
   const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"] ?? ENTRY_ZONE_STYLE.SIN_DATOS;
   const runway = asset.runway;
   const runwayStyle = RUNWAY_STYLE[runway?.level ?? "MEDIO"] ?? RUNWAY_STYLE.MEDIO;
-  // Stop sugerido ADAPTATIVO por ticker (12 + 0,35·recorrido, acotado 15-45%).
+  // Stop del motor LAB-M189 v1.1: FIJO 45% para TODAS las posiciones (a diferencia
+  // de Rally Leaders, que lo adapta por fase). Las anchuras adaptativas se probaron
+  // en el estudio 3 y en la auditoría del stop, y PERDIERON contra el 45% fijo.
   const stop = asset.trailingStop ?? m?.trailingStop ?? null;
   const stopStyle = stop == null
     ? { color: SLATE, band: "—" }
     : stop >= 36 ? { color: GREEN, band: "AMPLIO" }
     : stop >= 25 ? { color: SLATE, band: "MEDIO" }
     : { color: "#eab308", band: "CEÑIDO" };
+  // Tooltip del stop — izado para que móvil, escritorio y desplegable digan lo mismo.
+  const stopTitle = "STOP FIJO del laboratorio (v1.1): trailing del 45% igual para todas las posiciones, evaluado sobre CIERRES diarios desde el máximo alcanzado. Si salta: re-escanear y reinvertir todo según los pesos del scan nuevo. No es el stop adaptativo por fase de Rally Leaders — las anchuras adaptativas se probaron aquí y perdieron.";
   // Badge de pullback eliminado 18-ago tras veredicto NO PUBLICAR del estudio — si un estudio futuro pasa el gate, añadir campo+badge+umbrales en el MISMO commit que el motor lo emita.
   // BUG FIX (móvil 375-430px, ago-2026): la fila colapsada vivía en una única línea
   // flex con 9-10 elementos de ancho fijo (~350px de mínimo) dentro de una sección con
@@ -295,7 +326,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
           border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
         {entry ? entryStyle.short : "—"}
       </span>
-      <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
+      <span title={stop != null ? stopTitle : undefined}
         style={{ width: 54, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
           color: stop != null ? stopStyle.color : "transparent",
           background: stop != null ? `${stopStyle.color}18` : "transparent",
@@ -331,6 +362,19 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
   // Tooltip del PESO de inversión — izado (patrón dchgTitle) para que ambas ramas
   // (móvil y escritorio) muestren SIEMPRE el mismo texto.
   const weightTitle = "PESO de inversión LAB-M189: % del capital del módulo sugerido para esta posición — SOLO los 5 primeros invierten (por score, 10-40%, Σ=100); los puestos 6-10 son reserva a 0%. No es el trailing stop — el stop tiene su propio badge STOP.";
+  // AVISO DE MOTIVO en la fila colapsada (7-sep-2026, misma convención que Rally
+  // Leaders 27-ago): punto junto al chevron cuando ese ticker TIENE motivo del
+  // movimiento; sin motivo → NINGÚN símbolo, pero el HUECO (width 9) se reserva
+  // SIEMPRE — la regla de columnas fijas exige que ninguna fila se desplace.
+  // Color: el acento del módulo (violeta laboratorio, constante AMBER local).
+  const motivoEl = (
+    <span title={news ? `Motivo del movimiento: ${news.headline}` : undefined}
+      aria-label={news ? "Tiene motivo del movimiento" : undefined}
+      style={{ width: 9, flexShrink: 0, textAlign: "center", fontSize: 7.5,
+        color: AMBER, lineHeight: 1, whiteSpace: "nowrap" }}>
+      {news ? "●" : ""}
+    </span>
+  );
 
   return (
     <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -358,6 +402,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
                 {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
               </span>
               <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right", minWidth: 24 }}>{asset.rallyScore}</span>
+              {motivoEl}
               <span style={{ fontSize: 10, color: "#64748b", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
             </span>
             {/* Línea 2 — badges de recorrido/entrada/stop/aviso, con hueco de sobra en
@@ -388,7 +433,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
                 border: `1px solid ${entry ? `${entryStyle.color}55` : "transparent"}`, whiteSpace: "nowrap" }}>
               {entry ? entryStyle.label : "—"}
             </span>
-            <span title={stop != null ? `Stop sugerido para ESTE ticker según su fase (${stopStyle.band.toLowerCase()}): amplio si la tendencia es sana con recorrido, ceñido si el recorrido se agota. Evaluado sobre cierres diarios.` : undefined}
+            <span title={stop != null ? stopTitle : undefined}
               style={{ width: 62, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
                 color: stop != null ? stopStyle.color : "transparent",
                 background: stop != null ? `${stopStyle.color}18` : "transparent",
@@ -404,6 +449,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
               {asset.suggestedWeightPct != null ? `${asset.suggestedWeightPct.toFixed(1)}%` : "—"}
             </span>
             <span style={{ fontSize: 13, fontWeight: 900, color: asset.rallyColor || AMBER, fontVariantNumeric: "tabular-nums", width: 30, flexShrink: 0, textAlign: "right" }}>{asset.rallyScore}</span>
+            {motivoEl}
             <span style={{ fontSize: 9, color: "#64748b", width: 14, flexShrink: 0, textAlign: "right" }}>{expanded ? "▲" : "▼"}</span>
           </>
         )}
@@ -412,6 +458,7 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
       {expanded && (
         <div style={{ padding: "4px 4px 12px 34px", display: "flex", flexDirection: "column", gap: 8 }}>
           {isNarrow && <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{asset.name}</div>}
+          <MotivoDelMovimiento news={news} dayChangePct={m?.dayChangePct ?? null} />
           {entry && (
             <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: entryStyle.color, background: `${entryStyle.color}14`, border: `1px solid ${entryStyle.color}44` }}>
               <b>{entryStyle.label}</b> — {entry.label}
@@ -423,16 +470,20 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
               {runway.reasons.length > 0 && <> — {runway.reasons.join(". ")}</>}
             </div>
           )}
+          {/* Parrilla con las métricas PROPIAS del motor LAB-M189 (7-sep-2026): la
+              heredada de la copia pedía campos de producción (mom9m, rs3m, ATR, RVOL)
+              que este motor no emite y pintaba "—" en todo. */}
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr 1fr" : "repeat(4, 1fr)", gap: 8 }}>
-            <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toFixed(2) : "—"} />
-            <Stat label="Momento 9m (señal)" value={pct(m?.mom9m)} tone={AMBER} />
-            <Stat label="Momento 3m" value={pct(m?.mom3m)} tone={(m?.mom3m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Momento 6m" value={pct(m?.mom6m)} tone={(m?.mom6m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Fuerza rel. 3m vs S&P" value={pct(m?.rs3m)} tone={(m?.rs3m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Fuerza rel. 6m vs S&P" value={pct(m?.rs6m)} tone={(m?.rs6m ?? 0) > 0 ? GREEN : RED} />
-            <Stat label="Stop sugerido (fase)" value={stop != null ? `${stop}% · ${stopStyle.band}` : "—"} tone={stopStyle.color} />
-            <Stat label="ATR" value={m?.atrPercent != null ? `${m.atrPercent.toFixed(1)}%` : "—"} />
-            <Stat label="Volumen relativo" value={m?.rvol != null ? `${m.rvol.toFixed(2)}x` : "—"} />
+            <Stat label="Precio" value={m?.lastClose != null ? m.lastClose.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"} />
+            <Stat label="Señal 189s10 (9m)" value={pct(m?.momRaw)} tone={AMBER} />
+            <Stat label="Momento 3m" value={pct(m?.mom63)} tone={(m?.mom63 ?? 0) > 0 ? GREEN : RED} />
+            <Stat label="Momento 6m" value={pct(m?.mom126)} tone={(m?.mom126 ?? 0) > 0 ? GREEN : RED} />
+            <Stat label="Dist. a máx. 52 sem." value={m?.prox52w != null ? pct(m.prox52w - 100) : "—"} tone={m?.prox52w != null && m.prox52w >= 96 ? GREEN : SLATE} />
+            <Stat label="Sobre su media de 50" value={pct(m?.ext50)} tone={(m?.ext50 ?? 0) >= 0 ? SLATE : "#eab308"} />
+            <Stat label="Stop fijo (v1.1)" value={stop != null ? `${stop}% · ${stopStyle.band}` : "—"} tone={stopStyle.color} />
+            <Stat label="Volatilidad anual" value={m?.vol126 != null ? `${m.vol126.toFixed(0)}%` : "—"} tone={(m?.vol126 ?? 0) > 60 ? "#eab308" : SLATE} />
+            <Stat label="Calidad de tendencia" value={m?.tq != null ? `${m.tq.toFixed(2)}${m?.r2 != null ? ` · R² ${m.r2.toFixed(2)}` : ""}` : "—"} />
+            <Stat label="Mayor mov. 1 día (mes)" value={m?.maxDay21 != null ? `${m.maxDay21.toFixed(1)}%` : "—"} tone={(m?.maxDay21 ?? 0) > 20 ? RED : SLATE} />
           </div>
           {flags.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -445,6 +496,47 @@ function RallyTestRow({ asset, rank, isNarrow, expanded, onToggle }: { asset: Ra
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * MOTIVO DEL MOVIMIENTO — copia PROPIA del laboratorio (7-sep-2026) del componente
+ * de Rally Leaders: una sola línea con el catalizador más probable del día. Verde
+ * si el ticker sube en la sesión del scan, rojo si baja, gris si no hay motivo
+ * identificable — el color lo marca el PRECIO, no el tono de la noticia. Si no hay
+ * noticia se dice explícitamente; nunca se inventa una explicación.
+ */
+function MotivoDelMovimiento({ news, dayChangePct }: { news: RallyNewsItem | null; dayChangePct: number | null | undefined }) {
+  const sube = typeof dayChangePct === "number" && dayChangePct > 0;
+  const baja = typeof dayChangePct === "number" && dayChangePct < 0;
+  const color = !news ? "#64748b" : sube ? GREEN : baja ? RED : SLATE;
+  const etiqueta = !news ? "SIN MOTIVO IDENTIFICADO" : sube ? "MOTIVO ▲" : baja ? "MOTIVO ▼" : "MOTIVO";
+  const cuerpo = news
+    ? news.headline
+    : "Ninguna noticia relevante de la empresa en las últimas sesiones: el movimiento no tiene un catalizador identificable.";
+  const fecha = news?.publishedAtUtc
+    ? new Date(news.publishedAtUtc).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : null;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "6px 10px", borderRadius: 6,
+      background: `${color}12`, border: `1px solid ${color}44` }}>
+      <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.06em", color, flexShrink: 0, paddingTop: 1, whiteSpace: "nowrap" }}>
+        {etiqueta}
+      </span>
+      <span title={news?.headlineOriginal && news.headlineOriginal !== news.headline ? `Titular original: ${news.headlineOriginal}` : undefined}
+        style={{ fontSize: 10.5, color: news ? "#e2e8f0" : "#94a3b8", lineHeight: 1.45 }}>
+        {news?.url ? (
+          <a href={news.url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "none", borderBottom: `1px dotted ${color}88` }}>
+            {cuerpo}
+          </a>
+        ) : cuerpo}
+        {news && (
+          <span style={{ color: "#64748b", fontSize: 9 }}>
+            {" · "}{news.publisher}{fecha ? ` · ${fecha}` : ""}
+          </span>
+        )}
+      </span>
     </div>
   );
 }
