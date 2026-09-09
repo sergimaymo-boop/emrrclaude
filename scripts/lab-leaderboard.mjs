@@ -9,10 +9,14 @@ const rows = [];
 const add = (src, name, r) => {
   if (!r) return;
   let trainWorst = r.trainWorst, trainMean = r.trainMean, confirmMean = r.confirmMean, confirmWorst = r.confirmWorst, dd = r.ddRealWorst ?? r.ddFullWorst, fases = r.fasesDistintas;
-  if ((trainWorst == null || confirmMean == null) && Array.isArray(r.cells) && r.cells.length && r.cells[0].train?.cagr != null) {
+  if (Array.isArray(r.cells) && r.cells.length && r.cells[0].train?.cagr != null) {
     const tr = r.cells.map((c) => c.train.cagr), cf = r.cells.map((c) => c.confirm.cagr);
-    trainWorst = Math.min(...tr); trainMean = tr.reduce((s, v) => s + v, 0) / tr.length; confirmMean = cf.reduce((s, v) => s + v, 0) / cf.length; confirmWorst = Math.min(...cf);
-    fases = fases ?? new Set(cf.map((v) => Math.round(v * 1e10))).size;
+    if (trainWorst == null || confirmMean == null) { trainWorst = Math.min(...tr); trainMean = tr.reduce((s, v) => s + v, 0) / tr.length; confirmMean = cf.reduce((s, v) => s + v, 0) / cf.length; confirmWorst = Math.min(...cf); }
+    // fases distintas SIEMPRE desde las celdas: el colapso (RESCAN con reset de reloj) se
+    // delata porque las 10 fases convergen a la misma trayectoria de confirm
+    fases = new Set(cf.map((v) => Math.round(v * 1e10))).size;
+  } else if (Array.isArray(r.cells) && r.cells.length && r.cells[0].confirm != null && typeof r.cells[0].confirm === "number") {
+    fases = new Set(r.cells.map((c) => Math.round(c.confirm * 1e10))).size;
   }
   if (!Number.isFinite(trainWorst) || !Number.isFinite(confirmMean)) return;
   rows.push({ src, name, trainWorst, trainMean, confirmMean, confirmWorst, dd, fases: fases ?? null });
