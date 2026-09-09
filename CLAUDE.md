@@ -501,6 +501,8 @@ CONGELADO**: todo experimento se hace aquí.
   línea en el bloque de metodología, que solo aparece si algún ticker del top-10 tiene
   motivo. Solo Rally Leaders: `RallyTestPanel` tiene su propia copia de la fila (§10e).
 
+- **Aviso de patrimonio (mandato 9-sep-2026)**: launchd `com.emrr.nav-alert` ejecuta `scripts/nav_alert.py` **cada 30 min** y envía email (Mail.app → sergimaymo@gmail.com) cuando el NAV total de la cuenta IBK supera **23.500 €** (antirrebote: una sola vez; se re-arma solo si baja de 23.200 €). ⚠️ **NO hay conexión con Interactive Brokers**: el NAV se RECONSTRUYE = efectivo de la última foto + Σ(uds × precio Yahoo)/EURUSD, con las posiciones de `~/Library/Application Support/NavAlert/posiciones.json`. **Cada operación de Sergi (stop, rebalanceo, aporte) obliga a actualizar ese JSON** o el vigilante miente; el script tiene guarda propia (si un ticker cae bajo su trailing estimado avisa una vez de "cartera posiblemente desactualizada"). Canal móvil (iMessage a +34648423777) es best-effort y quedó SIN verificar el 9-sep (osascript de Messages colgado por TCC); WhatsApp es imposible sin la API de negocio de pago. Igual que CarteraIBK y RallyWeekly, el script que CORRE vive en `.../NavAlert/bin/`: tras tocar el del repo, `bash scripts/sync-nav-alert-agent.sh`.
+
 ---
 
 ## 11. OPERATIONAL INVARIANTS (never violate)
