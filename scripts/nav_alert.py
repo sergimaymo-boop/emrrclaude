@@ -40,6 +40,8 @@ MAIL_FROM_ACCOUNT = "sergimaymo@gmail.com"
 MAIL_TO = "sergimaymo@gmail.com"
 SMS_TO = "+34648423777"
 
+PROBLEMAS_DATOS: list = []   # incidencias de las fuentes en esta pasada
+
 STATE_DIR = os.path.expanduser("~/Library/Application Support/NavAlert")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 POS_FILE = os.path.join(STATE_DIR, "posiciones.json")
@@ -53,9 +55,9 @@ POSICIONES_DEFECTO = {
     "efectivo_usd": 5115.00,      # "USD Efectivo" de la app
     "nav_foto_eur": 22374.0,      # NAV que mostraba IBK ese día (para calibrar el sesgo)
     "posiciones": [
-        {"ticker": "MRNA", "uds": 13.81, "divisa": "USD", "stop_pct": 45, "ancla": 144.71},
-        {"ticker": "MU",   "uds": 1.97,  "divisa": "USD", "stop_pct": 45, "ancla": 1022.40},
-        {"ticker": "DELL", "uds": 3.78,  "divisa": "USD", "stop_pct": 45, "ancla": 527.59},
+        {"ticker": "MRNA", "uds": 13.81, "divisa": "USD", "stop_pct": 45, "ancla": 145.10},
+        {"ticker": "MU",   "uds": 1.97,  "divisa": "USD", "stop_pct": 45, "ancla": 1024.00},
+        {"ticker": "DELL", "uds": 3.78,  "divisa": "USD", "stop_pct": 45, "ancla": 533.88},
         {"ticker": "WDC",  "uds": 4.09,  "divisa": "USD", "stop_pct": 45, "ancla": 479.05},
         {"ticker": "INTC", "uds": 17.87, "divisa": "USD", "stop_pct": 45, "ancla": 105.46},
     ],
@@ -88,7 +90,12 @@ def guardar_json(path, obj):
 
 
 def precio(sym: str):
-    """Último precio y máximo del día desde Yahoo (sin clave). None si falla."""
+    """Último precio y máximo del día desde Yahoo, CON VALIDACIONES.
+    Devuelve (precio, maximo). En caso de dato no fiable devuelve (None, None) y
+    deja el motivo en PROBLEMAS_DATOS — que dispara un email de aviso a Sergi
+    (mandato 9-sep-2026: "avísame cuando las bases de datos no den bien el dato").
+    ⛔ NUNCA se lee meta.chartPreviousClose: su valor depende del rango pedido y
+    el 9-sep-2026 produjo una variación diaria falsa (ver scripts/precios.mjs)."""
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
            "?range=5d&interval=1d")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -104,9 +111,30 @@ def precio(sym: str):
         if px is None:
             closes = [c for c in q.get("close", []) if c is not None]
             px = closes[-1] if closes else None
-        return (float(px) if px is not None else None,
-                float(hi) if hi is not None else None)
+        if px is None:
+            PROBLEMAS_DATOS.append(f"{sym}: la fuente no devuelve precio")
+            return (None, None)
+        px = float(px)
+        if not (px > 0):
+            PROBLEMAS_DATOS.append(f"{sym}: precio no válido ({px})")
+            return (None, None)
+        # frescura: un precio de hace más de 5 días es rancio (¿ticker suspendido?)
+        t = meta.get("regularMarketTime")
+        if t:
+            edad = (datetime.now(timezone.utc) - datetime.fromtimestamp(t, timezone.utc)).days
+            if edad > 5:
+                PROBLEMAS_DATOS.append(f"{sym}: último precio de hace {edad} días (¿suspendido?)")
+        # coherencia con el último cierre de la SERIE (no con chartPreviousClose)
+        closes = [c for c in q.get("close", []) if c is not None]
+        if len(closes) >= 2:
+            ref = float(closes[-2] if abs(closes[-1] - px) < 1e-9 else closes[-1])
+            if ref > 0 and abs(px / ref - 1) > 0.35:
+                PROBLEMAS_DATOS.append(
+                    f"{sym}: salto de {(px / ref - 1) * 100:+.0f}% frente al cierre previo ({ref:.2f} → {px:.2f}) — dato sospechoso")
+                return (None, None)
+        return (px, float(hi) if hi is not None else None)
     except Exception as e:
+        PROBLEMAS_DATOS.append(f"{sym}: fallo de la fuente ({e})")
         log(f"AVISO: Yahoo falló para {sym} ({e})")
         return (None, None)
 
@@ -171,7 +199,7 @@ def calcular():
     for p in pos["posiciones"]:
         px, hi = precio(p["ticker"])
         if px is None:
-            return None, f"sin precio de {p['ticker']}"
+            return None, f"sin dato fiable de {p['ticker']}"
         # el trailing persigue el máximo: se actualiza el ancla como hace IBK
         ancla = max(float(anclas.get(p["ticker"], p["ancla"])), p["ancla"], hi or px)
         anclas[p["ticker"]] = ancla
@@ -237,6 +265,24 @@ def main() -> int:
             estado["aviso_stop_enviado"] = True
             enviar_mensaje("EMRR: posible stop saltado. Revisa IBK y pásame foto nueva de la cartera.")
             log("aviso de posible stop ENVIADO")
+
+    # ── AVISO DE CALIDAD DEL DATO (mandato Sergi 9-sep-2026) ───────────────────
+    # Si las fuentes fallan, Sergi debe ENTERARSE: un vigilante mudo que no puede
+    # leer precios es peor que ninguno. Antirrebote: como mucho un email al día.
+    hoy_txt = datetime.now().strftime("%Y-%m-%d")
+    if PROBLEMAS_DATOS and estado.get("aviso_datos_dia") != hoy_txt:
+        cuerpo = ("El vigilante no ha podido leer bien los datos de mercado:\n  "
+                  + "\n  ".join(PROBLEMAS_DATOS)
+                  + "\n\nMientras esto ocurra, el NAV que calculo puede no ser fiable "
+                  + "y el aviso de los 23.500 € podría llegar tarde o no llegar.\n"
+                  + "El dato que manda siempre es el de la app de IBK.\n\n"
+                  + "(Aviso automático de EMRR · NavAlert)")
+        if not dry and enviar_email("EMRR · las fuentes de datos no responden bien", cuerpo):
+            estado["aviso_datos_dia"] = hoy_txt
+            log(f"aviso de CALIDAD DE DATO enviado ({len(PROBLEMAS_DATOS)} incidencias)")
+        enviar_mensaje("EMRR: las fuentes de datos fallan; el vigilante del patrimonio puede no ser fiable hoy.")
+    elif not PROBLEMAS_DATOS and estado.get("aviso_datos_dia"):
+        estado.pop("aviso_datos_dia", None)   # se resolvió: re-armado para el futuro
 
     # ── aviso principal de umbral ──────────────────────────────────────────────
     ya = bool(estado.get("aviso_umbral_enviado"))
