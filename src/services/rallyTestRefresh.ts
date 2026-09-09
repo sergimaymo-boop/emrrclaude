@@ -93,6 +93,8 @@ export const RALLY_TEST_BASELINE = {
     // contra C0 en 64/64 configs — la ventaja es de la CONCENTRACIÓN top-5, no
     // del motor; esperanza honesta tras descuentos: +2 a +4 pp/año.
     edgeHonesto: "+2 a +4 pp/año esperados (no los +10,8 nominales)",
+    // ESTUDIO 9 (9-sep-2026): cifras honestas tras la auditoría adversarial
+    confirmEx2026: "≈52-54%", costeIntradia: "2-4 pp/año y +50% de saltos", configsProbadas: "431",
   },
 } as const;
 

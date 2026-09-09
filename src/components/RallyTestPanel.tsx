@@ -255,6 +255,15 @@ export function RallyTestPanel() {
             crash en V tipo COVID (−53%) — un trailing a cierres no esquiva un desplome de 3 semanas. Stops ceñidos (15-25%)
             probados y descartados: whipsaw destructivo.
             <br />
+            <b style={{ color: RED }}>Estudio 9 (9-sep-2026, pre-registro sellado antes de ejecutar):</b> 22 configuraciones
+            nuevas (ratchet de ganancia, tope de clúster, momentum residual, vol-target, topes de peso) × 10 fases × 20/50 pb ×
+            cierres e intradía — ninguna supera a v1.1 de forma material; en{" "}
+            {RALLY_TEST_BASELINE.backtest.configsProbadas} configuraciones acumuladas nada la bate. Cifras honestas: confirmación
+            2022-25 <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.confirmEx2026}</b> (el 64,6% incluye 8 meses
+            de 2026 con el evento MRNA); la ejecución con TRAIL intradía cuesta{" "}
+            <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.costeIntradia}</b>. El ratchet que lucía +8,7 pp era UN
+            día (MU −30,03% el 17-jul-2026 → re-scan → MRNA antes de su +177%): sin ese salto, +0,25 pp.
+            <br />
             <b style={{ color: SLATE }}>Además:</b> universo superviviente → niveles inflados, solo valen comparaciones
             relativas. Sin stops: una caída fuerte se soporta hasta el siguiente rebalanceo. ~7-8 de 10 tickers suelen
             coincidir con Rally Leaders (ambos leen momentum largo); difieren el salto de 10 sesiones (descuenta eventos
