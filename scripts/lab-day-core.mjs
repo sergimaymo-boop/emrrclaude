@@ -145,12 +145,54 @@ export function pesosDe(sel, i, wcfg) {
 function stopWidth(ti, i, scfg) {
   if (!scfg || scfg.tipo === "NONE") return Infinity;
   if (scfg.tipo === "FIJO") return scfg.w;
+  if (scfg.tipo === "RATCHET") return scfg.w;      // anchura base; se ciñe por ganancia en ratchetWidth()
   if (scfg.tipo === "ADAPT") {
     const v = vol126(ti, i);
     if (v == null) return 0.30;
     return Math.min(scfg.hi ?? 0.45, Math.max(scfg.lo ?? 0.15, scfg.kv * v * Math.sqrt(252)));
   }
   throw new Error("scfg desconocido");
+}
+
+// ─── ESTUDIO 9 (9-sep-2026): extensiones OPCIONALES del simulador ────────────
+// Con cfg.intradia null, cfg.corrCap null y scfg no-RATCHET el codepath es
+// EXACTAMENTE el original (las anclas de abajo lo vigilan bit a bit).
+/** Trailing RATCHET: anchura que se CIÑE según la ganancia máxima alcanzada desde la
+ *  entrada (pico/entrada−1). scfg = {tipo:"RATCHET", w, tramos:[[gain, w'], …] asc}.
+ *  Como el pico es monótono y w' no crece con la ganancia, el nivel del stop nunca baja. */
+function ratchetWidth(h, scfg) {
+  let w = scfg.w;
+  if (!isNum(h.entryPx) || h.entryPx <= 0) return w;
+  const gain = h.peak / h.entryPx - 1;
+  for (const [g, wg] of scfg.tramos) if (gain >= g) w = wg;
+  return w;
+}
+/** Correlación de retornos diarios entre dos tickers en las últimas `win` sesiones (memo). */
+export function corrRet(a, b, i, win) {
+  const ka = Math.min(a, b), kb = Math.max(a, b);
+  return memo(`C${win}:${ka}:${kb}:${i}`, () => {
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    for (let j = i - win + 1; j <= i; j++) {
+      const x = RET[ka][j], y = RET[kb][j];
+      if (x == null || y == null) continue;
+      n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+    }
+    if (n < win / 2) return 0;
+    const vx = sxx - sx * sx / n, vy = syy - sy * sy / n;
+    return vx > 0 && vy > 0 ? (sxy - sx * sy / n) / Math.sqrt(vx * vy) : 0;
+  });
+}
+/** Selección greedy con TOPE DE CLÚSTER: se acepta un candidato si el nº de ya
+ *  seleccionados con correlación > rho es < max. Si no llega a K, rellena por ranking. */
+function seleccionDiversificada(scored, i, K, cc) {
+  const sel = [], skipped = [];
+  for (const c of scored) {
+    if (sel.length >= K) break;
+    const cnt = sel.filter((s) => corrRet(s.ti, c.ti, i, cc.win ?? 126) > cc.rho).length;
+    if (cnt < (cc.max ?? 1)) sel.push(c); else skipped.push(c);
+  }
+  while (sel.length < K && skipped.length) sel.push(skipped.shift());
+  return sel.sort((a, b) => b.score - a.score || b.mRaw - a.mRaw);
 }
 
 /**
@@ -164,6 +206,11 @@ function stopWidth(ti, i, scfg) {
  *   cooldown: 0,                       — sesiones sin poder recomprar un ticker parado
  *   expoFn: null | (i)=>0..1,          — overlay de exposición (fracción invertida objetivo,
  *                                        aplicada en cada REFORMA; el resto queda en caja)
+ *   corrCap: null | {rho, max, win}    — ESTUDIO 9: tope de clúster en la selección
+ *   intradia: null | {H, L}            — ESTUDIO 9: trailing sobre máximos/mínimos INTRADÍA
+ *                                        (réplica del TRAIL de IBK: el pico persigue el HIGH,
+ *                                        salta si el LOW toca el nivel, relleno al nivel —
+ *                                        o al HIGH del día si todo el día cotizó por debajo)
  *   breaker: null | {dd, reentry}      — CORTACIRCUITOS DE CARTERA (red para dormir):
  *       si el equity cae `dd` desde su máximo → liquidar TODO a caja (con coste).
  *       Reentrada: {tipo:"DELAY", n} tras n sesiones · {tipo:"BREADTH", umbral, fn}
@@ -204,7 +251,8 @@ export function simular(cfg) {
       const keptSet = new Set(kept.map((c) => c.ti));
       const fill = scored.filter((c) => !keptSet.has(c.ti)).slice(0, Math.max(0, K - kept.length));
       top = [...kept, ...fill].sort((a, b) => b.score - a.score || b.mRaw - a.mRaw).slice(0, K);
-    } else top = scored.slice(0, K);
+    } else if (cfg.corrCap) top = seleccionDiversificada(scored, i, K, cfg.corrCap);
+    else top = scored.slice(0, K);
     const expo = expoFn ? Math.max(0, Math.min(1, expoFn(i))) : 1;
     if (expo < expoMin) expoMin = expo;
     const base = pesosDe(top, i, wcfg);
@@ -249,10 +297,16 @@ export function simular(cfg) {
         for (const h of hold) {
           const px = T[h.ti].adj[i];
           if (isNum(px)) {
-            if (px > h.peak) h.peak = px;
-            if (px <= h.peak * (1 - h.trail)) {
+            const hi = cfg.intradia ? cfg.intradia.H[h.ti][i] : null, lo = cfg.intradia ? cfg.intradia.L[h.ti][i] : null;
+            const intra = cfg.intradia != null && isNum(hi) && isNum(lo);
+            if (intra) { if (hi > h.peak) h.peak = hi; } else if (px > h.peak) h.peak = px;
+            const trail = scfg.tipo === "RATCHET" ? ratchetWidth(h, scfg) : h.trail;
+            const nivel = h.peak * (1 - trail);
+            if (intra ? lo <= nivel : px <= nivel) {
+              const exitPx = intra ? Math.min(nivel, hi) : px;
               stops++; salto = true;
-              if (cfg.registro) cfg.registro.push({ i, ti: h.ti, entryPx: h.entryPx ?? null, exitPx: px, peak: h.peak });
+              if (cfg.registro) cfg.registro.push({ i, ti: h.ti, entryPx: h.entryPx ?? null, exitPx, peak: h.peak });
+              if (intra && exitPx !== px) eq *= 1 + (h.w / 100) * (exitPx / px - 1);   // relleno al nivel, no al cierre
               eq *= 1 - COST_BPS * (h.w / 100);
               heldSet.delete(h.ti);
               if (cooldown > 0) vetadoHasta.set(h.ti, i + cooldown);
