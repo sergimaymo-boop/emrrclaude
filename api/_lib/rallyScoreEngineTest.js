@@ -135,7 +135,7 @@ function computeRunwayTest(price, ema50, trendAge, proximity52w) {
  * processor (bars del proveedor con cierres AJUSTADOS; spyBars se acepta y se
  * ignora — esta señal no es relativa al índice).
  */
-export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA" }) {
+export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [] }) {
   void spyBars; void spreadPercent; void region;
   if (!Array.isArray(bars) || bars.length < MIN_BARS) {
     return { ok: false, reason: `NEED_${MIN_BARS}_BARS` };
@@ -221,6 +221,18 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   });
 
   const prev = closes[n - 2];
+  // ⚠️ GUARDIA DE HUECO DE PROVEEDOR (23-sep-2026, mismo arreglo que rallyScoreEngine.js):
+  // `prev` viene del array `closes` ya limpio de nulos — un hueco de sesión real
+  // (Yahoo con close=null para todo el mercado un día, visto en vivo el 22-sep-2026)
+  // desaparece antes de llegar aquí y "prev" pasa a ser antesdeayer sin avisar.
+  // Se cruza contra `gapDates` (fechas recientes reconocidas por el proveedor pero
+  // sin rellenar): si hay una entre las dos barras comparadas, dayChangePct es
+  // multi-día y se sirve null en vez de una cifra calculada sobre base equivocada.
+  const lastBarDate = bars[bars.length - 1]?.date ?? null;
+  const prevBarDate = bars[bars.length - 2]?.date ?? null;
+  const sessionGapBetween = Array.isArray(gapDates) && prevBarDate && lastBarDate
+    ? gapDates.some((d) => d > prevBarDate && d < lastBarDate)
+    : false;
   const { label, color } = getRallyLabel(score);
   return {
     ok: true,
@@ -234,7 +246,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     runway: computeRunwayTest(pNow, ema50, trendAge, prox52),
     metrics: {
       lastClose: Math.round(pNow * 100) / 100,
-      dayChangePct: isNum(prev) && prev > 0 ? round1((pNow / prev - 1) * 100) : null,
+      dayChangePct: (!sessionGapBetween && isNum(prev) && prev > 0) ? round1((pNow / prev - 1) * 100) : null,
       momRaw: round1(mom * 100),        // % de la señal 189s10 — desempate del merge
       mom63: mom63 != null ? round1(mom63 * 100) : null,
       mom126: mom126 != null ? round1(mom126 * 100) : null,

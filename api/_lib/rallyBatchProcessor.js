@@ -64,6 +64,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           spyBars,
           spreadPercent: null,
           region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
+          gapDates: histResult.gapDates,
         });
 
         if (!rallyResult.ok || rallyResult.rallyScore < minScore) return null;

@@ -576,7 +576,7 @@ export function rotationRank(rallyScore, runwayScore) {
   return Math.round((0.7 * s + 0.3 * r) * 10) / 10;
 }
 
-export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA" }) {
+export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [] }) {
   // v4.0: el score necesita 189 sesiones de momento 9m + margen; con menos histórico
   // el ticker queda DISCARD (sin 9 meses cotizando no hay señal comparable).
   const MIN_BARS = 200;
@@ -596,9 +596,22 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   // ORIGINAL de barras (no del array `closes` filtrado: si la penúltima barra
   // viniera inválida, el filtrado saltaría a una barra anterior y el % pasaría a
   // ser multi-día sin avisar). Si la penúltima barra no tiene close finito → null.
+  //
+  // ⚠️ GUARDIA DE HUECO DE PROVEEDOR (23-sep-2026): esa protección mira el array
+  // de barras que llega aquí, pero ese array ya viene LIMPIO de nulos desde
+  // providerCascade.js — un hueco de sesión real (Yahoo devolvió el 22-sep con
+  // close=null para TODO el mercado) desaparece antes de esta función y las "dos
+  // últimas barras" pasan a ser hoy + antesdeayer sin que nada lo note. Por eso
+  // ahora se cruza contra `gapDates` (fechas recientes que el proveedor reconoce
+  // pero no pudo rellenar): si hay una fecha con hueco ENTRE las dos barras que se
+  // van a comparar, el "cambio de sesión" es multi-día y se sirve null en vez de
+  // una cifra calculada sobre una base equivocada.
   const lastBar = bars[bars.length - 1];
   const prevBar = bars[bars.length - 2];
-  const dayChangePct = (Number.isFinite(lastBar?.close) && Number.isFinite(prevBar?.close) && prevBar.close > 0)
+  const sessionGapBetween = Array.isArray(gapDates) && prevBar?.date && lastBar?.date
+    ? gapDates.some(d => d > prevBar.date && d < lastBar.date)
+    : false;
+  const dayChangePct = (!sessionGapBetween && Number.isFinite(lastBar?.close) && Number.isFinite(prevBar?.close) && prevBar.close > 0)
     ? Math.round((lastBar.close / prevBar.close - 1) * 10000) / 100
     : null;
 

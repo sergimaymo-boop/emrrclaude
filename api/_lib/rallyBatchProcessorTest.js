@@ -70,6 +70,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           spyBars,
           spreadPercent: null,
           region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
+          gapDates: histResult.gapDates,
         });
 
         // AMPLITUD (4-sep-2026): se cuenta cada ticker con histórico suficiente y si

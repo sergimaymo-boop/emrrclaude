@@ -188,6 +188,9 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
       providerSymbol: normalizedSymbol,
       bars: result.bars.slice(-MAX_BARS),
       barCount: result.bars.length,
+      // Huecos de sesión reciente detectados por el proveedor (23-sep-2026): el motor
+      // de score los usa para no calcular dayChangePct contra una barra multi-día.
+      gapDates: Array.isArray(result.gapDates) ? result.gapDates : [],
     });
   }
 

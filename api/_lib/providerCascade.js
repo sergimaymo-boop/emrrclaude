@@ -201,6 +201,23 @@ function finiteOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// GUARDIA DE HUECOS DE SESIÓN (23-sep-2026): Yahoo a veces devuelve una fecha
+// reciente CON timestamp pero SIN OHLC (close nulo) — a diferencia de un fin de
+// semana o festivo, que directamente no trae timestamp. Eso es Yahoo reconociendo
+// la sesión pero fallando en rellenarla (visto en vivo el 22-sep-2026: hueco de
+// MERCADO ENTERO, mismo día nulo en MRNA/MU/DELL/WDC/INTC/SPY/AAPL a la vez).
+// Si esa fecha se descarta en silencio, "penúltima barra" pasa a ser la sesión de
+// HACE DOS días y cualquier "cambio de sesión" (dayChangePct) sale multiplicado
+// sin avisar. Aquí solo detectamos y devolvemos las fechas con hueco reciente;
+// quien calcule dayChangePct decide qué hacer (norma: dato no fiable → null, nunca
+// una cifra calculada sobre una base equivocada).
+function recentGapDates(dated, days = 7) {
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return dated.filter(d => d.date >= cutoffStr && !(d.close > 0)).map(d => d.date);
+}
+
 // ─── Individual provider fetchers ─────────────────────────────────────────────
 
 async function fetchFinnhubQuote(eodhdSymbol, apiKey) {
@@ -391,30 +408,32 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
 // cruda que perder la barra. open/high/low siguen crudos (mismo criterio que
 // EODHD, que solo ajusta el close; ATR los consume así desde siempre).
 function _parseYahooBars(chartResult) {
-  if (!chartResult) return [];
+  if (!chartResult) return { bars: [], gapDates: [] };
   const ts = chartResult.timestamp ?? [];
   const q = chartResult.indicators?.quote?.[0] ?? {};
   const adj = chartResult.indicators?.adjclose?.[0]?.adjclose ?? null;
-  return ts
-    .map((t, i) => ({
-      date: new Date(t * 1000).toISOString().slice(0, 10),
-      open:   finiteOrNull(q.open?.[i]),
-      high:   finiteOrNull(q.high?.[i]),
-      low:    finiteOrNull(q.low?.[i]),
-      close:  (adj ? finiteOrNull(adj[i]) : null) ?? finiteOrNull(q.close?.[i]),
-      volume: finiteOrNull(q.volume?.[i]) ?? 0,
-    }))
-    .filter(b => b.close && b.close > 0);
+  const dated = ts.map((t, i) => ({
+    date: new Date(t * 1000).toISOString().slice(0, 10),
+    open:   finiteOrNull(q.open?.[i]),
+    high:   finiteOrNull(q.high?.[i]),
+    low:    finiteOrNull(q.low?.[i]),
+    close:  (adj ? finiteOrNull(adj[i]) : null) ?? finiteOrNull(q.close?.[i]),
+    volume: finiteOrNull(q.volume?.[i]) ?? 0,
+  }));
+  return {
+    bars: dated.filter(b => b.close && b.close > 0),
+    gapDates: recentGapDates(dated),
+  };
 }
 
-// Intenta un único par (range, host). Devuelve barras o null.
+// Intenta un único par (range, host). Devuelve { bars, gapDates } o null.
 async function _fetchYahooOnce(symbol, range, host) {
   const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
   const extraHeaders = { "accept-language": "en-US,en;q=0.9" };
   const r = await fetchJson(`https://${host}${path}`, extraHeaders);
   if (!r.ok) return null;
-  const bars = _parseYahooBars(r.data?.chart?.result?.[0]);
-  return bars.length > 0 ? bars : null;
+  const { bars, gapDates } = _parseYahooBars(r.data?.chart?.result?.[0]);
+  return bars.length > 0 ? { bars, gapDates } : null;
 }
 
 /**
@@ -442,15 +461,15 @@ async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
 
   // Intentar con la ruta primaria (query1 → query2)
   for (const host of HOSTS) {
-    const bars = await _fetchYahooOnce(symbol, primaryRange, host);
-    if (bars) return { ok: true, provider: "Yahoo", bars, range: primaryRange, host };
+    const r = await _fetchYahooOnce(symbol, primaryRange, host);
+    if (r) return { ok: true, provider: "Yahoo", bars: r.bars, gapDates: r.gapDates, range: primaryRange, host };
   }
 
   // Fallback "1y": si "2y" falló (ticker raro / throttle puntual), intentar con 1y
   if (needDeep) {
     for (const host of HOSTS) {
-      const bars = await _fetchYahooOnce(symbol, "1y", host);
-      if (bars) return { ok: true, provider: "Yahoo", bars, range: "1y", host };
+      const r = await _fetchYahooOnce(symbol, "1y", host);
+      if (r) return { ok: true, provider: "Yahoo", bars: r.bars, gapDates: r.gapDates, range: "1y", host };
     }
   }
 
