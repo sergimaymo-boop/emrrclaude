@@ -174,7 +174,7 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
     };
   }
 
-  // Cascade: EODHD → TwelveData+Yahoo (parallel) → FMP → Stooq.
+  // Cascade: Yahoo (principal) → TwelveData → FMP → EODHD → Stooq (solo respaldos).
   // FMP es la 2ª red real de histórico; se activa en cuanto FMP_API_KEY tenga valor (hoy vacía).
   const env = getEnv();
   const result = await cascadeHistory(normalizedSymbol, DEFAULT_LOOKBACK_DAYS, {

@@ -196,7 +196,7 @@ async function getVisibleQuote(asset) {
   const env = process.env;
   const isConfigured = (v) => v && v.trim() && !v.includes("placeholder");
 
-  // Cascade: Finnhub → TwelveData → Yahoo → Stooq
+  // Cascade: Finnhub → Yahoo → TwelveData → FMP → Stooq
   const result = await cascadeQuote(asset.providerSymbolEodhd, {
     FINNHUB_API_KEY:     isConfigured(env.FINNHUB_API_KEY)     ? env.FINNHUB_API_KEY     : null,
     TWELVE_DATA_API_KEY: isConfigured(env.TWELVE_DATA_API_KEY) ? env.TWELVE_DATA_API_KEY : null,

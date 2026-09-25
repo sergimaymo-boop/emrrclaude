@@ -201,6 +201,14 @@ function finiteOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+// Barra con cierre crudo + ajustado → OHLC en la escala AJUSTADA (mismo factor que el
+// cierre), para que el rango verdadero (ATR) no mezcle escalas antes de un dividendo.
+function adjustOhlc(b) {
+  const f = b.adjClose != null && b.close ? b.adjClose / b.close : 1;
+  const k = (v) => (v == null ? null : v * f);
+  return { date: b.date, open: k(b.open), high: k(b.high), low: k(b.low), close: b.adjClose ?? b.close, volume: b.volume };
+}
+
 // GUARDIA DE HUECOS DE SESIÓN (23-sep-2026): Yahoo a veces devuelve una fecha
 // reciente CON timestamp pero SIN OHLC (close nulo) — a diferencia de un fin de
 // semana o festivo, que directamente no trae timestamp. Eso es Yahoo reconociendo
@@ -216,6 +224,44 @@ function recentGapDates(dated, days = 7) {
   cutoff.setUTCDate(cutoff.getUTCDate() - days);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return dated.filter(d => d.date >= cutoffStr && !(d.close > 0)).map(d => d.date);
+}
+
+// Sesión EN CURSO para los proveedores de RESPALDO, que no la informan (25-sep-2026):
+// última vela fechada hoy con la bolsa aún sin cerrar → precio intradía, no cierre.
+// Cierre regular en UTC con horario de verano US/UE (Londres y el continente cierran
+// a la misma hora UTC). En un cierre anticipado se marca "en curso": ante la duda,
+// nunca se presenta un intradía como cierre. Los huecos no se pueden detectar (estas
+// fuentes omiten los días vacíos) → gapDates vacío.
+function nthSundayUtcMs(year, monthIndex, n) {
+  const first = new Date(Date.UTC(year, monthIndex, 1));
+  return Date.UTC(year, monthIndex, 1 + ((7 - first.getUTCDay()) % 7) + (n - 1) * 7);
+}
+function lastSundayUtcMs(year, monthIndex) {
+  const last = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return Date.UTC(year, monthIndex, last.getUTCDate() - last.getUTCDay());
+}
+function regularCloseUtcMinutes(eodhdSymbol, now) {
+  const y = now.getUTCFullYear();
+  const t = now.getTime();
+  const suffix = String(eodhdSymbol).split(".").pop();
+  if (suffix === "US" || suffix === "INDX") {
+    const dst = t >= nthSundayUtcMs(y, 2, 2) + 7 * 3600000 && t < nthSundayUtcMs(y, 10, 1) + 6 * 3600000;
+    return dst ? 20 * 60 : 21 * 60;
+  }
+  const dst = t >= lastSundayUtcMs(y, 2) + 3600000 && t < lastSundayUtcMs(y, 9) + 3600000;
+  return dst ? 15 * 60 + 30 : 16 * 60 + 30;
+}
+export function deriveLastBarForming(eodhdSymbol, bars, now = new Date()) {
+  const last = Array.isArray(bars) ? bars[bars.length - 1] : null;
+  if (!last?.date || last.date !== now.toISOString().slice(0, 10)) return false;
+  return now.getUTCHours() * 60 + now.getUTCMinutes() < regularCloseUtcMinutes(eodhdSymbol, now);
+}
+function withDerivedSessionFlags(eodhdSymbol, result) {
+  return {
+    ...result,
+    gapDates: Array.isArray(result.gapDates) ? result.gapDates : [],
+    lastBarForming: typeof result.lastBarForming === "boolean" ? result.lastBarForming : deriveLastBarForming(eodhdSymbol, result.bars),
+  };
 }
 
 // ─── Individual provider fetchers ─────────────────────────────────────────────
@@ -398,12 +444,13 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
   const bars = rows
-    .map(row => ({
+    .map(row => adjustOhlc({
       date: row.date?.slice(0, 10) ?? "",
       open:   finiteOrNull(row.open),
       high:   finiteOrNull(row.high),
       low:    finiteOrNull(row.low),
-      close:  finiteOrNull(row.adjClose ?? row.close),
+      close:  finiteOrNull(row.close),
+      adjClose: finiteOrNull(row.adjClose),
       volume: finiteOrNull(row.volume) ?? 0,
     }))
     .filter(b => b.date && b.date >= cutoffStr && b.close && b.close > 0)
@@ -422,21 +469,30 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
 // (KO.US: mom9m 21,6% crudo vs 24,1% ajustado, verificado en vivo).
 // FALLBACK documentado: si Yahoo no envía adjclose para un ticker (índices y
 // algunos símbolos no lo traen), se usa el close crudo de esa barra — mejor barra
-// cruda que perder la barra. open/high/low siguen crudos (mismo criterio que
-// EODHD, que solo ajusta el close; ATR los consume así desde siempre).
+// cruda que perder la barra.
+// OHLC COHERENTE (25-sep-2026): open/high/low se ajustan con el mismo factor que el
+// cierre de su barra (ajustado/crudo). Antes seguían crudos y, en las barras previas a
+// un dividendo, el rango verdadero (ATR de Supreme y del TOP 8) mezclaba precios
+// ajustados con sin ajustar e inflaba la volatilidad.
 function _parseYahooBars(chartResult) {
   if (!chartResult) return { bars: [], gapDates: [], lastBarForming: false };
   const ts = chartResult.timestamp ?? [];
   const q = chartResult.indicators?.quote?.[0] ?? {};
   const adj = chartResult.indicators?.adjclose?.[0]?.adjclose ?? null;
-  const dated = ts.map((t, i) => ({
-    date: new Date(t * 1000).toISOString().slice(0, 10),
-    open:   finiteOrNull(q.open?.[i]),
-    high:   finiteOrNull(q.high?.[i]),
-    low:    finiteOrNull(q.low?.[i]),
-    close:  (adj ? finiteOrNull(adj[i]) : null) ?? finiteOrNull(q.close?.[i]),
-    volume: finiteOrNull(q.volume?.[i]) ?? 0,
-  }));
+  const dated = ts.map((t, i) => {
+    const rawClose = finiteOrNull(q.close?.[i]);
+    const adjClose = adj ? finiteOrNull(adj[i]) : null;
+    const f = adjClose != null && rawClose ? adjClose / rawClose : 1;
+    const scale = (v) => { const n = finiteOrNull(v); return n == null ? null : n * f; };
+    return {
+      date: new Date(t * 1000).toISOString().slice(0, 10),
+      open:   scale(q.open?.[i]),
+      high:   scale(q.high?.[i]),
+      low:    scale(q.low?.[i]),
+      close:  adjClose ?? rawClose,
+      volume: finiteOrNull(q.volume?.[i]) ?? 0,
+    };
+  });
   // Vela EN CURSO (25-sep-2026): con la bolsa abierta Yahoo incluye la vela diaria
   // aún sin cerrar; su "close" es un precio intradía. Se marca con el horario de
   // sesión que trae el propio Yahoo, para no presentarlo nunca como un cierre.
@@ -602,11 +658,11 @@ async function raceProviders(fnA, fnB) {
  *   2. FRED fallback (official EOD, Federal Reserve)
  *   3. TwelveData → Stooq
  *
- * All other symbols:
+ * All other symbols (25-sep-2026: Yahoo principal, TwelveData solo de respaldo):
  *   1. Finnhub (real-time, API key)
- *   2. TwelveData (real-time, API key)
- *   3. Yahoo Finance (real-time, no key)
- *   4. Stooq (delayed, no key)
+ *   2. Yahoo Finance (real-time, no key; % del día derivado de la serie fechada)
+ *   3. TwelveData (API key, respaldo — su plan gratuito devuelve 429 con frecuencia)
+ *   4. FMP (API key) → 5. Stooq (delayed, no key)
  */
 export async function cascadeQuote(eodhdSymbol, env = {}) {
   const tried = [];
@@ -638,7 +694,7 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
     return { ok: false, provider: "none", reason: "All TNX providers failed", triedProviders: tried };
   }
 
-  // Standard symbols: Finnhub → TwelveData → FMP → Yahoo → Stooq
+  // Standard symbols: Finnhub → Yahoo → TwelveData → FMP → Stooq
   if (env.FINNHUB_API_KEY) {
     const r = await fetchFinnhubQuote(eodhdSymbol, env.FINNHUB_API_KEY);
     tried.push({ provider: "Finnhub", ok: r.ok, reason: r.reason });
@@ -646,6 +702,10 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
   } else {
     tried.push({ provider: "Finnhub", ok: false, reason: "Key not configured" });
   }
+
+  const yahoo = await fetchYahooQuote(eodhdSymbol);
+  tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
+  if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
   if (env.TWELVE_DATA_API_KEY) {
     const r = await fetchTwelveDataQuote(eodhdSymbol, env.TWELVE_DATA_API_KEY);
@@ -662,10 +722,6 @@ export async function cascadeQuote(eodhdSymbol, env = {}) {
   } else {
     tried.push({ provider: "FMP", ok: false, reason: "Key not configured" });
   }
-
-  const yahoo = await fetchYahooQuote(eodhdSymbol);
-  tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
-  if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
   const stooq = await fetchStooqQuote(eodhdSymbol);
   tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
@@ -684,12 +740,13 @@ async function fetchEodhdHistory(eodhdSymbol, apiKey, lookbackDays) {
   const r = await fetchJson(url);
   if (!r.ok || !Array.isArray(r.data)) return { ok: false, provider: "EODHD", reason: r.reason ?? "Not an array" };
   const bars = r.data
-    .map(row => ({
+    .map(row => adjustOhlc({
       date: row.date?.slice(0, 10) ?? "",
       open:   finiteOrNull(row.open),
       high:   finiteOrNull(row.high),
       low:    finiteOrNull(row.low),
-      close:  finiteOrNull(row.adjusted_close ?? row.close),
+      close:  finiteOrNull(row.close),
+      adjClose: finiteOrNull(row.adjusted_close),
       volume: finiteOrNull(row.volume) ?? 0,
     }))
     .filter(b => b.date && b.close && b.close > 0);
@@ -698,28 +755,30 @@ async function fetchEodhdHistory(eodhdSymbol, apiKey, lookbackDays) {
 }
 
 /**
- * BENCHMARK RACE — fetches SPY.US from ALL providers simultaneously.
- * First valid result wins. No sequential fallback = no timeout risk.
- * SPY is the most liquid US ETF — available on every provider.
- * Used to guarantee RS (Relative Strength) is always calculable.
+ * BENCHMARK (SPY.US) — Yahoo PRINCIPAL (25-sep-2026). Solo si Yahoo falla se lanza
+ * la carrera entre los respaldos (TwelveData, EODHD, FMP, Stooq): el primero válido
+ * gana y nunca se encadenan esperas secuenciales. Antes competían todos a la vez y
+ * podía ganar una serie de otra fuente (260 barras, sin marcas de sesión).
  */
 export async function raceBenchmarkHistory(lookbackDays = 260, env = {}) {
   const symbol = "SPY.US";
-  const promises = [];
-
-  if (env.EODHD_API_KEY) {
-    promises.push(fetchEodhdHistory(symbol, env.EODHD_API_KEY, lookbackDays));
+  const yahoo = await fetchYahooHistory(symbol, lookbackDays).catch(() => null);
+  if (yahoo?.ok && Array.isArray(yahoo.bars) && yahoo.bars.length >= 61) {
+    return { ...yahoo, source: "YAHOO_PRIMARY" };
   }
+
+  const promises = [];
   if (env.TWELVE_DATA_API_KEY) {
     promises.push(fetchTwelveDataHistory(symbol, lookbackDays, env.TWELVE_DATA_API_KEY));
+  }
+  if (env.EODHD_API_KEY) {
+    promises.push(fetchEodhdHistory(symbol, env.EODHD_API_KEY, lookbackDays));
   }
   if (env.FMP_API_KEY) {
     promises.push(fetchFMPHistory(symbol, lookbackDays, env.FMP_API_KEY));
   }
-  promises.push(fetchYahooHistory(symbol, lookbackDays));
   promises.push(fetchStooqHistory(symbol, lookbackDays));
 
-  // Race all providers: first valid result wins, never waits for slow ones
   return new Promise((resolve) => {
     let pending = promises.length;
     let resolved = false;
@@ -727,7 +786,7 @@ export async function raceBenchmarkHistory(lookbackDays = 260, env = {}) {
       p.then((r) => {
         if (!resolved && r.ok && Array.isArray(r.bars) && r.bars.length >= 61) {
           resolved = true;
-          resolve({ ...r, source: "RACE" });
+          resolve({ ...withDerivedSessionFlags(symbol, r), source: "FALLBACK_RACE" });
         } else {
           pending -= 1;
           if (pending === 0 && !resolved) resolve({ ok: false, bars: [], provider: "none", reason: "All benchmark providers failed" });
@@ -741,44 +800,31 @@ export async function raceBenchmarkHistory(lookbackDays = 260, env = {}) {
 }
 
 /**
- * HISTORICAL CASCADE — EODHD → TwelveData+Yahoo (parallel) → Stooq
- * EODHD is primary because it has the best EU+US stock coverage.
+ * HISTORICAL CASCADE (25-sep-2026) — Yahoo PRINCIPAL; TwelveData, FMP, EODHD y Stooq
+ * solo de RESPALDO, en ese orden, cuando Yahoo falla para ese ticker. Antes Yahoo y
+ * TwelveData competían en paralelo: ganaba el primero en responder y un mismo scan
+ * mezclaba fuentes (TwelveData: 260 barras, sin huecos visibles ni sesión en curso).
+ * Yahoo es además la fuente del dataset de los backtests (cierres ajustados).
  */
 export async function cascadeHistory(eodhdSymbol, lookbackDays = 260, env = {}) {
   const tried = [];
 
-  // 1. EODHD — primary, best coverage especially for EU stocks
-  if (env.EODHD_API_KEY) {
-    const r = await fetchEodhdHistory(eodhdSymbol, env.EODHD_API_KEY, lookbackDays);
-    tried.push({ provider: "EODHD", ok: r.ok, reason: r.reason });
-    if (r.ok) return { ...r, triedProviders: tried };
-  }
+  const yahoo = await fetchYahooHistory(eodhdSymbol, lookbackDays);
+  tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
+  if (yahoo.ok) return { ...yahoo, triedProviders: tried };
 
-  // 2. TwelveData + Yahoo in parallel
-  if (env.TWELVE_DATA_API_KEY) {
-    const r = await raceProviders(
-      () => fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY),
-      () => fetchYahooHistory(eodhdSymbol, lookbackDays),
-    );
-    tried.push({ provider: r.provider, ok: r.ok });
-    if (r.ok) return { ...r, triedProviders: tried };
-  } else {
-    const yahoo = await fetchYahooHistory(eodhdSymbol, lookbackDays);
-    tried.push({ provider: "Yahoo", ok: yahoo.ok, reason: yahoo.reason });
-    if (yahoo.ok) return { ...yahoo, triedProviders: tried };
-  }
+  const fallbacks = [
+    env.TWELVE_DATA_API_KEY ? ["TwelveData", () => fetchTwelveDataHistory(eodhdSymbol, lookbackDays, env.TWELVE_DATA_API_KEY)] : null,
+    env.FMP_API_KEY ? ["FMP", () => fetchFMPHistory(eodhdSymbol, lookbackDays, env.FMP_API_KEY)] : null,
+    env.EODHD_API_KEY ? ["EODHD", () => fetchEodhdHistory(eodhdSymbol, env.EODHD_API_KEY, lookbackDays)] : null,
+    ["Stooq", () => fetchStooqHistory(eodhdSymbol, lookbackDays)],
+  ].filter(Boolean);
 
-  // 3. FMP (clave) — 2ª red REAL de histórico US+EU. Inactivo si FMP_API_KEY está vacía.
-  if (env.FMP_API_KEY) {
-    const fmp = await fetchFMPHistory(eodhdSymbol, lookbackDays, env.FMP_API_KEY);
-    tried.push({ provider: "FMP", ok: fmp.ok, reason: fmp.reason });
-    if (fmp.ok) return { ...fmp, triedProviders: tried };
+  for (const [name, fetchFn] of fallbacks) {
+    const r = await fetchFn();
+    tried.push({ provider: name, ok: r.ok, reason: r.reason });
+    if (r.ok) return { ...withDerivedSessionFlags(eodhdSymbol, r), triedProviders: tried };
   }
-
-  // 4. Stooq last resort
-  const stooq = await fetchStooqHistory(eodhdSymbol, lookbackDays);
-  tried.push({ provider: "Stooq", ok: stooq.ok, reason: stooq.reason });
-  if (stooq.ok) return { ...stooq, triedProviders: tried };
 
   return { ok: false, provider: "none", reason: "All providers failed", triedProviders: tried, bars: [] };
 }
