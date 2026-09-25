@@ -77,12 +77,18 @@ TRAIL = 0.45
 # (y RALLY_TEST_LAST_REBALANCE en api/_lib/rallyScoreEngineTest.js).
 ENTRY_DATE = "2026-09-08"
 BASE_FX = 1.1627   # EUR/USD del 8-sep (valor base 8.383 €)
+# 25-sep-2026: +2.000 € repartidos en el top-5 del día (sin vender INTC). Por ticker:
+# cost = coste medio real (foto IBK: precio − PyG no realizada/uds); base = media ponderada
+# de los cierres del 8-sep y del precio de la compra nueva; fx = cambio EUR/USD efectivo de
+# la mezcla de lotes (1,1627 los del 8-sep, 1,139 los del 25-sep); entry = desde cuándo se
+# persigue el máximo para el trailing.
 REGISTRO = {
-    "MRNA": {"units": 13.81, "cost": 131.61, "base": 140.33, "currency": "USD"},
-    "MU":   {"units": 1.97,  "cost": 971.06, "base": 1000.26, "currency": "USD"},
-    "DELL": {"units": 3.78,  "cost": 453.08, "base": 533.88, "currency": "USD"},
-    "WDC":  {"units": 4.09,  "cost": 471.28, "base": 477.30, "currency": "USD"},
-    "INTC": {"units": 17.87, "cost": 97.84,  "base": 104.47, "currency": "USD"},
+    "MRNA": {"units": 16.28,  "cost": 141.94, "base": 149.34,  "fx": 1.1578, "currency": "USD"},
+    "MU":   {"units": 2.42,   "cost": 992.30, "base": 1016.07, "fx": 1.1579, "currency": "USD"},
+    "DELL": {"units": 4.63,   "cost": 474.80, "base": 540.77,  "fx": 1.1580, "currency": "USD"},
+    "WDC":  {"units": 5.0004, "cost": 468.86, "base": 473.79,  "fx": 1.1585, "currency": "USD"},
+    "INTC": {"units": 17.87,  "cost": 97.84,  "base": 104.47,  "fx": 1.1627, "currency": "USD"},
+    "HPE":  {"units": 6.22,   "cost": 64.17,  "base": 64.17,   "fx": 1.139,  "currency": "USD", "entry": "2026-09-25"},
 }
 YAHOO_SUFFIX = {"US": "", "PA": ".PA", "AS": ".AS", "XETRA": ".DE", "MI": ".MI", "MC": ".MC",
                 "BR": ".BR", "LSE": ".L", "SW": ".SW", "LS": ".LS", "HE": ".HE", "CO": ".CO",
@@ -312,7 +318,7 @@ def valorar(unidades, eurusd, calidad, precios_cache):
         reg = REGISTRO.get(t, {})
         cur = reg.get("currency", "USD")
         try:
-            q = precios_cache.get(t) or cotizar(yahoo_symbol(t if "." in t else t + ".US"))
+            q = precios_cache.get(t) or cotizar(yahoo_symbol(t if "." in t else t + ".US"), reg.get("entry", ENTRY_DATE))
             precios_cache[t] = q
         except Exception as e:
             calidad.append(f"⚠ {t}: sin dato fiable de precio ({e}) — no se valora")
@@ -324,7 +330,7 @@ def valorar(unidades, eurusd, calidad, precios_cache):
         stop_ibk = q["maxIntradia"] * (1 - TRAIL) if q["maxIntradia"] else None
         stop_modelo = q["maxCierre"] * (1 - TRAIL) if q["maxCierre"] else None
         filas.append({
-            "ticker": t, "uds": uds, "cur": cur, "q": q, "valor": valor,
+            "ticker": t, "uds": uds, "cur": cur, "q": q, "valor": valor, "fxb": reg.get("fx", BASE_FX),
             "base": reg.get("base"), "coste": reg.get("cost"),
             "desde_base": (q["precio"] / reg["base"] - 1) if reg.get("base") else None,
             "sobre_coste": (q["precio"] / reg["cost"] - 1) if reg.get("cost") else None,
@@ -347,7 +353,7 @@ def detectar_eventos(unidades_foto, registro_vivo, filas):
         if f.get("roto_modelo"):
             eventos.append(("STOP", f"{f['ticker']}: cierre {f['q']['precio']:.2f} por debajo del trailing del 45% "
                                     f"({f['stop_modelo']:.2f}) — la orden TRAIL de IBK debería haber saltado: revísala"))
-    nuevos = [t for t in unidades_foto if t not in registro_vivo]
+    nuevos = [t for t in unidades_foto if t not in registro_vivo and t not in REGISTRO]
     if nuevos:
         eventos.append(("CAMBIO", f"posiciones nuevas en la foto: {', '.join(nuevos)} — actualiza el registro de la cartera"))
     return eventos
@@ -406,9 +412,9 @@ def plan_rebalanceo(rally, capital_eur, unidades, eurusd, precios_cache, calidad
 def informe_valoracion(filas, review, eurusd, foto, estado_prev, calidad, cabecera):
     ok = [f for f in filas if not f.get("sin_dato")]
     valor = sum(f["valor"] for f in ok)
-    base_eur = sum(f["uds"] * f["base"] / BASE_FX for f in ok if f.get("base"))
+    base_eur = sum(f["uds"] * f["base"] / f["fxb"] for f in ok if f.get("base"))
     # Coste en € al cambio de la COMPRA (BASE_FX): lo que de verdad salió de la cuenta.
-    coste_eur = sum(f["uds"] * f["coste"] / (BASE_FX if f["cur"] == "USD" else 1.0) for f in ok if f.get("coste"))
+    coste_eur = sum(f["uds"] * f["coste"] / (f["fxb"] if f["cur"] == "USD" else 1.0) for f in ok if f.get("coste"))
     suelo_eur = sum(f["uds"] * f["stop_ibk"] / (eurusd if f["cur"] == "USD" else 1.0) for f in ok if f.get("stop_ibk"))
     todas_cierre = all(f["q"]["esCierre"] for f in ok)
     fechas = sorted({f["q"]["fecha"] for f in ok})
@@ -423,7 +429,7 @@ def informe_valoracion(filas, review, eurusd, foto, estado_prev, calidad, cabece
     L += ["", "① RENTABILIDAD SOBRE EL CAPITAL INVERTIDO"]
     if base_eur > 0:
         r = valor / base_eur - 1
-        L.append(f"   Desde la base del 8-sep ({eur(base_eur)}): {pct(r)}{eur_si_ganancia(valor - base_eur)}")
+        L.append(f"   Desde la base (cierres del 8-sep + compras del 25-sep, {eur(base_eur)}): {pct(r)}{eur_si_ganancia(valor - base_eur)}")
     if coste_eur > 0:
         r = valor / coste_eur - 1
         L.append(f"   Sobre lo que pagaste ({eur(coste_eur)}): {pct(r)}{eur_si_ganancia(valor - coste_eur)}")
