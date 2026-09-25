@@ -245,17 +245,21 @@ export function RallyPanel() {
           </div>
 
           <div style={{ padding: "8px 16px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", fontSize: 9.5, color: "#64748b", lineHeight: 1.6 }}>
-            Validado en <b style={{ color: SLATE }}>{RALLY_BACKTEST.period}</b>: el esquema completo en producción (selección por momento 9m
-            + pesos por momentum crudo + stops adaptativos) midió{" "}
+            Validado en <b style={{ color: SLATE }}>{RALLY_BACKTEST.period}</b> como <b style={{ color: SLATE }}>cartera real</b> (pesos que
+            se mueven con el precio; 20 pb por lado): el esquema completo en producción (selección por momento 9m + pesos por momentum
+            crudo + stops adaptativos) midió{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.cagr * 100).toFixed(1)}%</b> anual con una caída máxima del{" "}
             <b style={{ color: AMBER }}>{(RALLY_BACKTEST.strategy.maxDD * 100).toFixed(1)}%</b> (MAR {RALLY_BACKTEST.strategy.mar.toFixed(2)},
-            aciertos {(RALLY_BACKTEST.strategy.winRate * 100).toFixed(0)}%) en el periodo completo, y{" "}
+            aciertos {(RALLY_BACKTEST.strategy.winRate * 100).toFixed(0)}%). En la confirmación 2022-26, fuera del tramo con el que se eligió:{" "}
             {(RALLY_BACKTEST.strategyConfirm.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.strategyConfirm.maxDD * 100).toFixed(1)}%
-            (MAR {RALLY_BACKTEST.strategyConfirm.mar.toFixed(2)}) en la mitad de confirmación 2022-26, fuera del tramo con el que se eligió —
-            frente a {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% / {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(1)}% de comprar y
-            mantener el S&amp;P 500. Con reparto a partes iguales, en lugar de por momentum, la misma selección con los mismos stops daba{" "}
-            {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}% (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}): respetar los pesos
-            sugeridos es parte de la estrategia.
+            (MAR {RALLY_BACKTEST.strategyConfirm.mar.toFixed(2)}); {(RALLY_BACKTEST.confirm2225.cagr * 100).toFixed(1)}% en 2022-25, sin los
+            7 meses excepcionales de 2026. S&amp;P 500: {(RALLY_BACKTEST.buyHold.cagr * 100).toFixed(1)}% /{" "}
+            {(RALLY_BACKTEST.buyHold.maxDD * 100).toFixed(1)}%. A partes iguales, en lugar de por momentum:{" "}
+            {(RALLY_BACKTEST.equalWeight.cagr * 100).toFixed(1)}% (MAR {RALLY_BACKTEST.equalWeight.mar.toFixed(2)}) — respetar los pesos
+            sugeridos es parte de la estrategia. <b style={{ color: SLATE }}>Expectativa realista</b>: con los stops como orden intradía en el
+            bróker (−2-3 pp/año), {RALLY_BACKTEST.realista.confirm} en 2022-26 y {RALLY_BACKTEST.realista.y2225} en 2022-25, antes de
+            impuestos. Y es un techo: el universo son los supervivientes de hoy (faltan los que quebraron o salieron), lo que infla estas
+            cifras sin cuantificar.
             La señal del ranking es el <b style={{ color: SLATE }}>momento a 9 meses</b> (189 sesiones): en la super-auditoría de familias de
             indicadores (momento a 4 plazos, RSI, fuerza relativa, momento/volatilidad y combos) fue la única que dominó en las 9 celdas de la
             malla fase×cadencia — y coincide con la ventana que OPTIMAL SUPREME encontró por separado con sus 118 variantes.

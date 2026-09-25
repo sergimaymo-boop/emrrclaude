@@ -1,0 +1,1102 @@
+{
+ "ranAt": "2026-09-25T14:34:33.118Z",
+ "costBps": 20,
+ "datos": {
+  "fichero": "/private/tmp/claude-501/universe-10y-frozen-2026-09-25.json",
+  "desde": "2016-08-08",
+  "hasta": "2026-09-01",
+  "sesiones": 2531,
+  "tickers": 603,
+  "split": "2022-01-03",
+  "finPublicadoC0": "2026-08-07",
+  "faseCanonica": {
+   "FROM": 260,
+   "fecha": "2017-08-18",
+   "revision": 84
+  },
+  "avisos": [
+   "82 tickers sin barra el 2026-08-31 en la copia congelada (hueco del proveedor): con la convención de la casa pierden el retorno de 08-31 y 09-01; afecta solo a las cifras 'hasta 2026-09-01'. La celda canónica hasta 2026-08-07 no lo toca.",
+   "2026-05-14 sin barra para 19 tickers suizos + MT.PA: es festivo (Ascensión en SIX), no un hueco.",
+   "El canon de C0 arranca en efectivo 84 sesiones (primera revisión en FROM+84): deprime el CAGR full ~2 pp; no afecta a confirmación. Convención conservadora, se mantiene en todas las variantes."
+  ]
+ },
+ "hallazgosCodigo": {
+  "c0_rallyStudyLib": "simulate(): h.w nunca se actualiza con el retorno (l. 413-422) → pesos fijos = rebalanceo diario gratis; revisión cobrada turn/topN (l. 491), re-ajuste de los que continúan gratis (l. 492-501); el sustituto de un stop hereda el peso objetivo (l. 458). Ejecución al cierre de la señal.",
+  "labM189_labDayCore": "simular(): los pesos DERIVAN (l. 288-291) y cada reforma cobra COST_BPS·Σ|Δw| con las dos patas (l. 271-273); venta del stop al peso real (l. 310), compra JUMP (l. 316), RESCAN2 re-forma vía formar() (l. 327). NO tiene los optimismos (1) y (2). Sí ejecuta al cierre de la señal (formar(i) con adj[i], l. 242/264/269; stop vende al cierre que lo dispara, l. 298-310) → se mide (d).",
+  "referenciaC0DelPanelRallyTest": "refC0 '53,3% / 43,7%' y dd2022C0 '−12,9%' salen de simulate()+PRESET_C0 (rally-test-engine-study2/3.mjs) → convención (a), NO comparable con LAB-M189 (que ya deriva y cobra real). La referencia homogénea es c0Ensemble10.c o .d."
+ },
+ "validaciones": {
+  "c0ReplicaBitExacta": "OK — simC0(a) ≡ simulate(T, D, {FROM, TO, review:84, ...PRESET_C0(T)}) bit a bit (curva, trades, saltos, aciertos) en 11 celdas (canónica a 2026-08-07 y 2026-09-01 + 9 fases del ensemble)",
+  "c0ReproduccionPublicada": "(a) con la copia congelada hasta 2026-08-07: full 47.75% / DD 37.71% · confirm 44.99% / DD 36.08% · aciertos 64.7% — publicado 47.71% / 37.71% · 44.91% / 36.08% · 64.7%. Mismo camino de operaciones; el retorno año a año coincide BIT A BIT 2018-2025 con porAno del estudio y solo 2026 difiere (+0,40 pp en el año) por revisión de datos de la copia congelada.",
+  "c0EnsembleReproduccion": "OK — C0 ensemble (a) reproduce BIT A BIT baseC0 de rally-test-engine-study3.json (confirm 53.32% / peor 43.67% / DD real 36.86% / 2022 -12.87%)",
+  "stopsTrainReproduccion": "OK — peor-celda train de C0 y FIJO30 bajo (a) reproduce BIT A BIT rally-joint-study.json (el train no toca 2026)",
+  "labReproduccionPublicada": "OK — evaluar(v1.1) del núcleo reproduce BIT A BIT F45 de lab-stop-audit.json (confirm 64.56% / peor 56.10% / DD real 38.78% / 2022 -11.57%)",
+  "labReplicaBitExacta": "OK — simLab(lag=0) ≡ simular({R:63,K:5,SCORE,FIJO 0,45,RESCAN2}) del núcleo bit a bit (curva y saltos) en las 10 fases"
+ },
+ "publicadoC0": {
+  "fuente": "backtests/rally-weighting-study.json (M9_RAW, celda canónica, datos hasta 2026-08-07)",
+  "full": {
+   "cagr": 0.47712510658530705,
+   "mdd": 0.3770905133653919,
+   "mar": 1.2652800579021302
+  },
+  "confirm": {
+   "cagr": 0.44908188128740023,
+   "mdd": 0.36080520832792473,
+   "mar": 1.2446657390800289
+  },
+  "winrate": 0.6473429951690821,
+  "equal": {
+   "full": {
+    "cagr": 0.389992221664363,
+    "mdd": 0.36405731181430456,
+    "mar": 1.07123853582506
+   },
+   "confirm": {
+    "cagr": 0.3427571357929873
+   }
+  },
+  "spy": {
+   "full": {
+    "cagr": 0.15638174286026985,
+    "mdd": 0.33717264353564513
+   }
+  }
+ },
+ "c0Canonica": {
+  "hasta_2026-08-07": {
+   "fin": "2026-08-07",
+   "m9raw": {
+    "a": {
+     "label": "(a) publicada: pesos fijos + coste turn/topN",
+     "full": {
+      "cagr": 0.4775354845281392,
+      "mdd": 0.3770905133653919,
+      "mar": 1.266368332277345
+     },
+     "train": {
+      "cagr": 0.5070485041983679,
+      "mdd": 0.3770905133653919,
+      "mar": 1.3446334135355182
+     },
+     "confirm": {
+      "cagr": 0.44986933679077556,
+      "mdd": 0.3608052088967767,
+      "mar": 1.2468482319485563
+     },
+     "confirm2022_25": {
+      "cagr": 0.34334073545087773,
+      "mdd": 0.31628091352646215,
+      "mar": 1.0855562911549248
+     },
+     "ddRealConfirm": 0.3608052088967767,
+     "ret2022": -0.18316630978703163,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2420881030968487,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 72.24288727466093
+     }
+    },
+    "b": {
+     "label": "(b) pesos a la deriva (cartera real)",
+     "full": {
+      "cagr": 0.46594213973791154,
+      "mdd": 0.3768423824824475,
+      "mar": 1.2364377293990123
+     },
+     "train": {
+      "cagr": 0.4860125683375962,
+      "mdd": 0.3768423824824475,
+      "mar": 1.2896972074531283
+     },
+     "confirm": {
+      "cagr": 0.44701363676118855,
+      "mdd": 0.3744204979661402,
+      "mar": 1.1938813157649641
+     },
+     "confirm2022_25": {
+      "cagr": 0.32831704514767623,
+      "mdd": 0.3293007165367381,
+      "mar": 0.9970128477113347
+     },
+     "ddRealConfirm": 0.3744204979661402,
+     "ret2022": -0.1993769477450048,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2034022490655947,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 69.99282322128519
+     }
+    },
+    "c": {
+     "label": "(c) deriva + coste real Σ|Δw| dos patas",
+     "full": {
+      "cagr": 0.46637332377109897,
+      "mdd": 0.3768423824824476,
+      "mar": 1.2375819319973158
+     },
+     "train": {
+      "cagr": 0.48657987647215384,
+      "mdd": 0.3768423824824476,
+      "mar": 1.2912026329597297
+     },
+     "confirm": {
+      "cagr": 0.4473180741497247,
+      "mdd": 0.37442049796613985,
+      "mar": 1.1946944052998327
+     },
+     "confirm2022_25": {
+      "cagr": 0.3286299798511245,
+      "mdd": 0.32930071653673765,
+      "mar": 0.9979631484174487
+     },
+     "ddRealConfirm": 0.37442049796613985,
+     "ret2022": -0.1992198812878473,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2034022490655947,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 69.99282322128519
+     }
+    },
+    "d": {
+     "label": "(d) (c) + ejecución al cierre siguiente",
+     "full": {
+      "cagr": 0.47366942899805364,
+      "mdd": 0.37529594217360407,
+      "mar": 1.2621224366421315
+     },
+     "train": {
+      "cagr": 0.49282210518132774,
+      "mdd": 0.37529594217360407,
+      "mar": 1.3131559652018794
+     },
+     "confirm": {
+      "cagr": 0.4555943503084976,
+      "mdd": 0.3747784414657116,
+      "mar": 1.2156364931950865
+     },
+     "confirm2022_25": {
+      "cagr": 0.3356591951974852,
+      "mdd": 0.3317620065975072,
+      "mar": 1.011746940645636
+     },
+     "ddRealConfirm": 0.3747784414657116,
+     "ret2022": -0.191673152458411,
+     "winrate": 0.6570048309178744,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2048116213556164,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 70.0747957667288
+     }
+    }
+   },
+   "equal": {
+    "a": {
+     "label": "(a) publicada: pesos fijos + coste turn/topN",
+     "full": {
+      "cagr": 0.3903963816373892,
+      "mdd": 0.36405731181430456,
+      "mar": 1.0723486906273687
+     },
+     "train": {
+      "cagr": 0.44119512379392756,
+      "mdd": 0.36405731181430456,
+      "mar": 1.2118837047804407
+     },
+     "confirm": {
+      "cagr": 0.34352080881825664,
+      "mdd": 0.3430843575247079,
+      "mar": 1.0012721398804005
+     },
+     "confirm2022_25": {
+      "cagr": 0.2844086669434487,
+      "mdd": 0.3152868139492738,
+      "mar": 0.9020633098509693
+     },
+     "ddRealConfirm": 0.3430843575247079,
+     "ret2022": -0.1605578832188682,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2538461538461538,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 72.92676431424769
+     }
+    },
+    "b": {
+     "label": "(b) pesos a la deriva (cartera real)",
+     "full": {
+      "cagr": 0.3813089393456064,
+      "mdd": 0.36565362863890505,
+      "mar": 1.0428145914071085
+     },
+     "train": {
+      "cagr": 0.4275374973141577,
+      "mdd": 0.36565362863890505,
+      "mar": 1.1692417737124796
+     },
+     "confirm": {
+      "cagr": 0.3385267259455227,
+      "mdd": 0.35929100849701856,
+      "mar": 0.9422076198389803
+     },
+     "confirm2022_25": {
+      "cagr": 0.2691109948760597,
+      "mdd": 0.32708650816942275,
+      "mar": 0.8227517435132692
+     },
+     "ddRealConfirm": 0.35929100849701856,
+     "ret2022": -0.17605935616276924,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.282841433815681,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 74.61320083764176
+     }
+    },
+    "c": {
+     "label": "(c) deriva + coste real Σ|Δw| dos patas",
+     "full": {
+      "cagr": 0.3810755400797865,
+      "mdd": 0.36565362863890505,
+      "mar": 1.0421762844205522
+     },
+     "train": {
+      "cagr": 0.4273337944975373,
+      "mdd": 0.36565362863890505,
+      "mar": 1.1686846814244074
+     },
+     "confirm": {
+      "cagr": 0.3382669444295634,
+      "mdd": 0.3592910084970188,
+      "mar": 0.941484580548222
+     },
+     "confirm2022_25": {
+      "cagr": 0.26890598180903735,
+      "mdd": 0.32708650816942275,
+      "mar": 0.8221249580546767
+     },
+     "ddRealConfirm": 0.3592910084970188,
+     "ret2022": -0.17626955815614176,
+     "winrate": 0.6473429951690821,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.282841433815681,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 74.61320083764176
+     }
+    },
+    "d": {
+     "label": "(d) (c) + ejecución al cierre siguiente",
+     "full": {
+      "cagr": 0.39217158950450304,
+      "mdd": 0.35960930879872455,
+      "mar": 1.0905490483951954
+     },
+     "train": {
+      "cagr": 0.43740792417296315,
+      "mdd": 0.35737410492913313,
+      "mar": 1.2239496878479783
+     },
+     "confirm": {
+      "cagr": 0.35026900806769024,
+      "mdd": 0.35960930879872455,
+      "mar": 0.9740265323991874
+     },
+     "confirm2022_25": {
+      "cagr": 0.2840819077809571,
+      "mdd": 0.3251085806731363,
+      "mar": 0.8738062440331977
+     },
+     "ddRealConfirm": 0.35960930879872455,
+     "ret2022": -0.16318746341907486,
+     "winrate": 0.6570048309178744,
+     "tradesYr": 45.18774966711052,
+     "jumps": 39,
+     "revisiones": {
+      "n": 26,
+      "cobradoPubMedio": 1.2538461538461538,
+      "rotacionRealMedia": 1.2853417348902818,
+      "costeAnualCobradoBp": 72.92676431424769,
+      "costeAnualRealBp": 74.75862447404462
+     }
+    }
+   },
+   "spyBuyHold": {
+    "full": {
+     "cagr": 0.15638174286026918,
+     "mdd": 0.33717264353564524,
+     "mar": 0.46380317578681857
+    },
+    "confirm": {
+     "cagr": 0.1260027315837433,
+     "mdd": 0.24496390534609325,
+     "mar": 0.5143726436175257
+    },
+    "confirm2022_25": {
+     "cagr": 0.10903758918610462,
+     "mdd": 0.24496390534609325,
+     "mar": 0.4451169613419277
+    }
+   }
+  },
+  "hasta_2026-09-01": {
+   "fin": "2026-09-01",
+   "m9raw": {
+    "a": {
+     "label": "(a) publicada: pesos fijos + coste turn/topN",
+     "full": {
+      "cagr": 0.48581629191919196,
+      "mdd": 0.3770905133653919,
+      "mar": 1.2883280663399965
+     },
+     "train": {
+      "cagr": 0.5070485041983679,
+      "mdd": 0.3770905133653919,
+      "mar": 1.3446334135355182
+     },
+     "confirm": {
+      "cagr": 0.46609275701964537,
+      "mdd": 0.3608052088967767,
+      "mar": 1.2918127164649404
+     },
+     "confirm2022_25": {
+      "cagr": 0.34334073545087773,
+      "mdd": 0.31628091352646215,
+      "mar": 1.0855562911549248
+     },
+     "ddRealConfirm": 0.3608052088967767,
+     "ret2022": -0.18316630978703163,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.2327857042097035,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 73.90197296425394
+     },
+     "carteraFinalSinBarra0831": []
+    },
+    "b": {
+     "label": "(b) pesos a la deriva (cartera real)",
+     "full": {
+      "cagr": 0.47064867730563664,
+      "mdd": 0.3768423824824475,
+      "mar": 1.248927135544682
+     },
+     "train": {
+      "cagr": 0.4860125683375962,
+      "mdd": 0.3768423824824475,
+      "mar": 1.2896972074531283
+     },
+     "confirm": {
+      "cagr": 0.456323779430974,
+      "mdd": 0.3744204979661402,
+      "mar": 1.2187467884630625
+     },
+     "confirm2022_25": {
+      "cagr": 0.32831704514767623,
+      "mdd": 0.3293007165367381,
+      "mar": 0.9970128477113347
+     },
+     "ddRealConfirm": 0.3744204979661402,
+     "ret2022": -0.1993769477450048,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.1944874266147847,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 71.60610088711009
+     },
+     "carteraFinalSinBarra0831": []
+    },
+    "c": {
+     "label": "(c) deriva + coste real Σ|Δw| dos patas",
+     "full": {
+      "cagr": 0.47102477139810417,
+      "mdd": 0.3768423824824476,
+      "mar": 1.2499251498603487
+     },
+     "train": {
+      "cagr": 0.48657987647215384,
+      "mdd": 0.3768423824824476,
+      "mar": 1.2912026329597297
+     },
+     "confirm": {
+      "cagr": 0.4565233646620901,
+      "mdd": 0.37442049796613985,
+      "mar": 1.219279839490452
+     },
+     "confirm2022_25": {
+      "cagr": 0.3286299798511245,
+      "mdd": 0.32930071653673765,
+      "mar": 0.9979631484174487
+     },
+     "ddRealConfirm": 0.37442049796613985,
+     "ret2022": -0.1992198812878473,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.1944874266147847,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 71.60610088711009
+     },
+     "carteraFinalSinBarra0831": []
+    },
+    "d": {
+     "label": "(d) (c) + ejecución al cierre siguiente",
+     "full": {
+      "cagr": 0.47743754396104277,
+      "mdd": 0.37529594217360407,
+      "mar": 1.2721628195494588
+     },
+     "train": {
+      "cagr": 0.49282210518132774,
+      "mdd": 0.37529594217360407,
+      "mar": 1.3131559652018794
+     },
+     "confirm": {
+      "cagr": 0.46309290485915144,
+      "mdd": 0.3747784414657116,
+      "mar": 1.2356444598255252
+     },
+     "confirm2022_25": {
+      "cagr": 0.3356591951974852,
+      "mdd": 0.3317620065975072,
+      "mar": 1.011746940645636
+     },
+     "ddRealConfirm": 0.3747784414657116,
+     "ret2022": -0.191673152458411,
+     "winrate": 0.6445497630331753,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.1963325749100988,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 71.71671224394989
+     },
+     "carteraFinalSinBarra0831": []
+    }
+   },
+   "equal": {
+    "a": {
+     "label": "(a) publicada: pesos fijos + coste turn/topN",
+     "full": {
+      "cagr": 0.407009122578432,
+      "mdd": 0.36405731181430456,
+      "mar": 1.1179809040232545
+     },
+     "train": {
+      "cagr": 0.44119512379392756,
+      "mdd": 0.36405731181430456,
+      "mar": 1.2118837047804407
+     },
+     "confirm": {
+      "cagr": 0.37555357165285264,
+      "mdd": 0.3430843575247079,
+      "mar": 1.0946391562774949
+     },
+     "confirm2022_25": {
+      "cagr": 0.2844086669434487,
+      "mdd": 0.3152868139492738,
+      "mar": 0.9020633098509693
+     },
+     "ddRealConfirm": 0.3430843575247079,
+     "ret2022": -0.1605578832188682,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.237037037037037,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 74.1568281938326
+     }
+    },
+    "b": {
+     "label": "(b) pesos a la deriva (cartera real)",
+     "full": {
+      "cagr": 0.3915295958109486,
+      "mdd": 0.36565362863890505,
+      "mar": 1.0707663349830912
+     },
+     "train": {
+      "cagr": 0.4275374973141577,
+      "mdd": 0.36565362863890505,
+      "mar": 1.1692417737124796
+     },
+     "confirm": {
+      "cagr": 0.35844720365526683,
+      "mdd": 0.35929100849701856,
+      "mar": 0.9976514724226428
+     },
+     "confirm2022_25": {
+      "cagr": 0.2691109948760597,
+      "mdd": 0.32708650816942275,
+      "mar": 0.8227517435132692
+     },
+     "ddRealConfirm": 0.35929100849701856,
+     "ret2022": -0.17605935616276924,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.2691639268325796,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 76.08274324377861
+     }
+    },
+    "c": {
+     "label": "(c) deriva + coste real Σ|Δw| dos patas",
+     "full": {
+      "cagr": 0.3912610947879802,
+      "mdd": 0.36565362863890505,
+      "mar": 1.0700320307072992
+     },
+     "train": {
+      "cagr": 0.4273337944975373,
+      "mdd": 0.36565362863890505,
+      "mar": 1.1686846814244074
+     },
+     "confirm": {
+      "cagr": 0.3581207868966403,
+      "mdd": 0.3592910084970188,
+      "mar": 0.9967429699805911
+     },
+     "confirm2022_25": {
+      "cagr": 0.26890598180903735,
+      "mdd": 0.32708650816942275,
+      "mar": 0.8221249580546767
+     },
+     "ddRealConfirm": 0.3592910084970188,
+     "ret2022": -0.17626955815614176,
+     "winrate": 0.6350710900473934,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.2691639268325796,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 76.08274324377861
+     }
+    },
+    "d": {
+     "label": "(d) (c) + ejecución al cierre siguiente",
+     "full": {
+      "cagr": 0.4016667439151773,
+      "mdd": 0.35960930879872455,
+      "mar": 1.1169531324340454
+     },
+     "train": {
+      "cagr": 0.43740792417296315,
+      "mdd": 0.35737410492913313,
+      "mar": 1.2239496878479783
+     },
+     "confirm": {
+      "cagr": 0.36881766585614795,
+      "mdd": 0.35960930879872455,
+      "mar": 1.02560655920778
+     },
+     "confirm2022_25": {
+      "cagr": 0.2840819077809571,
+      "mdd": 0.3251085806731363,
+      "mar": 0.8738062440331977
+     },
+     "ddRealConfirm": 0.35960930879872455,
+     "ret2022": -0.16318746341907486,
+     "winrate": 0.6445497630331753,
+     "tradesYr": 45.737444933920706,
+     "jumps": 39,
+     "revisiones": {
+      "n": 27,
+      "cobradoPubMedio": 1.237037037037037,
+      "rotacionRealMedia": 1.2722123868476578,
+      "costeAnualCobradoBp": 74.1568281938326,
+      "costeAnualRealBp": 76.26548969261202
+     }
+    }
+   },
+   "spyBuyHold": {
+    "full": {
+     "cagr": 0.15320767430809923,
+     "mdd": 0.33717264353564524,
+     "mar": 0.4543893973767845
+    },
+    "confirm": {
+     "cagr": 0.12044259687194048,
+     "mdd": 0.24496390534609325,
+     "mar": 0.49167487227057033
+    },
+    "confirm2022_25": {
+     "cagr": 0.10903758918610462,
+     "mdd": 0.24496390534609325,
+     "mar": 0.4451169613419277
+    }
+   }
+  }
+ },
+ "c0Ensemble10": {
+  "a": {
+   "label": "(a) publicada: pesos fijos + coste turn/topN",
+   "trainMean": 0.4217302780663535,
+   "trainWorst": 0.32301562306654175,
+   "confirmMean": 0.5331703950666944,
+   "confirmWorst": 0.4367495963435055,
+   "confirm2022_25Mean": 0.4255480720597446,
+   "confirm2022_25Worst": 0.3139023960888472,
+   "confirmMddMean": 0.348227183863995,
+   "ddRealWorst": 0.36862200061509276,
+   "ret2022Mean": -0.12870786991335756,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.46609275701964537,
+    0.5450677383022895,
+    0.6176484727124354,
+    0.5407514179916844,
+    0.5220903822179206,
+    0.5960775785019021,
+    0.5912081042944444,
+    0.5177489036119847,
+    0.4367495963435055,
+    0.49826899967113225
+   ],
+   "trainPorFase": [
+    0.5070485041983679,
+    0.39311697151066927,
+    0.393114311554712,
+    0.40883172301955684,
+    0.4192122385604413,
+    0.4033680713860812,
+    0.32301562306654175,
+    0.4337388187155553,
+    0.4640159033435771,
+    0.4718406153080317
+   ],
+   "saltosAno": 4.348486961020102
+  },
+  "b": {
+   "label": "(b) pesos a la deriva (cartera real)",
+   "trainMean": 0.41345171811491505,
+   "trainWorst": 0.3431332173100221,
+   "confirmMean": 0.5300781813673132,
+   "confirmWorst": 0.4287446500959815,
+   "confirm2022_25Mean": 0.416471375099089,
+   "confirm2022_25Worst": 0.3113074731012242,
+   "confirmMddMean": 0.36228210020614693,
+   "ddRealWorst": 0.3744204979661402,
+   "ret2022Mean": -0.13131977984237878,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.456323779430974,
+    0.5197782346545701,
+    0.6372243199616034,
+    0.5483926390511207,
+    0.5569414695159052,
+    0.5907700791111554,
+    0.5765854811932729,
+    0.5085153645464546,
+    0.4287446500959815,
+    0.4775057961120941
+   ],
+   "trainPorFase": [
+    0.4860125683375962,
+    0.3791805836221902,
+    0.41854605475606266,
+    0.41101081088982583,
+    0.4002026000912511,
+    0.37855205961625016,
+    0.3431332173100221,
+    0.4237024468795467,
+    0.4398052967353452,
+    0.4543715429110613
+   ],
+   "saltosAno": 4.348486961020102
+  },
+  "c": {
+   "label": "(c) deriva + coste real Σ|Δw| dos patas",
+   "trainMean": 0.41378190560383443,
+   "trainWorst": 0.34328181313550754,
+   "confirmMean": 0.5304147541529547,
+   "confirmWorst": 0.4289238163311466,
+   "confirm2022_25Mean": 0.41668075970581403,
+   "confirm2022_25Worst": 0.3115065233869332,
+   "confirmMddMean": 0.36218766413451925,
+   "ddRealWorst": 0.37442049796613985,
+   "ret2022Mean": -0.13111006190181063,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.4565233646620901,
+    0.5198615629690293,
+    0.6375932095085637,
+    0.5490610663184143,
+    0.5574684081959966,
+    0.5913901767810383,
+    0.5770694671773295,
+    0.5087168918663068,
+    0.4289238163311466,
+    0.4775395777196314
+   ],
+   "trainPorFase": [
+    0.48657987647215384,
+    0.37954687025853406,
+    0.4189185445559269,
+    0.41140217523221745,
+    0.40059638502951556,
+    0.37878582876936084,
+    0.34328181313550754,
+    0.42376727129836955,
+    0.4400986713824129,
+    0.45484161990434546
+   ],
+   "saltosAno": 4.348486961020102
+  },
+  "d": {
+   "label": "(d) (c) + ejecución al cierre siguiente",
+   "trainMean": 0.4169722911964886,
+   "trainWorst": 0.351494319097464,
+   "confirmMean": 0.5298146066537758,
+   "confirmWorst": 0.43615872443174997,
+   "confirm2022_25Mean": 0.41795509586828344,
+   "confirm2022_25Worst": 0.3180993724456853,
+   "confirmMddMean": 0.3637735358036634,
+   "ddRealWorst": 0.3779857274016304,
+   "ret2022Mean": -0.12150197051873568,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.46309290485915144,
+    0.5182257730220761,
+    0.6058061758058175,
+    0.5346627830011814,
+    0.5719442269784647,
+    0.5762520990067661,
+    0.591743665249062,
+    0.5283422932664821,
+    0.43615872443174997,
+    0.4719174209170067
+   ],
+   "trainPorFase": [
+    0.49282210518132774,
+    0.38794356922982054,
+    0.4227766667123385,
+    0.4344808152147559,
+    0.4103568313842352,
+    0.3871146236678129,
+    0.351494319097464,
+    0.4122508530133646,
+    0.40031333863219176,
+    0.47016978983157465
+   ],
+   "saltosAno": 4.326187421463084
+  }
+ },
+ "stopsPanelRallyLeaders": {
+  "fuente": "réplica de C0 y ST_FIJO30 de backtests/rally-joint-study.json (malla 3×3 hasta 2026-08-07)",
+  "publicado": {
+   "c0Confirm": 0.44908188128740023,
+   "fijo30Confirm": 0.4501145957958004,
+   "c0WorstTrain": 0.3700487031283042,
+   "fijo30WorstTrain": 0.339405616813069
+  },
+  "C0_H4_a": {
+   "canonConfirm": 0.44986933679077556,
+   "worstTrain": 0.3700487031283042,
+   "worstConfirm": 0.42279334051688644,
+   "medianConfirm": 0.4926609916605895
+  },
+  "C0_H4_c": {
+   "canonConfirm": 0.4473180741497247,
+   "worstTrain": 0.35859022540759056,
+   "worstConfirm": 0.4473180741497247,
+   "medianConfirm": 0.5338896048998065
+  },
+  "FIJO30_a": {
+   "canonConfirm": 0.45062107393340134,
+   "worstTrain": 0.339405616813069,
+   "worstConfirm": 0.3833320671995575,
+   "medianConfirm": 0.5096049171624859
+  },
+  "FIJO30_c": {
+   "canonConfirm": 0.4442296313498286,
+   "worstTrain": 0.33609066959537515,
+   "worstConfirm": 0.4202616489011455,
+   "medianConfirm": 0.5420942834133782
+  }
+ },
+ "diagnosticoCierreSiguiente": {
+  "nota": "Descomposición de (d) − (c): solo revisiones al cierre siguiente vs solo saltos de stop al cierre siguiente (el resto igual que (c)).",
+  "canonica": {
+   "hasta_2026-08-07": {
+    "c": {
+     "full": 0.46637332377109897,
+     "confirm": 0.4473180741497247,
+     "confirm2022_25": 0.3286299798511245
+    },
+    "soloRevision": {
+     "full": 0.47079693178686166,
+     "confirm": 0.45397759477887023,
+     "confirm2022_25": 0.3328535550689846
+    },
+    "soloStops": {
+     "full": 0.46937786207442156,
+     "confirm": 0.4489133131002465,
+     "confirm2022_25": 0.33146182411371927
+    },
+    "d": {
+     "full": 0.47366942899805364,
+     "confirm": 0.4555943503084976,
+     "confirm2022_25": 0.3356591951974852
+    }
+   },
+   "hasta_2026-09-01": {
+    "c": {
+     "full": 0.47102477139810417,
+     "confirm": 0.4565233646620901,
+     "confirm2022_25": 0.3286299798511245
+    },
+    "soloRevision": {
+     "full": 0.4747269395817,
+     "confirm": 0.4617756999153666,
+     "confirm2022_25": 0.3328535550689846
+    },
+    "soloStops": {
+     "full": 0.4738703868297691,
+     "confirm": 0.45782522931168534,
+     "confirm2022_25": 0.33146182411371927
+    },
+    "d": {
+     "full": 0.47743754396104277,
+     "confirm": 0.46309290485915144,
+     "confirm2022_25": 0.3356591951974852
+    }
+   }
+  },
+  "ensemble10": {
+   "c": {
+    "confirmMean": 0.5304147541529547,
+    "confirmWorst": 0.4289238163311466,
+    "confirmPorFase": [
+     0.4565233646620901,
+     0.5198615629690293,
+     0.6375932095085637,
+     0.5490610663184143,
+     0.5574684081959966,
+     0.5913901767810383,
+     0.5770694671773295,
+     0.5087168918663068,
+     0.4289238163311466,
+     0.4775395777196314
+    ]
+   },
+   "soloRevision": {
+    "confirmMean": 0.5293156814759701,
+    "confirmWorst": 0.43148424688993336,
+    "confirmPorFase": [
+     0.4617756999153666,
+     0.5168045170611215,
+     0.6108009321249095,
+     0.5356532263383005,
+     0.577045300455282,
+     0.5777794498481126,
+     0.5878713894738834,
+     0.5241182955597279,
+     0.43148424688993336,
+     0.46982375709306323
+    ]
+   },
+   "soloStops": {
+    "confirmMean": 0.5302397050053302,
+    "confirmWorst": 0.43558672766275097,
+    "confirmPorFase": [
+     0.45782522931168534,
+     0.521319406104199,
+     0.6330712267578096,
+     0.5470825209645136,
+     0.552154900864565,
+     0.5822561657167029,
+     0.580772827850691,
+     0.5127486658126967,
+     0.43558672766275097,
+     0.47957937900768877
+    ]
+   },
+   "d": {
+    "confirmMean": 0.5298146066537758,
+    "confirmWorst": 0.43615872443174997,
+    "confirmPorFase": [
+     0.46309290485915144,
+     0.5182257730220761,
+     0.6058061758058175,
+     0.5346627830011814,
+     0.5719442269784647,
+     0.5762520990067661,
+     0.591743665249062,
+     0.5283422932664821,
+     0.43615872443174997,
+     0.4719174209170067
+    ]
+   },
+   "deltaPorFase_d_menos_c": [
+    0.006569540197061352,
+    -0.0016357899469532367,
+    -0.03178703370274616,
+    -0.014398283317232918,
+    0.014475818782468064,
+    -0.01513807777427223,
+    0.014674198071732425,
+    0.019625401400175324,
+    0.007234908100603343,
+    -0.005622156802624678
+   ]
+  }
+ },
+ "labM189v11": {
+  "config": "R63 · K5 · pesos SCORE [10,40] · trailing FIJO 45% a cierres · RESCAN2",
+  "a_c": {
+   "label": "(a)≡(b)≡(c): el núcleo ya deriva y cobra Σ|Δw| (publicado)",
+   "trainMean": 0.5664971925559175,
+   "trainWorst": 0.5248721768103006,
+   "confirmMean": 0.6455898740028775,
+   "confirmWorst": 0.5609500725296492,
+   "confirm2022_25Mean": 0.5440661168772679,
+   "confirm2022_25Worst": 0.46230428389568257,
+   "confirmMddMean": 0.3636302129454695,
+   "ddRealWorst": 0.3877751471216294,
+   "ret2022Mean": -0.11568197488526763,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.6610271001607859,
+    0.662652993871909,
+    0.6891457481817636,
+    0.5986119278891118,
+    0.5712791219075917,
+    0.6018407821248826,
+    0.7597049376444993,
+    0.6280142522929046,
+    0.7226718034256776,
+    0.5609500725296492
+   ],
+   "trainPorFase": [
+    0.5631161360417818,
+    0.5504704040071173,
+    0.5563174898775907,
+    0.5248721768103006,
+    0.5749665667542632,
+    0.5537498279900648,
+    0.5825669734042944,
+    0.5429993511909161,
+    0.6171207482090733,
+    0.5987922512737727
+   ],
+   "saltosAno": 0.8278145583973616
+  },
+  "d": {
+   "label": "(d) ejecución al cierre siguiente",
+   "trainMean": 0.5526752863049895,
+   "trainWorst": 0.5075373024352812,
+   "confirmMean": 0.649093725750661,
+   "confirmWorst": 0.5552360912176977,
+   "confirm2022_25Mean": 0.5477804493628899,
+   "confirm2022_25Worst": 0.452062774770045,
+   "confirmMddMean": 0.3599046932618517,
+   "ddRealWorst": 0.3882217601603314,
+   "ret2022Mean": -0.10955591610013385,
+   "fasesDistintas": 10,
+   "confirmPorFase": [
+    0.6670522772982304,
+    0.6831374537345336,
+    0.6791767811566918,
+    0.6056629802993543,
+    0.5745801569114968,
+    0.5848624646301024,
+    0.7393149476658096,
+    0.6643687938727032,
+    0.7375453107199907,
+    0.5552360912176977
+   ],
+   "trainPorFase": [
+    0.5517215494108569,
+    0.5715735574823948,
+    0.5517014540344503,
+    0.5184713843072548,
+    0.5422438103578913,
+    0.5075373024352812,
+    0.5800104740996923,
+    0.5390972249536234,
+    0.6083596068080646,
+    0.5560364991603859
+   ],
+   "saltosAno": 0.8166641159194855
+  },
+  "deltaConfirmPorFase_d_menos_publicado": [
+   0.006025177137444437,
+   0.020484459862624593,
+   -0.009968967025071773,
+   0.007051052410242509,
+   0.003301035003905106,
+   -0.016978317494780182,
+   -0.020389989978689682,
+   0.03635454157979856,
+   0.014873507294313137,
+   -0.005713981311951555
+  ],
+  "deltaTrainPorFase_d_menos_publicado": [
+   -0.011394586630924852,
+   0.02110315347527747,
+   -0.004616035843140409,
+   -0.006400792503045816,
+   -0.0327227563963719,
+   -0.04621252555478361,
+   -0.002556499304602111,
+   -0.0039021262372926913,
+   -0.008761141401008699,
+   -0.04275575211338678
+  ]
+ },
+ "fueraDeAlcance": {
+  "intradia": "Documentado aparte (CLAUDE.md §10c/§10e): ejecutar el trailing como orden intradía real cuesta 2-3 pp/año a C0 y 2-4 pp/año (+50% de saltos) a LAB-M189. No se re-mide aquí; se resta aparte.",
+  "supervivencia": "Universo superviviente (603 tickers actuales): infla todos los niveles absolutos; sin cuantificar. Solo comparaciones relativas son sólidas.",
+  "impuestos": "No modelados."
+ }
+}

@@ -203,10 +203,10 @@ export const RALLY_TEST_BASELINE = {
   // CORRECCIONES de la auditoría adversarial independiente (2-sep-2026):
   backtest: {
     confirmMedia: "64,6%", confirmPeorFase: "56,1%",
-    refC0: "53,3% / 43,7%",
+    refC0: "53,0% / 42,9%",   // C0 como cartera real (pesos a la deriva), como LAB-M189
     a50pb: "62,3% media · 54,0% peor fase",
     // El riesgo REAL (pico-valle sin ventanear; v1.1 con el trailing 45%):
-    ddRealPeorFase: "−38,8%", dd2022: "−11,6%", dd2022C0: "−12,9%",
+    ddRealPeorFase: "−38,8%", dd2022: "−11,6%", dd2022C0: "−13,1%",
     // 2022 de v1.0 (−16,5%) → v1.1 (−11,6%): la mejora viene del cambio de CADENCIA
     // (R42→R63), no del stop (auditoría de backtest 25-sep-2026). El stop 45% es ~gratis:
     // −0,4 pp de confirm (t≈0) y DD real 38,8% vs 39,6% sin stop.
@@ -214,7 +214,7 @@ export const RALLY_TEST_BASELINE = {
     // La verdad sobre el edge: a igual tamaño de libro (K=10) este motor PIERDE
     // contra C0 en 64/64 configs — la ventaja es de la CONCENTRACIÓN top-5, no
     // del motor; esperanza honesta tras descuentos: +2 a +4 pp/año.
-    edgeHonesto: "+2 a +4 pp/año esperados (no los +10,8 nominales)",
+    edgeHonesto: "+2 a +4 pp/año esperados (no los +11,5 nominales)",
     // ESTUDIO 9 (9-sep-2026): cifras honestas tras la auditoría adversarial
     confirmEx2026: "≈52-54%", costeIntradia: "2-4 pp/año y +50% de saltos", configsProbadas: "431",
   },

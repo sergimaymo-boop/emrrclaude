@@ -129,15 +129,23 @@ export interface RallyAsset {
  *   La venta honesta de los stops adaptativos: empatan en retorno con un fijo
  *   30-35% y ganan en peor escenario y en llevar stop propio por ticker.
  */
+// ⚠ 25-sep-2026 (auditoría aprobada por Sergi, scripts/rally-drift-cost-audit.mjs): el simulador
+// canon mantenía los pesos FIJOS entre revisiones (= rebalanceo diario gratis). Cifras de abajo
+// medidas como CARTERA REAL: pesos a la deriva con el precio y costes sobre cada cambio de peso.
+// Antes: 47,7% / 37,7% / 1,27 (full) y 44,9% / 36,1% / 1,24 (confirmación).
 export const RALLY_BACKTEST = {
-  period: "2017-08 → 2026-08 (10 años, 603 tickers)",
+  period: "2017-08 → 2026-08 (9 años, 603 tickers)",
   formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m crudo (4-20%)",
   /** Esquema completo en producción (M9_RAW + stops H4 + salto 70/30), periodo full. */
-  strategy: { cagr: 0.477, maxDD: 0.377, mar: 1.27, winRate: 0.65 },
+  strategy: { cagr: 0.466, maxDD: 0.377, mar: 1.24, winRate: 0.65 },
   /** Mismo esquema, solo mitad de confirmación 2022-2026 (fuera del train). */
-  strategyConfirm: { cagr: 0.449, maxDD: 0.361, mar: 1.24 },
+  strategyConfirm: { cagr: 0.447, maxDD: 0.374, mar: 1.19 },
+  /** Confirmación sin los 7 meses excepcionales de 2026 (2022-25). */
+  confirm2225: { cagr: 0.329 },
+  /** Expectativa realista con los stops como orden intradía en el bróker (−2-3 pp/año), antes de impuestos. */
+  realista: { confirm: "≈42%", y2225: "≈30%" },
   /** Misma selección y stops con reparto 1/10 por posición (esquema EQUAL), periodo full. */
-  equalWeight: { cagr: 0.39, maxDD: 0.364, mar: 1.07 },
+  equalWeight: { cagr: 0.381, maxDD: 0.366, mar: 1.04 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
   /**
@@ -149,10 +157,10 @@ export const RALLY_BACKTEST = {
   stops: {
     stopRule: "12 + 0,35·recorrido, acotado 15-45%",
     jumpRule: "0,7·score + 0,3·recorrido",
-    fijo30Confirm: 0.45,
-    c0Confirm: 0.449,
-    fijo30WorstTrain: 0.339,
-    c0WorstTrain: 0.37,
+    fijo30Confirm: 0.444,
+    c0Confirm: 0.447,
+    fijo30WorstTrain: 0.336,
+    c0WorstTrain: 0.359,
   },
 } as const;
 

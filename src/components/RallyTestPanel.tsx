@@ -312,6 +312,9 @@ export function RallyTestPanel() {
             <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.confirmMedia}</b> CAGR · peor fase{" "}
             <b style={{ color: "#cbd5e1" }}>{RALLY_TEST_BASELINE.backtest.confirmPeorFase}</b> — Rally Leaders (C0) en los
             mismos datos: {RALLY_TEST_BASELINE.backtest.refC0}. A costes dobles (50 pb): {RALLY_TEST_BASELINE.backtest.a50pb}.
+            Ambos motores se simulan como cartera real (pesos a la deriva, 20 pb por cada cambio de peso); operar al día siguiente de
+            la señal cuesta 0-1,5 pp/año. Expectativa realista 2022-25: ≈50-52% anual tras la ejecución intradía (−2-4 pp), antes de
+            impuestos y con universo superviviente.
             <br />
             <b style={{ color: RED }}>El acta del auditor (léela antes de ilusionarte):</b> la ventaja NO es del motor — es de
             la <b style={{ color: "#cbd5e1" }}>concentración top-5</b> (a igual tamaño de libro, K=10, este motor pierde contra
