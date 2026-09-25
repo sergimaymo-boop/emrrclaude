@@ -203,6 +203,9 @@ export function evaluateOptimalSignal(
   };
 
   // ── Filter 4: Sector of that stock shows inflows in SCAN FLOWS ────────────
+  // ⚠ Backtest 25-sep-2026 (backtests/sector-flows-2026-09-25.json, 2006-26): pasar este filtro NO
+  // mejora el retorno posterior (neutral frente a la cesta, peor en absoluto) y retrasa entradas.
+  // Panel dormido desde el 24-jul: si se reactiva, quitar este filtro de allPass o re-estudiarlo.
   // Use mapping as VALIDATION (not as search) — if stock unknown, show advisory
   const sessionLabel = flowsState.marketOpen ? "" : " (última sesión)";
   const flowThreshold = flowsState.marketOpen ? 0.3 : 0.2;
@@ -225,7 +228,7 @@ export function evaluateOptimalSignal(
   const f4: FilterResult = {
     pass:    !flowsDone ? null : (!!bestCandidate && sectorVerified),
     pending: !flowsDone,
-    label:   "Sector con flujo institucional",
+    label:   "Sector en positivo hoy",
     detail:  !flowsDone
       ? "Ejecuta SCAN"
       : !bestCandidate
@@ -233,8 +236,8 @@ export function evaluateOptimalSignal(
         : matchedSector
           ? `${matchedSector.name}  +${matchedSector.intradayChange?.toFixed(2) ?? "—"}% desde apertura${sessionLabel}`
           : STOCK_SECTOR[bestCandidate?.ticker?.toUpperCase() ?? ""]
-            ? `Sector de ${bestCandidate.ticker} sin flujo positivo hoy`
-            : `${bestCandidate.ticker} — sector confirmado por los 2 motores (flujo pendiente)`,
+            ? `Sector de ${bestCandidate.ticker} sin subida > umbral hoy`
+            : `${bestCandidate.ticker} — sector sin mapear, filtro no aplicado`,
   };
 
   // ── Filter 5: Monetary cycle ───────────────────────────────────────────────

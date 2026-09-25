@@ -89,10 +89,6 @@ function fmt(v: number | null | undefined, digits = 2): string {
   return v > 0 ? `+${s}%` : `${s}%`;
 }
 
-function fmtVol(v: number | null | undefined, capped?: boolean): string {
-  if (!isNum(v)) return "Vol —";
-  return capped ? `Vol ≥${v.toFixed(0)}x` : `Vol ${v.toFixed(1)}x`;
-}
 
 function fmtPrice(v: number | null | undefined): string {
   return isNum(v) ? `$${v.toFixed(2)}` : "—";
@@ -165,7 +161,7 @@ function SectorTile({ sector }: { sector: SectorFlow }) {
                 background: `${c.border}30`, border: `1px solid ${c.border}60`,
                 borderRadius: 3, color: c.textSecondary, letterSpacing: "0.04em",
               }}>
-                ✓ INVERTIBLE
+                MÁX. ALZA HOY
               </span>
             </div>
           </div>
@@ -209,7 +205,7 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sector.name}</div>
         <div style={{ fontSize: 8, color: "#64748b", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {sector.etf} · 30m {fmt(sector.change30min)} · {fmtVol(sector.relativeVolume, sector.relativeVolumeCapped)}
+          {sector.etf} · 30m {fmt(sector.change30min)}
         </div>
       </div>
 
@@ -229,7 +225,7 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
             {fmt(m.change)}
           </span>
           <span style={{ fontSize: 7, color: `${c.textSecondary}`, marginTop: 1, letterSpacing: "0.03em" }}>
-            S&P500
+            acción EE. UU.
           </span>
         </div>
       )}
@@ -274,7 +270,7 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <h2 style={{ margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8" }}>
-            Flujos de Capital
+            Sectores · Variación del día
           </h2>
           {isDone && (
             <span style={{
@@ -346,9 +342,9 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <div style={{ fontSize: 11, color: "#c9a227", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#c9a227", display: "inline-block", animation: "pulse 1s infinite" }} />
-              Analizando flujos intraday…
+              Leyendo variación intradía…
             </div>
-            <span style={{ fontSize: 10, color: "#475569" }}>10 ETFs · 30 stocks</span>
+            <span style={{ fontSize: 10, color: "#475569" }}>10 ETFs · 60 cotizaciones</span>
           </div>
           {/* Animated progress bar */}
           <div style={{ height: 6, background: "rgba(255,255,255,0.07)", borderRadius: 3, overflow: "hidden" }}>
@@ -366,7 +362,7 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
       {isError && (
         <div style={{ padding: "16px 0", textAlign: "center" }}>
           <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>
-            Error al obtener datos — no se pudieron actualizar los flujos
+            Error al obtener datos — no se pudo actualizar el mapa sectorial
           </div>
           {onRefresh && (
             <button
@@ -404,9 +400,6 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
                 }}>
                   {fmt(spy.intradayChange)}
                 </span>
-                <span style={{ fontSize: 9, color: isNum(spy.relativeVolume) && spy.relativeVolume >= 2 ? "#f59e0b" : "#475569" }}>
-                  {fmtVol(spy.relativeVolume, spy.relativeVolumeCapped)}
-                </span>
                 <span style={{ fontSize: 10, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
                   {fmtPrice(spy.currentPrice)}
                 </span>
@@ -417,6 +410,9 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
           <div style={{ fontSize: 9, color: marketOpen ? "#64748b" : "#eab308", marginBottom: 8 }}>
             % sector = {basisLabel} (no vs cierre anterior) · % acción = vs cierre anterior
           </div>
+          <div style={{ fontSize: 8.5, color: "#64748b", marginBottom: 8 }}>
+            Validación 2006-26 (diario, 10 ETFs): el líder del día no batió a la cesta a 1, 5 ni 20 sesiones. Descriptivo, no predictivo.
+          </div>
 
           {/* ── TILE HEAT MAP view ── */}
           {view === "tiles" && (
@@ -425,7 +421,7 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
               {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange > 0).length > 0 && (
                 <>
                   <div style={{ fontSize: 9, fontWeight: 800, color: "#10b981", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
-                    ▲ Dinero Entrando
+                    ▲ Suben desde la apertura
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
                     {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange > 0).map(s => (
@@ -453,7 +449,7 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
               {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange < 0).length > 0 && (
                 <>
                   <div style={{ fontSize: 9, fontWeight: 800, color: "#ef4444", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
-                    ▼ Dinero Saliendo
+                    ▼ Bajan desde la apertura
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange < 0).map(s => (

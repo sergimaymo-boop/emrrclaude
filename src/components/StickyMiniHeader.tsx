@@ -51,7 +51,7 @@ function MarketPill({ label, status }: { label: string; status: "OPEN" | "CLOSED
 // Button phase config
 const PHASE_CONFIG: Record<ScanPhase, { label: string; sub: string; progress: number }> = {
   idle:    { label: "SCAN  EMRR",  sub: "TODO el dashboard  ·  ⚡ SUPREME · 🔥 Rally · 📈 SP500", progress: 0 },
-  flows:   { label: "Flujos…",     sub: "Paso 1 / 4  —  Rotación sectorial",   progress: 12 },
+  flows:   { label: "Sectores…",   sub: "Paso 1 / 4  —  Variación sectorial del día", progress: 12 },
   rally:   { label: "Escaneando…", sub: "Fase legado",                          progress: 30 },
   full:    { label: "Universo…",   sub: "Paso 2 / 4  —  Integridad + indicadores", progress: 40 },
   breadth: { label: "⚡ SUPREME…", sub: "Paso 3 / 4  —  Amplitud + Optimal Supreme", progress: 68 },

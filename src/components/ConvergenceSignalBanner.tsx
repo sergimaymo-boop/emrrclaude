@@ -518,7 +518,7 @@ export function ConvergenceSignalBanner({
           >
             {s.needsScans.length > 0
               ? `Pendiente: ${s.needsScans.join(" · ")}`
-              : "Flujo sectorial no confirmado"}
+              : "Sector sin subida > umbral hoy"}
           </span>
         )}
       </div>

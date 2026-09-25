@@ -1011,8 +1011,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     const savedScroll = window.scrollY;
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
     const sectors = await runFlows();
-    if (sectors === null) showToast("Error en scan de flujos — se mantiene el último dato", "error");
-    else showToast(`Flujos detectados — ${sectors} sectores analizados`, "success");
+    if (sectors === null) showToast("Error en el mapa sectorial — se mantiene el último dato", "error");
+    else showToast(`Mapa sectorial actualizado — ${sectors} sectores`, "success");
   }
 
   // ── Flujos de Capital — carga al montar y refresca cada 5 min ───────────────

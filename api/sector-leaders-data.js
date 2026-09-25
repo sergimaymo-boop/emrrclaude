@@ -2,7 +2,9 @@
  * GET /api/sector-leaders-data           → EOD sector leaders (existing, unchanged)
  * GET /api/sector-leaders-data?mode=intraday → Smart Money Flow scan (NEW)
  *
- * Intraday mode: detects WHERE institutional money is moving RIGHT NOW
+ * Intraday mode: variación de precio por sector desde la apertura — DESCRIPTIVO, no mide flujos
+ * de dinero ni predice (backtest 25-sep-2026: backtests/sector-flows-2026-09-25.json). Barrick = "B"
+ * desde 2026 ("GOLD" es ahora Gold.com, Inc.)
  * - Fetches 5-min candles for 10 sector ETFs + SPY via Yahoo Finance (free, no key)
  * - Calculates flowScore = intradayChange × relativeVolume
  * - For top sectors: fetches individual stock quotes via Finnhub
@@ -30,7 +32,7 @@ const FLOW_SECTORS = [
   { key: "defense",    name: "Defensa",         etf: "ITA",  holdings: ["LMT","RTX","NOC","GD","LHX","HII"] },
   { key: "utilities",  name: "Utilities",        etf: "XLU",  holdings: ["NEE","SO","DUK","AEP","SRE","EXC"] },
   { key: "staples",    name: "Consumo Básico",   etf: "XLP",  holdings: ["PG","KO","PEP","COST","WMT","CL"] },
-  { key: "gold",       name: "Oro / Metales",    etf: "GLD",  holdings: ["NEM","GOLD","FCX","AEM","WPM","FNV"] },
+  { key: "gold",       name: "Oro / Metales",    etf: "GLD",  holdings: ["NEM","B","FCX","AEM","WPM","FNV"] },
   { key: "healthcare", name: "Salud",             etf: "XLV",  holdings: ["UNH","LLY","JNJ","ABBV","MRK","TMO"] },
   { key: "semis",      name: "Semiconductores",  etf: "SOXX", holdings: ["NVDA","AMD","INTC","QCOM","AVGO","TXN"] },
   { key: "software",   name: "Software / IA",    etf: "IGV",  holdings: ["MSFT","ORCL","CRM","NOW","INTU","ADBE"] },
