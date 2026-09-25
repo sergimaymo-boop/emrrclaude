@@ -138,8 +138,8 @@ export function ConvergenceSignalBanner({
                 border: `1px solid ${monetaryCycle.phase === "TIGHTENING" ? "rgba(245,158,11,0.4)" : monetaryCycle.phase === "EASING" ? "rgba(16,185,129,0.4)" : "rgba(148,163,184,0.3)"}`,
                 borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap",
               }}>
-                {monetaryCycle.phase === "EASING" ? "↗ EXPANSIVO" :
-                 monetaryCycle.phase === "TIGHTENING" ? "⚠ RESTRICTIVO" :
+                {monetaryCycle.phase === "EASING" ? "↗ DISTENSIÓN" :
+                 monetaryCycle.phase === "TIGHTENING" ? "⚠ TENSIÓN" :
                  "● NEUTRAL"}
               </span>
             )}
@@ -302,7 +302,7 @@ export function ConvergenceSignalBanner({
                 whiteSpace: "nowrap",
               }}
             >
-              {monetaryCycle.phase === "EASING" ? "↗ EXPANSIVO" : "⚠ RESTRICTIVO"}
+              {monetaryCycle.phase === "EASING" ? "↗ DISTENSIÓN" : "⚠ TENSIÓN"}
             </span>
           )}
         </div>

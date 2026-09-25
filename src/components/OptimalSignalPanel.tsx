@@ -248,13 +248,13 @@ export function evaluateOptimalSignal(
   const f5: FilterResult = {
     pass:    !cycleAvailable ? null : !cycleTightening,
     pending: !cycleAvailable,
-    label:   "Ciclo monetario",
+    label:   "Tipos y crédito (diario)",
     detail:  !cycleAvailable
       ? "Verificando…"
       : cycleEasing
-        ? `✓ ${monetaryCycle!.label} — entorno favorable para momentum (Score ${monetaryCycle!.score}/100)`
+        ? `✓ ${monetaryCycle!.label} — sin ventaja histórica para momentum (Score ${monetaryCycle!.score}/100)`
         : cycleTightening
-          ? `⚠ ${monetaryCycle!.label} — riesgo whipsaw elevado (Score ${monetaryCycle!.score}/100)`
+          ? `⚠ ${monetaryCycle!.label} — más volatilidad a 20 ses. (21,8% vs 16,2%); retorno medio no peor (Score ${monetaryCycle!.score}/100)`
           : `${monetaryCycle!.label} — sin impacto (Score ${monetaryCycle!.score}/100)`,
   };
 
@@ -447,7 +447,7 @@ export function OptimalSignalPanel({ marketRegime, flowsState, rallyState, top8,
             border: "1px solid rgba(245,158,11,0.4)",
             borderRadius: 999, padding: "3px 10px",
           }}>
-            ⚠ ENTRAR CON CAUTELA — CICLO RESTRICTIVO
+            ⚠ TENSIÓN TIPOS/CRÉDITO HOY — MÁS VOLATILIDAD
           </span>
         )}
       </div>

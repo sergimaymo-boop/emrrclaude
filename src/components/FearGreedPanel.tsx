@@ -152,7 +152,24 @@ export function FearGreedPanel({ masterIndicators, indicatorsFeed }: {
     );
   }
 
-  const color = getColor(fgData.score);
+  // Color por la ETIQUETA de CNN (25-sep-2026): CNN clasifica el valor sin redondear y el
+  // panel coloreaba el redondeado — 46 días entre 2021 y 2026 el color contradecía la etiqueta.
+  const RATING_COLOR: Record<string, string> = {
+    EXTREME_FEAR: "#ef4444", FEAR: "#f97316", NEUTRAL: "#64748b", GREED: "#4ade80", EXTREME_GREED: "#15803d",
+  };
+  const color = RATING_COLOR[fgData.rating] ?? getColor(fgData.score);
+  // Lectura validada por backtest (scripts/backtest-fear-greed.mjs, backtests/fear-greed-2026-09-25.json).
+  const interno = isInternalSource(fgData);
+  const lectura = interno
+    ? "Escala ≈ VIX: más miedo = más riesgo de caída a 20 ses. (34% vs 8% en los extremos); no anticipa el retorno."
+    : fgData.rating === "EXTREME_FEAR"
+      ? "Hist. 2021-26: tras miedo extremo, SPY +6,1% de media a 60 sesiones (media +3,5%) · más volátil."
+      : fgData.rating === "EXTREME_GREED"
+        ? "Hist. 2021-26: caídas >5% en 20 sesiones raras (2,5% vs 16%) · retorno sin ventaja."
+        : "Hist. 2021-26: sin ventaja — lo que siguió fue similar a la media.";
+  const validacion = interno
+    ? "Validación: composite interno 2007-04→2026-09 (4.889 ses.); coincide con CNN el 30% de los días."
+    : "Validación: CNN 2021-01→2026-09 (1.424 ses.). Solo el miedo extremo mostró ventaja; no es señal de compra/venta.";
   const circumference = 2 * Math.PI * 40;
   const dashOffset = circumference * (1 - fgData.score / 100);
 
@@ -162,7 +179,7 @@ export function FearGreedPanel({ masterIndicators, indicatorsFeed }: {
         <h2>Fear &amp; Greed</h2>
         <span style={{ fontSize: 10, color: isInternalSource(fgData) ? "#eab308" : "#64748b" }}>
           {isInternalSource(fgData)
-            ? `Índice interno (CNN no disponible) · ${internalComponentsCount(fgData)}/7 componentes`
+            ? `Índice interno (CNN no disponible) · ${internalComponentsCount(fgData)}/7 · escala propia, no comparable con CNN`
             : fgData.sourceLabel ?? "Fuente: CNN Business"}
         </span>
       </div>
@@ -214,6 +231,8 @@ export function FearGreedPanel({ masterIndicators, indicatorsFeed }: {
               })}
             </div>
           )}
+          <div style={{ fontSize: 10, color: "#cbd5e1", lineHeight: 1.35, marginBottom: 3 }}>{lectura}</div>
+          <div style={{ fontSize: 8.5, color: "#64748b", lineHeight: 1.3 }}>{validacion}</div>
         </div>
       </div>
       {/* Indicadores de mercado — desplegables con SegmentedControl */}

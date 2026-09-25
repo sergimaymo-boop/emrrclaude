@@ -117,18 +117,21 @@ export function classifyMonetaryCycle({ tnxChangePercent, hygChangePercent, vixL
     score = Math.max(0, Math.min(100, 50 + net));
   }
 
+  // Etiquetas honestas (backtest 25-sep-2026, scripts/backtest-monetary-cycle.mjs, 2007-2026):
+  // NO es un ciclo — cambia de fase ~144 veces/año y no sigue a la Fed —, no anticipa
+  // retornos y su volatilidad extra es la del propio VIX. Describe la tensión DIARIA.
   const label = phase === 'EASING'
-    ? 'Ciclo Expansivo'
+    ? 'Distensión diaria (tipos/crédito)'
     : phase === 'TIGHTENING'
-    ? 'Ciclo Restrictivo'
-    : 'Ciclo Neutral';
+    ? 'Tensión diaria (tipos/crédito)'
+    : 'Sin tensión (tipos/crédito)';
 
   const color = phase === 'EASING' ? '#10b981'
     : phase === 'TIGHTENING' ? '#f59e0b'
     : '#64748b';
 
-  // Ajuste sobre el rallyScore: entorno restrictivo reduce la señal de entrada
-  // para evitar whipsaw repetido durante transiciones de tipo (2022-style).
+  // Ajuste heredado SIN validar y SIN uso: ningún motor lo aplica, y el backtest del
+  // 25-sep-2026 no encontró ventaja que lo justifique. No aplicarlo sin un estudio.
   const rallyScoreAdjustment = phase === 'TIGHTENING' ? -8 : phase === 'EASING' ? +3 : 0;
 
   return {
