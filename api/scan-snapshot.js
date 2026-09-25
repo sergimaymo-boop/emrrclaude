@@ -14,6 +14,7 @@
  * Serverless Functions.
  */
 
+import { createHash } from 'node:crypto';
 import { buildUniverseResponse } from './_lib/universeResponse.js';
 import { STATIC_ASSETS_BY_EXCHANGE } from './_lib/staticUniverse.js';
 import { isEligibleForUniverse, mapUniverseAsset, PROVIDER_EXCHANGES } from './_lib/universeEngine.js';
@@ -70,6 +71,12 @@ function compactCandidate(c, scanId, scanStartedAtUtc) {
   };
 }
 
+// Huella del universo en su ORDEN real (los lotes se cortan por posición). Antes era un
+// base64 truncado a 16 caracteres que solo codificaba los primeros ~12 caracteres de la lista.
+function orderedUniverseHash(assets) {
+  return createHash('sha256').update(assets.map(a => a.providerSymbol).join(',')).digest('hex').slice(0, 32);
+}
+
 async function readJsonBody(req) {
   if (!req.body) return {};
   if (typeof req.body === 'object') return req.body;
@@ -118,7 +125,7 @@ async function handleStart(request, response) {
   if (allOperable.length === 0) return sendJson(response, 409, { ok: false, scanStartedAtUtc, status: 'DATA_UNAVAILABLE', error: 'NO_OPERABLE_ASSETS', activeMarkets, assets: [] }, 'SCAN_SNAPSHOT_START');
 
   const batchesTotal = Math.ceil(allOperable.length / batchSize);
-  const universeHash = Buffer.from(allOperable.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
+  const universeHash = orderedUniverseHash(allOperable);
   const scanId = `scan-${Date.now().toString(36)}`;
   const batch = allOperable.slice(0, batchSize);
   const now = new Date();
@@ -205,6 +212,12 @@ async function handleContinue(request, response) {
     return sendJson(response, 500, { ok: false, error: 'STATIC_UNIVERSE_FAILED', message: e.message }, 'SCAN_SNAPSHOT_CONTINUE');
   }
   if (allOperable.length === 0) return sendJson(response, 409, { ok: false, error: 'NO_OPERABLE_ASSETS_ON_CONTINUE' }, 'SCAN_SNAPSHOT_CONTINUE');
+  // Los lotes se cortan por POSICIÓN en el universo: si cambió desde el start (p. ej. un
+  // despliegue a mitad de scan), los índices ya no apuntan a los mismos tickers y alguno se
+  // saltaría en silencio con cobertura "100%". Se aborta y se pide relanzar (25-sep-2026).
+  if (orderedUniverseHash(allOperable) !== universeHash) {
+    return sendJson(response, 409, { ok: false, error: 'SNAPSHOT_UNIVERSE_CHANGED', message: 'El universo de tickers cambió durante el scan (p. ej. un despliegue): relanza el SCAN.' }, 'SCAN_SNAPSHOT_CONTINUE');
+  }
 
   const batch = allOperable.slice(nextBatchIndex * batchSize, (nextBatchIndex + 1) * batchSize);
   const benchmarkBars = await fetchBenchmarkBars();

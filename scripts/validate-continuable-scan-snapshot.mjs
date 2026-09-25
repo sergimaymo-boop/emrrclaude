@@ -1,91 +1,47 @@
+// SCAN FULL continuable: el handler VIVO (api/scan-snapshot.js) avanza batch a batch con un
+// snapshotToken hasta el 100 % y solo entonces cierra el scan (CLAUDE.md §3.2).
+// Reescrito 25-sep-2026: la versión anterior probaba buildSnapshotPlan/processNextSnapshotBatch
+// de scanSnapshot.js, que el endpoint ya no usa (pasaba probando código muerto).
 import assert from "node:assert/strict";
-import {
-  attachSnapshotToken,
-  buildSnapshotPlan,
-  decodeScanSnapshotToken,
-  processNextSnapshotBatch,
-} from "../api/_lib/scanSnapshot.js";
+import { assertEnvelope, loadOperableUniverse, prepareScanFixtures, repoUrl, runScanSnapshot } from "./validate-harness.mjs";
 
-process.env.ENABLE_REAL_API_CALLS = "true";
-process.env.EODHD_API_KEY = "test_key";
-process.env.SCAN_SNAPSHOT_SIGNING_SECRET = "test_scan_secret";
+await prepareScanFixtures();
+const handler = (await import(repoUrl("api/scan-snapshot.js"))).default;
+const operable = await loadOperableUniverse();
+assert.ok(operable.length > 100, `universo operable demasiado pequeño para probar batches: ${operable.length}`);
 
-function buildBars() {
-  const start = new Date("2026-03-24T00:00:00.000Z");
-  return Array.from({ length: 70 }, (_, index) => {
-    const date = new Date(start);
-    date.setUTCDate(start.getUTCDate() + index);
-    const close = 100 + index;
-    return {
-      date: date.toISOString().slice(0, 10),
-      open: close - 1,
-      high: close + 2,
-      low: close - 2,
-      close,
-      volume: 2_000_000 + index * 10_000,
-    };
-  });
-}
+const responses = await runScanSnapshot(handler, { batchSize: 50 });
+const first = responses[0].body;
+const last = responses.at(-1).body;
+const expectedBatches = Math.ceil(operable.length / 50);
 
-function buildAsset(index) {
-  return {
-    canonicalId: `NASDAQ:CSNAP${index}:USD`,
-    ticker: `CSNAP${index}`,
-    providerSymbol: `CSNAP${index}.US`,
-    name: `Continuable Snapshot ${index}`,
-    region: "USA",
-    market: "Nasdaq/NYSE",
-    providerExchange: "US",
-    exchange: "NASDAQ",
-    currency: "USD",
-    isin: `USCSNAP${String(index).padStart(4, "0")}`,
-    instrumentType: "Common Stock",
-    operabilityStatus: "OPERABLE",
-    operabilityReasons: ["OPERABLE_COMMON_EQUITY_METADATA"],
-  };
-}
+assert.equal(first.batchesTotal, expectedBatches, "batchesTotal = ceil(universo operable / batchSize)");
+assert.equal(responses.length, expectedBatches, "una invocación (start/continue) por batch, ni más ni menos");
+assert.equal(first.mode, "CONTINUABLE_FULL_UNIVERSE_SCAN_SNAPSHOT");
+assert.equal(responses[0].status, 206, "el primer batch de un scan multi-batch responde 206 (parcial)");
+assert.equal(typeof first.snapshotToken, "string", "un scan parcial entrega token de continuación");
+assert.ok(first.actualProviderCalls > 0, "el batch registra las llamadas a proveedor realizadas");
 
-global.fetch = async (url) => {
-  const text = String(url);
-  if (text.includes("/api/eod/")) return { ok: true, json: async () => buildBars() };
-  if (text.includes("/api/real-time/")) return { ok: true, json: async () => ({ bid: 169.9, ask: 170.1, close: 170 }) };
-  return { ok: false, status: 404, json: async () => ({}) };
-};
+responses.forEach((response, index) => {
+  const body = response.body;
+  assertEnvelope(response, `respuesta ${index + 1}`);
+  assert.equal(body.scanId, first.scanId, "todas las continuaciones pertenecen al mismo scanId");
+  assert.equal(body.batchesCompleted, index + 1, "cada llamada completa exactamente un batch más");
+  if (index > 0) {
+    assert.ok(body.coveragePercent >= responses[index - 1].body.coveragePercent, "la cobertura nunca retrocede");
+    assert.ok(body.actualProviderCalls >= responses[index - 1].body.actualProviderCalls, "las llamadas se acumulan entre batches");
+  }
+  const isLast = index === responses.length - 1;
+  assert.equal(body.isGlobalTop8Final, isLast, `solo la última llamada cierra el scan (llamada ${index + 1})`);
+  assert.equal(body.snapshotToken === null, isLast, `solo el cierre deja de emitir token (llamada ${index + 1})`);
+});
 
-const universe = {
-  ok: true,
-  summary: {
-    totalDiscovered: 120,
-    operable: 120,
-    notOperable: 0,
-    unknown: 0,
-  },
-  assets: Array.from({ length: 120 }, (_, index) => buildAsset(index)),
-};
-const scanStartedAtUtc = "2026-06-01T15:00:00.000Z";
-const { eligibleAssets, state } = buildSnapshotPlan(universe, scanStartedAtUtc, { batchSize: 50 });
+assert.equal(responses.at(-1).status, 200);
+assert.equal(last.ok, true);
+assert.equal(last.status, "GLOBAL_TOP8_FINAL");
+assert.equal(last.coveragePercent, 100);
+assert.equal(last.nextBatchIndex, null);
+assert.equal(last.batchesCompleted, last.batchesTotal);
+assert.ok(last.topCandidates.length > 0 && last.topCandidates.length <= 8, "el cierre entrega un TOP 8 real (1..8)");
 
-assert.equal(eligibleAssets.length, 120);
-assert.equal(state.batchSize, 50);
-assert.equal(state.batchesTotal, 3);
-assert.equal(state.coveragePercent, 0);
-
-const firstBatch = await processNextSnapshotBatch({ state, eligibleAssets });
-assert.equal(firstBatch.batchesCompleted, 1);
-assert.equal(firstBatch.nextBatchIndex, 2);
-assert.equal(firstBatch.coveragePercent, 33.33);
-assert.equal(firstBatch.resultScope, "PARTIAL_BATCH_ONLY");
-assert.equal(firstBatch.isGlobalTop8Final, false);
-assert.equal(firstBatch.top8Status, "TOP_8_PARTIAL_DIAGNOSTIC");
-assert.ok(firstBatch.actualProviderCalls > 0);
-assert.ok(firstBatch.topCandidates.every((asset) => asset.scanId === firstBatch.scanId));
-
-const signed = attachSnapshotToken(firstBatch);
-assert.equal(signed.tokenStatus, "SIGNED");
-assert.ok(signed.snapshotToken);
-
-const decoded = decodeScanSnapshotToken(signed.snapshotToken);
-assert.equal(decoded.ok, true);
-assert.equal(decoded.state.scanId, firstBatch.scanId);
-
-console.log("Continuable scan snapshot validation OK.");
+console.log(`Continuable scan snapshot validation OK: ${responses.length} batches → GLOBAL_TOP8_FINAL al 100 %.`);

@@ -24,7 +24,7 @@ export const SPREAD_CONTINUATION_POLICY = Object.freeze({
   spreadContinuationPolicy: "EUROPE_DIAGNOSTIC_ONLY_UNTIL_VERIFIABLE_BID_ASK",
   currentEuropeEuronextMode: "DIAGNOSTIC_ONLY",
   unverifiedSpreadExecAllowed: false,
-  unverifiedSpreadGlobalTop8Allowed: false,
+  unverifiedSpreadGlobalTop8Allowed: true,   // como WATCH (decisión de 5743776/373453a); EXEC sigue prohibido
   requiresVerifiedBidAsk: true,
   productionProviderChecksAllowed: "PUNCTUAL_MANUAL_ONLY",
   productionProviderCheckScope: "EXISTING_CONFIGURED_SOURCES_ONLY",

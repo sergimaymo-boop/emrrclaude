@@ -1,76 +1,52 @@
+// Ningún rastro de datos mock/mixtos en la ruta de producción del dashboard (INV-04).
+// El conjunto de ficheros se DERIVA del grafo real de imports de src/main.tsx (metafile de
+// esbuild): todo módulo que el navegador llega a cargar se revisa, y un componente nuevo entra
+// solo — la versión anterior usaba una lista a mano que se pudrió al retirar SectorLeaders.tsx.
+// También se revisa el endpoint de cotizaciones visibles y, si existe, el bundle de dist/.
 import assert from "node:assert/strict";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { readRepoFile, repoPath, ROOT } from "./validate-harness.mjs";
 
-const activeProductionFiles = [
-  "src/App.tsx",
-  "src/main.tsx",
-  "src/pages/DashboardPage.tsx",
-  "src/pages/LoginPage.tsx",
-  "src/components/ActionButtons.tsx",
-  "src/components/FearGreedPanel.tsx",
-  "src/components/MasterIndicatorsGrid.tsx",
-  "src/components/ScanStatusPanel.tsx",
-  "src/components/SectorLeaders.tsx",
-  "src/components/StickyMiniHeader.tsx",
-  "src/components/SystemStatusCards.tsx",
-  "src/components/TechnicalHeader.tsx",
-  "src/components/Top8Grid.tsx",
-  "src/data/emptyDashboardData.ts",
-  "src/services/realDataRefresh.ts",
-  "src/utils/export.ts",
-  "src/utils/operationalDataPolicy.ts",
-  "src/utils/systemStatus.ts",
-  "shared/types/domain.ts",
-  "api/visible-top8-quotes.js",
+const { build } = await import("esbuild");
+const result = await build({
+  entryPoints: [repoPath("src/main.tsx")],
+  absWorkingDir: ROOT,
+  bundle: true,
+  write: false,
+  metafile: true,
+  format: "esm",
+  platform: "browser",
+  jsx: "automatic",
+  logLevel: "silent",
+  loader: { ".css": "empty" },
+  external: ["react", "react-dom", "tesseract.js"],
+});
+const liveFiles = Object.keys(result.metafile.inputs).filter((file) => !file.includes("node_modules"));
+for (const essential of ["src/pages/DashboardPage.tsx", "src/services/realDataRefresh.ts", "src/utils/operationalDataPolicy.ts", "src/components/RallyPanel.tsx"]) {
+  assert.ok(liveFiles.includes(essential), `el grafo de producción debe incluir ${essential}`);
+}
+
+const forbidden = [
+  /\bMOCK\b/, /\bMIXED\b/, /mockData/i, /mockTop8/i, /mockFearGreed/i, /runMockScan/i, /MOCK_FALLBACK/, /MOCK_TOP8/,
+  /Mock visual refresh completed/, /Mock scan completed/, /MOCK_READY/, /MOCK_CACHE/, /CNN Fear & Greed \(mock\)/,
 ];
-
-const forbiddenProductionPatterns = [
-  /\bMOCK\b/,
-  /\bMIXED\b/,
-  /mockData/i,
-  /mockTop8/i,
-  /mockFearGreed/i,
-  /runMockScan/i,
-  /MOCK_FALLBACK/,
-  /MOCK_TOP8/,
-  /Mock visual refresh completed/,
-  /Mock scan completed/,
-  /MOCK_READY/,
-  /MOCK_CACHE/,
-  /CNN Fear & Greed \(mock\)/,
-];
-
-async function pathExists(path) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
+for (const file of [...liveFiles, "api/visible-top8-quotes.js"]) {
+  const source = readRepoFile(file);
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(source, pattern, `${file} (ruta de producción) no debe contener ${pattern}`);
   }
 }
 
-async function readDistAssets() {
-  if (!(await pathExists("dist/assets"))) return [];
-  const files = await readdir("dist/assets");
-  const jsFiles = files.filter((file) => file.endsWith(".js"));
-  return Promise.all(jsFiles.map(async (file) => [join("dist/assets", file), await readFile(join("dist/assets", file), "utf8")]));
-}
+assert.equal(existsSync(repoPath("src/mocks")), false, "src/mocks no debe existir");
+assert.equal(existsSync(repoPath("src/engines/scannerEngine.ts")), false, "scannerEngine (ruta mock) no debe existir");
 
-for (const file of activeProductionFiles) {
-  const source = await readFile(file, "utf8");
-  for (const pattern of forbiddenProductionPatterns) {
-    assert.doesNotMatch(source, pattern, `${file} must not expose ${pattern} in production dashboard path`);
+const distAssets = repoPath("dist/assets");
+if (existsSync(distAssets)) {
+  for (const file of readdirSync(distAssets).filter((name) => name.endsWith(".js"))) {
+    const source = readRepoFile(join("dist/assets", file));
+    for (const pattern of forbidden) assert.doesNotMatch(source, pattern, `dist/assets/${file} no debe contener ${pattern}`);
   }
 }
 
-assert.equal(await pathExists("src/mocks"), false, "src/mocks must not exist in production source");
-assert.equal(await pathExists("src/engines/scannerEngine.ts"), false, "scannerEngine mock path must not exist");
-
-for (const [file, source] of await readDistAssets()) {
-  for (const pattern of forbiddenProductionPatterns) {
-    assert.doesNotMatch(source, pattern, `${file} production bundle must not contain ${pattern}`);
-  }
-}
-
-console.log("Production dashboard no-mock validation OK.");
+console.log(`Production dashboard no-mock validation OK: ${liveFiles.length} módulos de producción revisados.`);

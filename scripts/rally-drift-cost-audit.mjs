@@ -70,7 +70,12 @@ import {
 } from "./lab-day-core.mjs";
 import { simulate, PRESET_C0, scoreV4 } from "./rally-study-lib.mjs";
 
-const OUT_PATH = process.env.AUDIT_OUT ?? "backtests/rally-drift-cost-audit.json";
+// --datos-reparados (25-sep-2026): el dataset de 10 años se reparó (MNST, AVB, STLAP…); los
+// estudios 3 y lab-stop-audit se midieron sobre el anterior, así que sus anclas guardadas ya no
+// pueden coincidir. Con esta opción se omiten SOLO esas dos anclas (las réplicas en vivo se
+// siguen exigiendo bit a bit) y la salida va a un fichero aparte.
+const DATOS_REPARADOS = process.argv.includes("--datos-reparados");
+const OUT_PATH = process.env.AUDIT_OUT ?? (DATOS_REPARADOS ? "backtests/rally-drift-cost-audit-reparado.json" : "backtests/rally-drift-cost-audit.json");
 const t0 = Date.now();
 const idx = (d) => { const k = dates.indexOf(d); if (k < 0) throw new Error(`fecha ${d} fuera del calendario`); return k; };
 const TO_PUB = idx("2026-08-07");                               // fin del backtest PUBLICADO (rally-weighting-study.json)
@@ -331,8 +336,9 @@ for (const v of VARIANTES) {
   const a = c0Ensemble.a;
   const ok = Math.abs(a.confirmMean - s3.confirmMean) < 1e-12 && Math.abs(a.confirmWorst - s3.confirmWorst) < 1e-12
     && Math.abs(a.ddRealWorst - s3.ddRealWorst) < 1e-12 && Math.abs(a.ret2022Mean - s3.ret2022Mean) < 1e-12;
-  if (!ok) throw new Error("C0 ensemble (a) no reproduce baseC0 de rally-test-engine-study3.json");
-  validaciones.c0EnsembleReproduccion = `OK — C0 ensemble (a) reproduce BIT A BIT baseC0 de rally-test-engine-study3.json (confirm ${pct(a.confirmMean)} / peor ${pct(a.confirmWorst)} / DD real ${pct(a.ddRealWorst)} / 2022 ${pct(a.ret2022Mean)})`;
+  if (!ok && !DATOS_REPARADOS) throw new Error("C0 ensemble (a) no reproduce baseC0 de rally-test-engine-study3.json");
+  if (!ok) validaciones.c0EnsembleReproduccion = "OMITIDO — dataset reparado 25-sep-2026: rally-test-engine-study3.json se midió sobre el anterior";
+  else validaciones.c0EnsembleReproduccion = `OK — C0 ensemble (a) reproduce BIT A BIT baseC0 de rally-test-engine-study3.json (confirm ${pct(a.confirmMean)} / peor ${pct(a.confirmWorst)} / DD real ${pct(a.ddRealWorst)} / 2022 ${pct(a.ret2022Mean)})`;
   console.log(validaciones.c0EnsembleReproduccion);
 }
 
@@ -480,8 +486,9 @@ const celdaLab = (s, FROM) => ({
   const pub = JSON.parse(fs.readFileSync("backtests/lab-stop-audit.json", "utf8")).results.find((r) => r.name === "F45");
   const ev = evaluar(V11);
   const ok = ["confirmMean", "confirmWorst", "ddRealWorst", "ret2022Mean", "trainMean", "trainWorst"].every((k) => Math.abs(ev[k] - pub[k]) < 1e-12);
-  if (!ok) throw new Error("evaluar(v1.1) no reproduce F45 de lab-stop-audit.json");
-  validaciones.labReproduccionPublicada = `OK — evaluar(v1.1) del núcleo reproduce BIT A BIT F45 de lab-stop-audit.json (confirm ${pct(ev.confirmMean)} / peor ${pct(ev.confirmWorst)} / DD real ${pct(ev.ddRealWorst)} / 2022 ${pct(ev.ret2022Mean)})`;
+  if (!ok && !DATOS_REPARADOS) throw new Error("evaluar(v1.1) no reproduce F45 de lab-stop-audit.json");
+  if (!ok) validaciones.labReproduccionPublicada = "OMITIDO — dataset reparado 25-sep-2026: lab-stop-audit.json se midió sobre el anterior";
+  else validaciones.labReproduccionPublicada = `OK — evaluar(v1.1) del núcleo reproduce BIT A BIT F45 de lab-stop-audit.json (confirm ${pct(ev.confirmMean)} / peor ${pct(ev.confirmWorst)} / DD real ${pct(ev.ddRealWorst)} / 2022 ${pct(ev.ret2022Mean)})`;
   console.log(validaciones.labReproduccionPublicada);
 }
 // validación 3: la copia simLab(lag=0) ≡ simular(v1.1) del núcleo, BIT A BIT en las 10 fases
