@@ -176,6 +176,8 @@ export interface MasterIndicator {
   provider: DataProvider;
   cacheStatus: DataCacheStatus;
   priceTimestamp: TimestampPair;
+  /** 'YYYY-MM-DD' de la sesión del precio (MOVE, p. ej., solo se publica al cierre). */
+  priceDate?: string | null;
   status: MasterIndicatorStatus;
   color: ColorToken;
   operationalDataStatus: OperationalDataStatus;

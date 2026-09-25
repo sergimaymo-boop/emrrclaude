@@ -24,7 +24,15 @@ export function indicatorBadge(ind: MasterIndicator, feed?: IndicatorFeedStatus)
     const when = formatShortTime(feed.lastSuccessUtc);
     return { text: `SIN ACT. ${when}`, color: "#eab308", title: `SIN ACTUALIZAR · último dato ${when}` };
   }
-  return isMarketOpen("United States") === "OPEN"
+  const usOpen = isMarketOpen("United States") === "OPEN";
+  // Dato de una sesión anterior con el mercado abierto (MOVE se publica solo al cierre;
+  // o el proveedor aún no tiene la sesión de hoy): nunca "LIVE".
+  const todayNy = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (usOpen && ind.priceDate && ind.priceDate < todayNy) {
+    const d = `${ind.priceDate.slice(8, 10)}/${ind.priceDate.slice(5, 7)}`;
+    return { text: `CIERRE ${d}`, color: "#94a3b8", title: `Último dato publicado: cierre del ${d} (este indicador no cotiza en vivo o la fuente aún no tiene la sesión de hoy)` };
+  }
+  return usOpen
     ? { text: "LIVE", color: "#10b981", title: "Mercado US abierto — dato en vivo" }
     : { text: "CIERRE", color: "#94a3b8", title: "Mercado US cerrado — último cierre de sesión" };
 }

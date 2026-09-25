@@ -51,6 +51,7 @@ interface MasterIndicatorsApiResponse {
     price: number | null;
     previousClose: number | null;
     changePercent: number | null;
+    priceDate?: string | null;
     providerUsed: DataProvider | "none";
     dataMode?: DataMode;
     timestampUtc: string;
@@ -730,6 +731,7 @@ export function mergeMasterIndicators(
       provider,
       cacheStatus: apiIndicator.cacheStatus,
       priceTimestamp: timestamp,
+      priceDate: apiIndicator.priceDate ?? null,
       // "LIVE" solo como estado de carga correcta; la etiqueta visible (LIVE/CIERRE/CACHE/
       // SIN ACTUALIZAR) la decide IndicatorRow según mercado US abierto y salud del feed.
       status: isStale ? "LAST" : "LIVE",

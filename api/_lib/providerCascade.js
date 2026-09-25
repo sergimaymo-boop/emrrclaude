@@ -235,7 +235,8 @@ async function fetchFinnhubQuote(eodhdSymbol, apiKey) {
     ?? (price && previousClose && previousClose !== 0 ? ((price - previousClose) / previousClose) * 100 : null);
 
   if (!price || price === 0) return { ok: false, provider: "Finnhub", reason: "No valid price (c=0 or missing)" };
-  return { ok: true, provider: "Finnhub", price, previousClose, changePercent };
+  const priceDate = Number.isFinite(d.t) && d.t > 0 ? new Date(d.t * 1000).toISOString().slice(0, 10) : null;
+  return { ok: true, provider: "Finnhub", price, previousClose, changePercent, priceDate };
 }
 
 async function fetchYahooQuote(eodhdSymbol) {

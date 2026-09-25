@@ -81,6 +81,8 @@ function createQuote(symbol, fields = {}) {
     price,
     previousClose: fields.previousClose ?? null,
     changePercent: fields.changePercent ?? null,
+    // Fecha de la sesión a la que pertenece el precio (null si el proveedor no la da).
+    priceDate: fields.priceDate ?? null,
     currency: details.currency,
     providerUsed: fields.providerUsed ?? "none",
     timestampUtc: new Date().toISOString(),
@@ -241,6 +243,7 @@ async function getControlledQuote(symbol) {
       price: result.price,
       previousClose: result.previousClose,
       changePercent: result.changePercent,
+      priceDate: result.priceDate ?? null,
       providerUsed: result.provider,
       dataMode: "REAL",
       dataQuality,
