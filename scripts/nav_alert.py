@@ -20,6 +20,9 @@ GUARDAS:
     script sigue el máximo desde el 8-sep, igual que el TRAIL de IBK), la posición
     probablemente se vendió → el NAV reconstruido deja de ser fiable: se avisa de
     ello UNA vez y se marca el estado como "requiere foto nueva".
+  · TRAMOS (26-sep-2026): cuando el NAV supera en 1.000 € la marca de agua (base
+    23.500 €), email con el reparto del tramo según el top-5 de Rally-Test; la
+    marca sube al NAV del aviso. Prueba: --dry-run --force-tramo.
   · ANTIRREBOTE: se avisa una sola vez al cruzar. Solo se re-arma si el NAV vuelve
     a caer por debajo de RESET (23.200 €), para no repetir el email si oscila.
   · Si Mail.app falla NO se marca el estado → se reintenta en la siguiente pasada.
@@ -319,8 +322,98 @@ def main() -> int:
                     f"(NAV estimado {d['nav']:,.0f} EUR). Confirma en la app de IBK.".replace(",", "."))
             else:
                 log("email NO enviado — el estado no se marca, se reintenta.")
+
+    # ── TRAMO DE CARGA CON GANANCIAS (regla de Sergi, 26-sep-2026) ─────────────
+    aviso_tramo(d, estado, dry, force="--force-tramo" in sys.argv)
     guardar_json(STATE_FILE, estado)
     return 0
+
+
+# Regla de Sergi (26-sep-2026): el capital inicial (23.500 €) no se arriesga más;
+# solo se invierte lo GANADO por encima de una marca de agua, en tramos de 1.000 €,
+# repartido según el top-5 del último scan de Rally-Test.
+CAPITAL_BASE_EUR = 23500.0
+TRAMO_EUR = 1000.0
+RALLY_TEST_LAST_URL = "https://emrrclaude.vercel.app/api/rally-test/last"
+
+
+def top5_rally_test():
+    """Top-5 invertido (peso > 0) del último scan COMPLETO de Rally-Test."""
+    try:
+        req = urllib.request.Request(RALLY_TEST_LAST_URL, headers={"User-Agent": "EMRR-NavAlert"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            j = json.load(r)
+    except Exception as e:
+        PROBLEMAS_DATOS.append(f"scan de Rally-Test no disponible ({e})")
+        return None, None
+    if not j.get("ok") or not j.get("isRallyFinal") or j.get("coveragePercent") != 100:
+        PROBLEMAS_DATOS.append("el último scan de Rally-Test no está completo al 100%")
+        return None, None
+    top = [a for a in j.get("top10", []) if (a.get("suggestedWeightPct") or 0) > 0]
+    if not top or abs(sum(a["suggestedWeightPct"] for a in top) - 100) > 0.5:
+        PROBLEMAS_DATOS.append("los pesos del scan de Rally-Test no suman 100%")
+        return None, None
+    return top, j.get("scanCompletedAtUtc")
+
+
+def aviso_tramo(d, estado, dry, force=False):
+    """Avisa cuando NAV − marca de agua ≥ TRAMO_EUR, con las compras por ticker.
+    La marca sube al NAV del aviso (se da por hecho que Sergi invierte el tramo):
+    una ganancia ya avisada no se vuelve a contar."""
+    marca = float(estado.get("marca_agua_eur", CAPITAL_BASE_EUR))
+    estado.setdefault("marca_agua_eur", marca)
+    exceso = d["nav"] - marca
+    if exceso < TRAMO_EUR and not force:
+        return
+    importe = min(exceso, d["efectivo"])
+    if importe < TRAMO_EUR * 0.5 and not force:
+        log(f"tramo disponible {exceso:,.0f} € pero solo quedan {d['efectivo']:,.0f} € de efectivo".replace(",", "."))
+        return
+    top, cuando = top5_rally_test()
+    if not top:
+        log("tramo pendiente: sin scan fiable de Rally-Test — se reintenta")
+        return
+    filas, manuales = [], []
+    for a in top:
+        eur = importe * a["suggestedWeightPct"] / 100.0
+        px, _ = precio(a["ticker"] if a.get("currency") == "USD" else a.get("providerSymbol", a["ticker"]))
+        if px is None or a.get("currency") not in ("USD", "EUR"):
+            manuales.append(f"  {a['ticker']:<5} {a['suggestedWeightPct']:>5.1f}% → {eur:>6,.0f} € (calcular las acciones en IBK)".replace(",", "."))
+            continue
+        px_eur = px / d["fx"] if a["currency"] == "USD" else px
+        uds = eur / px_eur
+        filas.append(f"  {a['ticker']:<5} {a['suggestedWeightPct']:>5.1f}% → {eur:>6,.0f} € ≈ {uds:.2f} acciones a {px:.2f} {a['currency']}".replace(",", "."))
+    try:
+        fecha_scan = datetime.fromisoformat(cuando.replace("Z", "+00:00"))
+        edad = (datetime.now(timezone.utc) - fecha_scan).days
+        txt_scan = fecha_scan.strftime("%d-%m-%Y %H:%M UTC") + (
+            f"  ⚠ tiene {edad} días: pulsa SCAN en el panel antes de comprar" if edad >= 3 else "")
+    except Exception:
+        txt_scan = str(cuando)
+    cuerpo = (
+        f"La cuenta ha ganado {exceso:,.0f} € por encima de tu marca de {marca:,.0f} €.\n".replace(",", ".")
+        + "Según tu regla, toca invertir un tramo de " + f"{importe:,.0f}".replace(",", ".") + " € del efectivo.\n\n"
+        + f"Reparto según el top-5 de Rally-Test (scan del {txt_scan}):\n"
+        + "\n".join(filas + manuales) + "\n\n"
+        + "Recuerda:\n"
+        + "  · añadir la cantidad nueva a la orden TRAIL 45% de cada ticker (una sola orden por ticker con la posición entera)\n"
+        + "  · si entra un ticker nuevo, ponerle su TRAIL 45% GTC\n"
+        + "  · subir la foto de IBK al dashboard para que el seguimiento cuadre\n\n"
+        + f"Nueva marca: {d['nav']:,.0f} €. El próximo aviso llegará cuando la cuenta la supere en {TRAMO_EUR:,.0f} €.\n".replace(",", ".")
+        + f"NAV reconstruido con precios de Yahoo (EUR/USD {d['fx']:.4f}); el dato que manda es el de la app de IBK.\n"
+        + "Parte de la ganancia puede venir del cambio euro/dólar, no solo de las acciones.\n\n"
+        + "(Aviso automático de EMRR · NavAlert)")
+    if dry:
+        log("DRY-RUN tramo: no se envía nada. Cuerpo:\n" + cuerpo)
+        return
+    if enviar_email(f"EMRR · toca invertir un tramo de {importe:,.0f} € (ganancias)".replace(",", "."), cuerpo):
+        estado["marca_agua_eur"] = round(d["nav"], 2)
+        estado.setdefault("tramos", []).append(
+            {"fecha": datetime.now(timezone.utc).isoformat(), "importe": round(importe, 2),
+             "marca_anterior": marca, "nav": round(d["nav"], 2)})
+        log(f"AVISO DE TRAMO enviado: {importe:,.0f} € (marca {marca:,.0f} → {d['nav']:,.0f})".replace(",", "."))
+    else:
+        log("email del tramo NO enviado — la marca no se mueve, se reintenta.")
 
 
 if __name__ == "__main__":
