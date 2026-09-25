@@ -132,12 +132,13 @@ export interface RallyAsset {
 // ⚠ 25-sep-2026 (auditoría aprobada por Sergi, scripts/rally-drift-cost-audit.mjs): el simulador
 // canon mantenía los pesos FIJOS entre revisiones (= rebalanceo diario gratis). Cifras de abajo
 // medidas como CARTERA REAL: pesos a la deriva con el precio y costes sobre cada cambio de peso.
-// Antes: 47,7% / 37,7% / 1,27 (full) y 44,9% / 36,1% / 1,24 (confirmación).
+// Antes: 47,7% / 37,7% / 1,27 (full) y 44,9% / 36,1% / 1,24 (confirmación). Sobre el dataset de 10
+// años REPARADO el 25-sep (MNST, AVB, STLAP…): backtests/rally-drift-cost-audit-reparado.json.
 export const RALLY_BACKTEST = {
   period: "2017-08 → 2026-08 (9 años, 603 tickers)",
   formula: "Momento a 9 meses · revisión ~cada 4 meses (84 sesiones) · top 10 ponderado por momentum 9m crudo (4-20%)",
   /** Esquema completo en producción (M9_RAW + stops H4 + salto 70/30), periodo full. */
-  strategy: { cagr: 0.466, maxDD: 0.377, mar: 1.24, winRate: 0.65 },
+  strategy: { cagr: 0.464, maxDD: 0.377, mar: 1.23, winRate: 0.64 },
   /** Mismo esquema, solo mitad de confirmación 2022-2026 (fuera del train). */
   strategyConfirm: { cagr: 0.447, maxDD: 0.374, mar: 1.19 },
   /** Confirmación sin los 7 meses excepcionales de 2026 (2022-25). */
@@ -145,7 +146,7 @@ export const RALLY_BACKTEST = {
   /** Expectativa realista con los stops como orden intradía en el bróker (−2-3 pp/año), antes de impuestos. */
   realista: { confirm: "≈42%", y2225: "≈30%" },
   /** Misma selección y stops con reparto 1/10 por posición (esquema EQUAL), periodo full. */
-  equalWeight: { cagr: 0.381, maxDD: 0.366, mar: 1.04 },
+  equalWeight: { cagr: 0.375, maxDD: 0.366, mar: 1.03 },
   buyHold: { cagr: 0.156, maxDD: 0.337 },
   reviewDays: 84,
   /**
@@ -159,8 +160,8 @@ export const RALLY_BACKTEST = {
     jumpRule: "0,7·score + 0,3·recorrido",
     fijo30Confirm: 0.444,
     c0Confirm: 0.447,
-    fijo30WorstTrain: 0.336,
-    c0WorstTrain: 0.359,
+    fijo30WorstTrain: 0.342,
+    c0WorstTrain: 0.360,
   },
 } as const;
 
