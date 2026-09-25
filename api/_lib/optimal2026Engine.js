@@ -241,6 +241,8 @@ export function detectOptimal2026Regime(spyBars) {
  *
  * Overlay GANADOR de los sweeps de consolidación (118 variantes, 603 tickers, 2016-2026):
  * vol-target 30% anualizada con ventana 10d → MAR 1.87 (vs 1.75 sin VT), DD 33%→26.9%.
+ * ⚠ Cifras del sweep de jul-2026 (en muestra) que NO se reproducen hoy: ver
+ * OPTIMAL_SUPREME_CALIBRATION.backtest (auditoría 25-sep-2026).
  * Escala la exposición del régimen: expo = deployPct × min(1, 0.30 / volRealizada10d).
  * La vol realizada se computa del portfolio top-2 (retornos diarios ponderados por peso).
  * Barroso & Santa-Clara (2015) — validado aquí con backtest propio, no solo literatura.
@@ -409,6 +411,8 @@ export const OPTIMAL2026_CALIBRATION = {
 //   • Filtro entrada RSI/dist20   → no mejora al combinar con VT (redundante)
 //
 // SWEEP 4 (25-jul-2026, +45 variantes = 118 totales) — ROTACIÓN PROACTIVA:
+//   ⚠ Notas del sweep de jul-2026 (en muestra, resultados no conservados): la auditoría del
+//     25-sep-2026 NO las reproduce — la revisión cada 10 sesiones midió 52,8-54,9% CAGR.
 //   • Rotar a DIARIO al mejor ticker → CATASTRÓFICO: CAGR 10.4%, DD 54% (MAR 0.19).
 //     El momentum necesita TIEMPO; saltar de ticket persigue ruido y vende ganadores
 //     en pullbacks normales. Cada semana: MAR ~1.0. Cada 2 semanas: ~1.2. NUNCA <mensual.
@@ -444,14 +448,21 @@ export const OPTIMAL_SUPREME_CALIBRATION = {
   // ventana desplazada ~10 días) midió CAGR 38.9 / DD 26.7 / MAR 1.46 — la varianza entre
   // pulls es grande. Tomar las cifras publicadas como el EXTREMO OPTIMISTA del rango; el
   // DD ~27% es lo más estable entre mediciones. Informes en backtests/recalibracion-*.json.
-  oos: {
-    cagr: 52.2,       // % CAGR — config con histéresis 1.10 mensual (sweep 4, 603 tickers)
-    maxDD: 26.9,      // % MaxDD — vs 33% sin vol-target y 40% sin trailing
-    mar: 1.94,        // el mejor de las 118 variantes probadas
-    sharpe: 1.50,
-    winPos: 65,       // % meses ganadores
-    beatsSpy: '3/3',  // sub-períodos 2016-19 / 20-22 / 23-26 todos positivos (43/22/102.1)
-    tradesYr: 48,     // revisión mensual con histéresis + rotaciones por trailing
-    testPeriod: '2016-2026 · 603 tickers',
+  // Backtest REPRODUCIBLE (auditoría 25-sep-2026, scripts/recalibrate-supreme.mjs, 598 tickers,
+  // 2017-09-08 → 2026-09-25 tras 240 sesiones de calentamiento, 20 pb/lado). Es una selección
+  // EN MUESTRA COMPLETA entre 118 variantes — no hay tramo fuera de muestra. Según la descarga
+  // de datos, el mismo campeón mide ~39-51% CAGR y DD 27-38%. Las cifras anteriores (52,2 /
+  // 26,9 / 1,94, etiquetadas "oos") no se reproducen y se retiraron.
+  backtest: {
+    cagr: 45.9,
+    maxDD: 38.0,
+    mar: 1.21,
+    sharpe: 1.34,
+    tradesYr: 48,
+    period: '2017-09-08 → 2026-09-25 · 598 tickers · 20 pb/lado',
+    inSample: true,
+    rangeCagr: '39-51',
+    rangeMaxDD: '27-38',
+    measuredOn: '2026-09-25',
   },
 };

@@ -358,7 +358,7 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
       regime: regime.regime, deployPct: 0,
       regimeReason: `${regime.regimeReason} · Sin candidatos elegibles — estrategia en CAJA`,
       badge: OPTIMAL_SUPREME_CALIBRATION.badge,
-      oos: OPTIMAL_SUPREME_CALIBRATION.oos,
+      backtest: OPTIMAL_SUPREME_CALIBRATION.backtest,
       scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
     }, SNAPSHOT_TTL_S).catch(() => {});
     return;
@@ -413,7 +413,7 @@ async function persistOptimal2026(topO26, scanStartedAtUtc, activeMarkets, unive
     volTargetFactor: vt.volTargetFactor,
     realizedVol10d: vt.realizedVol,
     badge: OPTIMAL_SUPREME_CALIBRATION.badge,
-    oos: OPTIMAL_SUPREME_CALIBRATION.oos,
+    backtest: OPTIMAL_SUPREME_CALIBRATION.backtest,
     scanStartedAtUtc, cachedAtUtc: new Date().toISOString(),
   };
   await kvSet(OPTIMAL2026_KEY, payload, SNAPSHOT_TTL_S).catch(() => {});

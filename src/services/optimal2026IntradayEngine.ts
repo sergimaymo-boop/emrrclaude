@@ -1,15 +1,11 @@
 /**
  * OPTIMAL SUPREME Intraday Engine — Señales semi-activas para maximizar rentabilidad
  *
- * VALIDADO CON BACKTEST PROPIO (24/25-jul-2026): 118 variantes × 4 baterías,
- * universo completo 603 tickers US+EU, 2016-07→2026-07, walk-forward sin lookahead,
- * costes 20bps por lado. Ya NO es estimación académica.
- *
- * Resultado real vs rebalanceo mensual puro (mismo universo) — CIFRAS CANÓNICAS:
- *   Solo mensual:                             CAGR 61.6%, MaxDD 40.0%, MAR 1.54, Sharpe 1.48
- *   SUPREME (trailing+VT30+histéresis 1.10):  CAGR 52.2%, MaxDD 26.9%, MAR 1.94, Sharpe 1.50
- *   → el modo semi-activo recorta el drawdown 13pp a cambio de ~9.4pp de CAGR: mejor MAR
- *     de las 118 variantes probadas (riesgo moderado, objetivo del usuario).
+ * Diseñado con los sweeps de jul-2026 (118 variantes, 603 tickers US+EU, 2016-2026,
+ * 20 pb por lado), seleccionando sobre la MUESTRA COMPLETA (sin tramo fuera de muestra).
+ * ⚠ Las cifras de entonces (52,2% / DD 26,9% / MAR 1,94) no se reproducen: la auditoría del
+ * 25-sep-2026 midió 45,9% / DD 38,0% / MAR 1,21 (rango entre descargas ~39-51% / 27-38%).
+ * Referencia vigente: OPTIMAL_SUPREME_CALIBRATION.backtest en api/_lib/optimal2026Engine.js.
  *
  * Base académica de partida (confirmada por el sweep): Barroso & Santa-Clara (2015)
  * vol-managed momentum; Fan-Li-Shi (2016) trailing stops; Antonacci (2014) dual momentum.
@@ -141,9 +137,8 @@ export function computeActionRec(
   const price = item.price ?? 0;
 
   // Candidato de rotación: rank 3 o 4 con score >10% superior al tenido.
-  // Umbral 1.10 = histéresis GANADORA del sweep 4 (118 variantes): con revisión MENSUAL,
-  // 1.10 batió a 1.0 y a 1.25 (MAR 1.94). OJO CADENCIA: esta señal se evalúa en cada scan,
-  // pero ejecutarla más de ~1 vez al mes destruye rentabilidad (rotar a diario: MAR 0.19).
+  // Umbral 1.10 = histéresis elegida en el sweep 4 de jul-2026 (en muestra; sus cifras no se
+  // reproducen, ver cabecera). La señal se evalúa en cada scan; la revisión prevista es mensual.
   const rank3 = allItems.find(i => i.rank === 3 || i.rank === 4);
   const rotationTrigger = rank3 && item.score != null && rank3.score != null
     && rank3.score > item.score * 1.10;
@@ -230,14 +225,3 @@ export function deriveOptimal2026Display(data: Optimal2026Result): Optimal2026De
   return { items, isLive, isPricesStale, deployPct, latestPriceRefreshMs: latestRefreshMs > 0 ? latestRefreshMs : null };
 }
 
-// ── Backtest comparison (resultados REALES del sweep propio) ──────────────────
-
-// Resultados REALES de los sweeps de consolidación (24/25-jul-2026): 118 variantes
-// × 4 baterías, universo completo 603 tickers US+EU, 2016-2026, costes 20bps/lado.
-// Ya NO es estimación académica — es backtest propio walk-forward sin lookahead.
-export const SEMIACTIVE_COMPARISON = {
-  monthly: { label: "Solo rebalanceo mensual (mismo universo)", cagr: 61.6, maxDD: 40.0, mar: 1.54, sharpe: 1.48 },
-  semiActive: { label: "OPTIMAL SUPREME: trailing+VT30+histéresis 1.10 (backtest real)", cagr: 52.2, maxDD: 26.9, mar: 1.94, sharpe: 1.5 },
-  spy: { label: "SPY buy-and-hold", cagr: 14.7, maxDD: 33.7, mar: 0.44, sharpe: 0.68 },
-  note: "Backtest propio 10 años, 603 tickers, 118 variantes probadas. Trailing con rotación + vol-target 30%/10d + revisión MENSUAL con histéresis 1.10 (rotar solo si el candidato supera al tenido en >10% de score): MAR 1.94, el mejor de todas. Rotar más rápido que mensual DESTRUYE rentabilidad (a diario: CAGR 10%, DD 54%).",
-};

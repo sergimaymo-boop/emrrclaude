@@ -6,17 +6,19 @@
  *   2. Cartera IBK — CSV o FOTO (OCR local) → P&L + acción por posición
  *   3. Auto-scan 15:00 Canarias + botón de scan manual con barra de progreso
  *   4. Precios EN VIVO vs ÚLTIMO CIERRE + alarma roja si mercado abierto y precios obsoletos
- *   5. Comparativa de backtest REAL (sweep propio de 118 variantes)
+ *   5. Backtest del campeón — SOLO cifras reproducibles (SUPREME_BACKTEST en optimal2026Refresh.ts)
  *
- * Backtest real (2016-2026, 603 tickers, walk-forward, costes 20bps/lado) — CANÓNICAS:
- *   SUPREME (trailing bandas + VT30/10d + histéresis 1.10): CAGR 52.2%, MaxDD 26.9%, MAR 1.94, Sharpe 1.50
- *   Solo mensual (mismo universo):                          CAGR 61.6%, MaxDD 40.0%, MAR 1.54
- * Las cifras legadas (CAGR 40.1/DD 18.5/MAR 2.17) eran del universo curado de 110 tickers.
+ * ⚠️ Corrección 25-sep-2026 (aprobada por Sergi): hasta hoy se publicaba "CAGR OOS 52,2% ·
+ * MaxDD 26,9% · MAR 1,94" más una tabla "solo mensual 61,6% / SPY 14,7%". Ni se reproduce
+ * ni era fuera de muestra: selección in-sample entre 118 variantes sobre toda la muestra.
+ * Reproducido hoy con scripts/recalibrate-supreme.mjs: 45,9% / 38,0% / MAR 1,21, y entre
+ * descargas de datos el mismo campeón mide ~39-51% / caída 27-38%. El `oos` que envía el
+ * API ya no se sirve (sustituido por `backtest`, en muestra).
  */
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
-import { getOptimal2026FetchHealth, subscribeOptimal2026FetchHealth, type Optimal2026Result } from "../services/optimal2026Refresh";
-import { deriveOptimal2026Display, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
+import { getOptimal2026FetchHealth, subscribeOptimal2026FetchHealth, SUPREME_BACKTEST, type Optimal2026Result } from "../services/optimal2026Refresh";
+import { deriveOptimal2026Display, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 
 // ── Palette ────────────────────────────────────────────────────────────────────
@@ -416,9 +418,9 @@ function MarketModeBadge({ isPricesStale }: { isPricesStale?: boolean }) {
   );
 }
 
-// ── OOS Stat ──────────────────────────────────────────────────────────────────
+// ── Backtest Stat ─────────────────────────────────────────────────────────────
 
-function OosStat({ label, value, color }: { label: string; value: string; color: string }) {
+function BacktestStat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <span style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
       <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
@@ -427,42 +429,34 @@ function OosStat({ label, value, color }: { label: string; value: string; color:
   );
 }
 
-// ── Semi-active comparison ────────────────────────────────────────────────────
+// ── Backtest honesto (corrección 25-sep-2026) ─────────────────────────────────
+// Cifras SOLO de SUPREME_BACKTEST (reproducidas con scripts/recalibrate-supreme.mjs).
+// Nada de las cifras antiguas (52,2 / 26,9 / 1,94): ni se reproducen ni eran fuera de muestra.
 
-function SemiActiveComparison() {
-  const m = SEMIACTIVE_COMPARISON.monthly;
-  const s = SEMIACTIVE_COMPARISON.semiActive;
-  const spy = SEMIACTIVE_COMPARISON.spy;
+function SupremeBacktestNote() {
+  const b = SUPREME_BACKTEST;
+  const r = b.reproducido;
   return (
-    <div style={{ marginTop: 6 }}>
+    <div>
       <div style={{ fontSize: 8, color: ACCENT, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-        Backtest real 10 años · 603 tickers · 118 variantes probadas
+        Backtest in-sample · NO es fuera de muestra
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1 }}>
-        {[
-          { lbl: "Solo mensual", data: m, accent: GRAY },
-          { lbl: "⚡ SUPREME (real)", data: s, accent: GREEN },
-          { lbl: "SPY (ref)", data: spy, accent: GRAY },
-        ].map(({ lbl, data, accent }) => (
-          <div key={lbl} style={{
-            padding: "5px 7px",
-            background: `${accent}08`,
-            border: `1px solid ${accent}20`,
-            borderRadius: 5,
-          }}>
-            <div style={{ fontSize: 7, color: accent, fontWeight: 700, marginBottom: 3 }}>{lbl}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <OosStat label="CAGR" value={`+${data.cagr}%`} color={accent} />
-              <OosStat label="MaxDD" value={`-${data.maxDD}%`} color={RED} />
-              <OosStat label="MAR" value={data.mar.toFixed(2)} color={accent} />
-              <OosStat label="Sharpe" value={data.sharpe.toFixed(2)} color={accent} />
-            </div>
-          </div>
-        ))}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 5 }}>
+        <BacktestStat label="CAGR" value={`+${r.cagr}%`} color={ACCENT} />
+        <BacktestStat label="Caída máx" value={`-${r.maxDD}%`} color={RED} />
+        <BacktestStat label="MAR" value={r.mar} color={ACCENT} />
+        <BacktestStat label="Sharpe" value={r.sharpe} color={TEXT} />
+        <BacktestStat label="Ops/año" value={`~${r.opsAno}`} color={GRAY} />
+        <BacktestStat label="Muestra" value={b.muestraCorta} color={GRAY} />
       </div>
-      <div style={{ fontSize: 7, color: "#334155", marginTop: 4, lineHeight: 1.5 }}>
-        {SEMIACTIVE_COMPARISON.note} Mejora real depende de slippage, IRPF y ejecución.
-        No es asesoramiento financiero.
+      <div style={{ fontSize: 9, color: "#94a3b8", lineHeight: 1.55 }}>
+        Reproducido el {b.medidoEl} ({b.tickers} tickers, costes {b.costes}). El modelo se eligió entre{" "}
+        {b.variantes} variantes mirando la muestra completa, sin tramo de validación: cifras optimistas.
+        Según la descarga de datos, el mismo modelo mide <strong style={{ color: TEXT }}>{b.rango.cagr} anual</strong>{" "}
+        con caída máxima del <strong style={{ color: TEXT }}>{b.rango.maxDD}</strong> ({b.rango.periodo}).
+        Por tercios: {b.tercios} anual — depende mucho de 2023-26. Universo de supervivientes, stops
+        ejecutados justo en su nivel y sin IRPF: sobrestima. <strong style={{ color: TEXT }}>Rentabilidad
+        pasada no garantiza la futura.</strong>
       </div>
     </div>
   );
@@ -570,7 +564,6 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
     && (health.quotesOkAt == null || health.quotesFailAt > health.quotesOkAt);
 
   const badge = data.badge;
-  const oos = data.oos;
   const regime = data.regime ?? null;
 
   const rc = regime === "RISK_ON"
@@ -656,18 +649,20 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
           </div>
         )}
 
-        {oos && (
-          <div style={{
+        {/* Backtest: RANGO entre descargas de datos, nunca un único "CAGR OOS" (corrección 25-sep-2026) */}
+        <div
+          title={`Backtest in-sample (NO fuera de muestra): el mismo modelo mide ${SUPREME_BACKTEST.rango.cagr} anual según la descarga de datos (${SUPREME_BACKTEST.rango.periodo}). Reproducido el ${SUPREME_BACKTEST.medidoEl}: ${SUPREME_BACKTEST.reproducido.cagr}%. Rentabilidad pasada no garantiza la futura.`}
+          style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
             padding: "4px 8px",
             background: "rgba(245,158,11,0.08)",
             border: `1px solid ${ACCENT_BORDER}`,
             borderRadius: 6,
           }}>
-            <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>CAGR OOS</span>
-            <span style={{ fontSize: 15, fontWeight: 900, color: ACCENT, lineHeight: 1 }}>+{oos.cagr}%</span>
-          </div>
-        )}
+          <span style={{ fontSize: 7, color: GRAY, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>CAGR backtest</span>
+          <span style={{ fontSize: 15, fontWeight: 900, color: ACCENT, lineHeight: 1 }}>{SUPREME_BACKTEST.rango.cagr}</span>
+          <span style={{ fontSize: 7, color: GRAY, fontWeight: 600 }}>in-sample</span>
+        </div>
       </div>
 
       {/* ── Barra de progreso del scan manual ── */}
@@ -746,27 +741,14 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
       {/* Cartera IBK: ver <PortfolioCard> — su propia tarjeta, renderizada por
           DashboardPage justo ENCIMA de este panel (reordenación ago-2026). */}
 
-      {/* ── Footer: OOS + semi-active comparison + disclaimer ── */}
+      {/* ── Footer: backtest honesto (SUPREME_BACKTEST) + metodología ── */}
       {items.length > 0 && (
         <div style={{
           padding: "8px 14px 10px",
           borderTop: "1px solid rgba(255,255,255,0.06)",
           background: "rgba(0,0,0,0.15)",
         }}>
-          {oos && (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
-              <OosStat label="CAGR" value={`+${oos.cagr}%`} color={ACCENT} />
-              <OosStat label="MaxDD" value={`-${oos.maxDD}%`} color={RED} />
-              <OosStat label="MAR" value={oos.mar.toFixed(2)} color={ACCENT} />
-              <OosStat label="Sharpe" value={oos.sharpe.toFixed(2)} color={GREEN} />
-              <OosStat label="Win%" value={`${oos.winPos}%`} color={TEXT} />
-              <OosStat label="BeatSPY" value={oos.beatsSpy} color={GREEN} />
-              {oos.tradesYr && <OosStat label="Ops/año" value={`~${oos.tradesYr}`} color={GRAY} />}
-              {oos.testPeriod && <OosStat label="Período" value={oos.testPeriod} color={GRAY} />}
-            </div>
-          )}
-
-          <SemiActiveComparison />
+          <SupremeBacktestNote />
 
           <div style={{ fontSize: 8, color: "#475569", lineHeight: 1.5, marginTop: 8 }}>
             <strong style={{ color: ACCENT }}>⚡ OPTIMAL SUPREME</strong> — módulo único consolidado: selecciona los{" "}
@@ -775,9 +757,8 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
             10d) que recorta exposición si la volatilidad del top-2 se dispara. <strong>Trailing ATR por bandas</strong>{" "}
             (TR 2.5× / TN 3.0× / TA 4.0×) con rotación inmediata al mejor candidato al saltar el stop, más{" "}
             <strong>revisión mensual con histéresis 1.10</strong>: rotar una posición SOLO si otro candidato la supera
-            en &gt;10% de score — rotar más rápido que mensual DESTRUYE rentabilidad (probado: a diario, CAGR 10% y
-            DD 54%). Señales intraday a las <strong>15:00 Canarias</strong>. Validado con 118 variantes de backtest
-            (10 años, 603 tickers). Ideas, NO asesoramiento financiero. Rentabilidades pasadas no garantizan futuras.
+            en &gt;10% de score. Señales intraday a las <strong>15:00 Canarias</strong>. Ideas, NO asesoramiento
+            financiero.
           </div>
         </div>
       )}

@@ -35,6 +35,11 @@ export interface Optimal2026Result {
   deployPct?: number;
   regimeReason?: string;
   badge?: number;
+  /**
+   * ⚠️ LEGADO — el panel YA NO lo pinta (corrección 25-sep-2026). El API sigue enviando
+   * 52,2 / 26,9 / 1,94 etiquetado "oos", pero NO es fuera de muestra (selección in-sample
+   * entre 118 variantes) y NO se reproduce. Las cifras publicadas salen de SUPREME_BACKTEST.
+   */
   oos?: {
     cagr: number;
     maxDD: number;
@@ -52,6 +57,46 @@ export interface Optimal2026Result {
   error?: string;
   message?: string;
 }
+
+// ── Backtest de OPTIMAL SUPREME: las ÚNICAS cifras que publica el panel ───────
+/**
+ * Corrección de honestidad del 25-sep-2026 (aprobada por Sergi). El panel publicaba
+ * "CAGR OOS 52,2% · MaxDD 26,9% · MAR 1,94": medición de jul-2026 con los scripts de
+ * barrido (resultados en /tmp, ya no existen) que NO se reproduce, y que NO era fuera de
+ * muestra — el campeón se eligió entre 118 variantes mirando la muestra COMPLETA, sin
+ * tramo de validación (los backtest-optimal-supreme*.mjs simulan FROM=240→fin, sin split).
+ *
+ * Fuente: `node scripts/recalibrate-supreme.mjs` (campeón b200_r21_h1.1), 25-sep-2026,
+ * en worktree aislado:
+ *   · datos de la auditoría de la mañana (598 tickers): 45,9% / 38,0% / MAR 1,21 /
+ *     Sharpe 1,34 / 48 ops/año / tercios 39,1 · 5,5 · 111,9 — reproducido BIT A BIT en
+ *     una segunda ejecución sobre la misma caché (el cálculo es determinista).
+ *   · descarga fresca de la tarde (600 tickers): 46,4% / 38,0% / MAR 1,22.
+ *   Se publica la MENOR (regla: nunca una cifra mayor que la que se reproduce hoy).
+ * Ventana simulada 2017-09-08 → 2026-09-25 (9,0 años; los 240 días previos, desde
+ * 2016-09-26, son calentamiento; incluye la vela EN CURSO del 25-sep). Costes 20 pb por
+ * lado. Stops ejecutados justo en su nivel (sin huecos de apertura) → optimista.
+ * Universo = listado estático de tickers vivos hoy → sesgo de supervivencia.
+ *
+ * Varianza ENTRE descargas del mismo campeón (backtests/recalibracion-*.json + hoy):
+ *   03-ago 38,9/26,7 · 19-ago 50,4/32,8 (reconstruido de memoria) · 23-ago 50,6/28,6 ·
+ *   26-ago 42,3/38,3 · 25-sep 45,9/38,0 y 46,4/38,0 → CAGR ~39-51%, caída máx. 27-38%
+ *   (los extremos salen de ejecuciones con datos, no del reconstruido).
+ *
+ * Al recalibrar: sustituir `reproducido`/`tercios` por la nueva medición y ampliar
+ * `rango` si cae fuera. NUNCA volver a etiquetar estas cifras como OOS/fuera de muestra.
+ */
+export const SUPREME_BACKTEST = {
+  medidoEl: "25-sep-2026",
+  muestra: "sep-2017 → sep-2026",
+  muestraCorta: "sep-17→sep-26",
+  tickers: 598,
+  costes: "20 pb por lado",
+  variantes: 118,
+  reproducido: { cagr: "45,9", maxDD: "38,0", mar: "1,21", sharpe: "1,34", opsAno: 48 },
+  tercios: "+39,1% (2017-20) · +5,5% (2020-23) · +111,9% (2023-26)",
+  rango: { cagr: "~39–51%", maxDD: "27–38%", periodo: "ago–sep 2026" },
+} as const;
 
 // ── IBK Portfolio ─────────────────────────────────────────────────────────────
 
