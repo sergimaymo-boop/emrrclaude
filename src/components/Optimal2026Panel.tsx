@@ -14,8 +14,8 @@
  * Las cifras legadas (CAGR 40.1/DD 18.5/MAR 2.17) eran del universo curado de 110 tickers.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { Optimal2026Result } from "../services/optimal2026Refresh";
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { getOptimal2026FetchHealth, subscribeOptimal2026FetchHealth, type Optimal2026Result } from "../services/optimal2026Refresh";
 import { deriveOptimal2026Display, SEMIACTIVE_COMPARISON, type Optimal2026ItemWithSignal, type ActionRec, type RiskLevel } from "../services/optimal2026IntradayEngine";
 import { getRegionalMarketStates } from "../utils/marketHours";
 
@@ -160,6 +160,23 @@ function fmtPct(v: number | null | undefined, d = 1): string {
   if (v == null || !Number.isFinite(v)) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`;
 }
+const LIVE_MAX_AGE_MS = 5 * 60 * 1000;
+
+function fmtDateTime(ms: number | string | null | undefined): string | null {
+  if (ms == null) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtAge(ms: number): string {
+  const min = Math.max(0, Math.round(ms / 60000));
+  if (min < 60) return `${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `${h} h`;
+  return `${Math.round(h / 24)} días`;
+}
+
 export function pctColor(v: number | null): string {
   if (v == null) return GRAY;
   return v >= 0 ? GREEN : RED;
@@ -172,7 +189,7 @@ function ItemRow({
   isPricesStale,
 }: {
   item: Optimal2026ItemWithSignal;
-  deployPct: number | undefined;
+  deployPct: number | null | undefined;
   isLive: boolean;
   isPricesStale?: boolean;
 }) {
@@ -240,12 +257,13 @@ function ItemRow({
           </span>
         )}
 
-        {/* % day */}
-        {item.pctDay != null && (
-          <span style={{ fontSize: 11, fontWeight: 700, color: pctColor(item.pctDay), minWidth: 48, textAlign: "right" }}>
-            {fmtPct(item.pctDay)}
-          </span>
-        )}
+        {/* % day — "—" si el proveedor no lo da; nunca el % viejo del scan junto a un precio nuevo */}
+        <span
+          style={{ fontSize: 11, fontWeight: 700, color: pctColor(item.pctDay), minWidth: 48, textAlign: "right" }}
+          title={item.pctDay == null ? "Variación del día no disponible en el proveedor" : undefined}
+        >
+          {fmtPct(item.pctDay)}
+        </span>
       </div>
 
       {/* ── Precio SIEMPRE en su propia línea, encima de la barra (fix 25-jul: en móvil
@@ -255,9 +273,7 @@ function ItemRow({
           <span style={{ fontSize: 15, fontWeight: 800, color: TEXT, fontVariantNumeric: "tabular-nums" }}>
             {item.price.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
-          {isLive && item.priceRefreshedAt && (
-            <span style={{ fontSize: 7, color: GREEN, fontWeight: 700 }}>● EN VIVO</span>
-          )}
+          <PriceTag isLive={isLive} priceRefreshedAt={item.priceRefreshedAt ?? null} />
         </div>
       )}
 
@@ -314,6 +330,22 @@ function ItemRow({
   );
 }
 
+
+// Etiqueta de frescura del precio de cada fila: EN VIVO solo si el refresco es reciente.
+function PriceTag({ isLive, priceRefreshedAt }: { isLive: boolean; priceRefreshedAt: string | null }) {
+  const t = priceRefreshedAt ? new Date(priceRefreshedAt).getTime() : NaN;
+  if (!Number.isFinite(t)) {
+    return <span style={{ fontSize: 9, color: YELLOW, fontWeight: 700 }}>precio del scan (sin cotización actual)</span>;
+  }
+  const age = Date.now() - t;
+  if (isLive && age <= LIVE_MAX_AGE_MS) {
+    return <span style={{ fontSize: 9, color: GREEN, fontWeight: 700 }}>● EN VIVO</span>;
+  }
+  if (isLive) {
+    return <span style={{ fontSize: 9, color: RED, fontWeight: 700 }}>⚠ precio de {fmtDateTime(t)} (hace {fmtAge(age)})</span>;
+  }
+  return <span style={{ fontSize: 9, color: GRAY, fontWeight: 600 }}>último cierre · consultado {fmtDateTime(t)}</span>;
+}
 
 // ── Countdown 15:00 Canarias ──────────────────────────────────────────────────
 
@@ -530,15 +562,25 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
   // Cartera IBK: extraída a su propia tarjeta (PortfolioCard.tsx), renderizada por
   // DashboardPage justo ENCIMA de este panel. items/isPricesStale/deployPct salen
   // de la MISMA función compartida para que ambas tarjetas nunca puedan divergir.
-  const { items, isLive, isPricesStale, deployPct } = deriveOptimal2026Display(data);
+  const { items, isLive, isPricesStale, deployPct, latestPriceRefreshMs } = deriveOptimal2026Display(data);
+  const health = useSyncExternalStore(subscribeOptimal2026FetchHealth, getOptimal2026FetchHealth);
+  const snapshotFailed = health.snapshotFailAt != null
+    && (health.snapshotOkAt == null || health.snapshotFailAt > health.snapshotOkAt);
+  const quotesFailed = items.length > 0 && health.quotesFailAt != null
+    && (health.quotesOkAt == null || health.quotesFailAt > health.quotesOkAt);
 
   const badge = data.badge;
   const oos = data.oos;
-  const regime = data.regime ?? "RISK_OFF";
+  const regime = data.regime ?? null;
 
   const rc = regime === "RISK_ON"
     ? { label: "RÉGIMEN: RISK-ON (SPY > EMA200)", color: GREEN, bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", icon: "▲" }
-    : { label: "RÉGIMEN: RISK-OFF (SPY < EMA200) — DEFENSIVO", color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", icon: "▼" };
+    : regime === "RISK_OFF"
+      ? { label: "RÉGIMEN: RISK-OFF (SPY < EMA200) — DEFENSIVO", color: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.2)", icon: "▼" }
+      : { label: "RÉGIMEN: SIN DATOS", color: GRAY, bg: "rgba(100,116,139,0.06)", border: "rgba(100,116,139,0.2)", icon: "—" };
+  const snapshotAt = fmtDateTime(data.cachedAtUtc ?? null);
+  const pricesAt = fmtDateTime(latestPriceRefreshMs);
+  const scanAgeMs = data.cachedAtUtc ? Date.now() - new Date(data.cachedAtUtc).getTime() : null;
 
   const timestamp = data.cachedAtUtc
     ? new Date(data.cachedAtUtc).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
@@ -631,6 +673,37 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
       {/* ── Barra de progreso del scan manual ── */}
       {isScanning && <ScanProgressBar progress={scanProgress ?? 0} />}
 
+      {/* ── Aviso de carga fallida: lo que se ve NO es el último dato ── */}
+      {(snapshotFailed || quotesFailed) && (
+        <div style={{
+          padding: "7px 14px", background: "rgba(234,179,8,0.10)",
+          borderBottom: "1px solid rgba(234,179,8,0.35)", borderLeft: "3px solid #eab308",
+          fontSize: 10, fontWeight: 800, color: "#eab308", lineHeight: 1.5,
+        }}>
+          {snapshotFailed && (
+            <div>
+              ⚠ SIN ACTUALIZAR · dato de {snapshotAt ?? "fecha desconocida"}
+              <span style={{ fontWeight: 600, color: "#fde68a" }}> — la última carga falló ({health.snapshotError ?? "error"}, {fmtDateTime(health.snapshotFailAt)})</span>
+            </div>
+          )}
+          {quotesFailed && (
+            <div>
+              ⚠ PRECIOS SIN ACTUALIZAR · último precio {pricesAt ?? "del scan"}
+              <span style={{ fontWeight: 600, color: "#fde68a" }}> — fallo de cotizaciones {fmtDateTime(health.quotesFailAt)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Mercado cerrado: edad del dato visible ── */}
+      {!isLive && items.length > 0 && (
+        <div style={{ padding: "5px 14px", fontSize: 10, color: "#94a3b8", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          Mercado cerrado · scan de {snapshotAt ?? "fecha desconocida"}
+          {scanAgeMs != null && Number.isFinite(scanAgeMs) && <> (hace {fmtAge(scanAgeMs)})</>}
+          {" · "}precios {pricesAt ? `consultados ${pricesAt}` : "del scan"}
+        </div>
+      )}
+
       {/* ── Alarma roja: mercado abierto + precios obsoletos ── */}
       {isPricesStale && <StaleDataAlarm />}
 
@@ -649,10 +722,10 @@ export function Optimal2026Panel({ data, onAutoScan, onScan, scanProgress }: Opt
         )}
         <span style={{
           fontSize: 9, fontWeight: 700,
-          color: deployPct === 100 ? GREEN : deployPct === 0 ? RED : YELLOW,
+          color: deployPct == null ? GRAY : deployPct === 100 ? GREEN : deployPct === 0 ? RED : YELLOW,
           background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px",
         }}>
-          Capital desplegado: {deployPct}%
+          Capital desplegado: {deployPct == null ? "— (sin datos)" : `${deployPct}%`}
         </span>
       </div>
 

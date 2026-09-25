@@ -73,6 +73,14 @@ function SimplePortfolioView({
     if (isFinite(v) && v >= 0) onUpdate({ ...portfolio, cashBalance: v });
   };
 
+  const loadedMs = new Date(portfolio.loadedAt).getTime();
+  const loadedValid = Number.isFinite(loadedMs);
+  const ageDays = loadedValid ? Math.floor((Date.now() - loadedMs) / 86_400_000) : null;
+  const isOldPhoto = !loadedValid || (ageDays != null && ageDays > 2);
+  const loadedLabel = loadedValid
+    ? new Date(loadedMs).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "fecha desconocida";
+
   const fmtVal = (v: number | null) =>
     v == null ? "—" : `${eur ? "" : "≈"}${fmtEurInt(v)}${eur ? " €" : ""}`;
 
@@ -90,8 +98,8 @@ function SimplePortfolioView({
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 7.5, color: "#475569" }}>
-          {new Date(portfolio.loadedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+        <span style={{ fontSize: 11, fontWeight: 700, color: isOldPhoto ? "#eab308" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
+          Foto del {loadedLabel}
         </span>
         <button
           onClick={onClear}
@@ -105,6 +113,17 @@ function SimplePortfolioView({
           🗑 Limpiar
         </button>
       </div>
+
+      {isOldPhoto && (
+        <div style={{
+          padding: "7px 12px", fontSize: 11, fontWeight: 800, color: "#eab308",
+          background: "rgba(234,179,8,0.10)", borderBottom: "1px solid rgba(234,179,8,0.35)",
+          borderLeft: "3px solid #eab308",
+        }}>
+          ⚠ {ageDays != null ? `Foto de hace ${ageDays} días` : "Foto sin fecha fiable"} — sube una nueva
+          <span style={{ fontWeight: 600, color: "#fde68a" }}> · las cifras de abajo son de esa foto, no de hoy</span>
+        </div>
+      )}
 
       {/* ── Las 3 cifras (regla dictada): INVERTIDO · EFECTIVO · TOTAL en EUR ── */}
       <div style={{

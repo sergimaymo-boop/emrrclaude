@@ -192,28 +192,89 @@ function inRange(date, startMinutes, endMinutes) {
   return minutes >= startMinutes && minutes < endMinutes;
 }
 
-function marketStatusForExchange(exchange, date) {
+// ── Calendario de mercado (25-sep-2026) ──────────────────────────────────────
+// Antes: Europa fija en 07:00–15:30 UTC y Londres en 08:00–16:30 UTC sin cambio de hora
+// europeo (una hora de más ABIERTO cada día) y sin festivos (Navidad/Thanksgiving
+// ABIERTOS). Ahora: horario de verano UE/UK, festivos computados y cierres anticipados
+// — misma lógica que src/utils/marketHours.ts.
+const DAY_MS = 86400000;
+function ymd(date) { return date.toISOString().slice(0, 10); }
+function lastWeekdayOfMonth(year, monthIndex, weekday) {
+  const last = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return new Date(Date.UTC(year, monthIndex, last.getUTCDate() - ((7 + last.getUTCDay() - weekday) % 7)));
+}
+function easterSunday(year) {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+function isEuDst(date) {
+  const y = date.getUTCFullYear();
+  return date >= new Date(lastWeekdayOfMonth(y, 2, 0).getTime() + 3600000)
+    && date < new Date(lastWeekdayOfMonth(y, 9, 0).getTime() + 3600000);
+}
+function observedUs(y, mo, d) {
+  const dt = new Date(Date.UTC(y, mo, d)); const wd = dt.getUTCDay();
+  return ymd(new Date(Date.UTC(y, mo, d + (wd === 6 ? -1 : wd === 0 ? 1 : 0))));
+}
+function isUsHoliday(date) {
+  const y = date.getUTCFullYear(); const easter = easterSunday(y);
+  return new Set([
+    observedUs(y, 0, 1), observedUs(y, 5, 19), observedUs(y, 6, 4), observedUs(y, 11, 25),
+    ymd(nthWeekdayOfMonth(y, 0, 1, 3)), ymd(nthWeekdayOfMonth(y, 1, 1, 3)), ymd(lastWeekdayOfMonth(y, 4, 1)),
+    ymd(nthWeekdayOfMonth(y, 8, 1, 1)), ymd(nthWeekdayOfMonth(y, 10, 4, 4)), ymd(new Date(easter.getTime() - 2 * DAY_MS)),
+  ]).has(ymd(date));
+}
+function isUsEarlyClose(date) {
+  const y = date.getUTCFullYear();
+  const early = new Set([ymd(new Date(nthWeekdayOfMonth(y, 10, 4, 4).getTime() + DAY_MS))]);
+  const j3 = new Date(Date.UTC(y, 6, 3)); if (j3.getUTCDay() >= 1 && j3.getUTCDay() <= 4) early.add(ymd(j3));
+  const d24 = new Date(Date.UTC(y, 11, 24)); if (d24.getUTCDay() >= 1 && d24.getUTCDay() <= 5) early.add(ymd(d24));
+  return early.has(ymd(date));
+}
+function isContinentalHoliday(date) {
+  const y = date.getUTCFullYear(); const easter = easterSunday(y); const key = ymd(date);
+  const md = key.slice(5);
+  if (["01-01", "05-01", "12-24", "12-25", "12-26", "12-31"].includes(md)) return true;
+  return key === ymd(new Date(easter.getTime() - 2 * DAY_MS)) || key === ymd(new Date(easter.getTime() + DAY_MS));
+}
+function isLseHoliday(date) {
+  const y = date.getUTCFullYear(); const easter = easterSunday(y);
+  const sub = (mo, d) => { const dt = new Date(Date.UTC(y, mo, d)); const wd = dt.getUTCDay(); return ymd(new Date(Date.UTC(y, mo, d + (wd === 6 ? 2 : wd === 0 ? 1 : 0)))); };
+  return new Set([
+    ymd(nthWeekdayOfMonth(y, 4, 1, 1)), ymd(lastWeekdayOfMonth(y, 4, 1)), ymd(lastWeekdayOfMonth(y, 7, 1)),
+    ymd(new Date(easter.getTime() - 2 * DAY_MS)), ymd(new Date(easter.getTime() + DAY_MS)),
+    sub(0, 1), sub(11, 25), sub(11, 26),
+  ]).has(ymd(date));
+}
+
+export function marketStatusForExchange(exchange, date) {
   if (isWeekend(date)) return "CLOSED";
   const normalized = String(exchange ?? "").toUpperCase();
 
   if (normalized.includes("NASDAQ") || normalized.includes("NYSE") || normalized === "USA_SUPPORTED") {
-    return inRange(date, isUsDst(date) ? 13 * 60 + 30 : 14 * 60 + 30, isUsDst(date) ? 20 * 60 : 21 * 60)
-      ? "OPEN"
-      : "CLOSED";
+    if (isUsHoliday(date)) return "CLOSED";
+    const dst = isUsDst(date);
+    const close = isUsEarlyClose(date) ? (dst ? 17 * 60 : 18 * 60) : dst ? 20 * 60 : 21 * 60;
+    return inRange(date, dst ? 13 * 60 + 30 : 14 * 60 + 30, close) ? "OPEN" : "CLOSED";
   }
 
+  const euOpen = isEuDst(date) ? 7 * 60 : 8 * 60;
   if (normalized.includes("LSE") || normalized.includes("LONDON")) {
-    return inRange(date, 8 * 60, 16 * 60 + 30) ? "OPEN" : "CLOSED";
+    if (isLseHoliday(date)) return "CLOSED";
+    const md = ymd(date).slice(5);
+    const close = md === "12-24" || md === "12-31" ? euOpen + 4 * 60 + 30 : euOpen + 8 * 60 + 30;
+    return inRange(date, euOpen, close) ? "OPEN" : "CLOSED";
   }
 
-  if (
-    normalized.includes("XETRA") ||
-    normalized.includes("EURONEXT") ||
-    normalized.includes("BORSA") ||
-    normalized.includes("ITALIANA") ||
-    normalized.includes("SIX")
-  ) {
-    return inRange(date, 7 * 60, 15 * 60 + 30) ? "OPEN" : "CLOSED";
+  if (["XETRA", "EURONEXT", "BORSA", "ITALIANA", "SIX", "MILAN", "PARIS", "AMSTERDAM"].some((k) => normalized.includes(k))) {
+    if (isContinentalHoliday(date)) return "CLOSED";
+    return inRange(date, euOpen, euOpen + 8 * 60 + 30) ? "OPEN" : "CLOSED";
   }
 
   return "CLOSED";

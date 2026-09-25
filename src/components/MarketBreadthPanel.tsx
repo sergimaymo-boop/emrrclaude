@@ -176,6 +176,8 @@ export function MarketBreadthPanel({ breadth }: Props) {
   const accent = breadth.color ?? "#64748b";
   const score = breadth.score;
   const ind = breadth.indicators;
+  const unavailable = breadth.loadState === "UNAVAILABLE";
+  const title = unavailable ? "NO DISPONIBLE" : VERDICT_TITLE[v];
 
   // Net Máx−Mín (añadido 25-jul, sugerencia externa validada): % de acciones en nuevos
   // máximos MENOS % en nuevos mínimos — detecta si la amplitud mejora o empeora antes que
@@ -231,6 +233,12 @@ export function MarketBreadthPanel({ breadth }: Props) {
         </span>
       </div>
 
+      {breadth.refreshFailed && !unavailable && (
+        <div style={{ padding: "5px 14px", fontSize: 9, fontWeight: 700, color: "#eab308", background: "rgba(234,179,8,0.07)", borderBottom: "1px solid rgba(234,179,8,0.2)" }}>
+          ⚠ SIN ACTUALIZAR · dato de {fmtTime(breadth.cachedAtUtc ?? breadth.fetchedAtUtc ?? undefined)} — la última consulta falló
+        </div>
+      )}
+
       {/* Hero: semáforo + score */}
       <div style={{
         display: "flex", flexDirection: isNarrow ? "column" : "row",
@@ -240,7 +248,7 @@ export function MarketBreadthPanel({ breadth }: Props) {
           <span style={{ fontSize: 34, lineHeight: 1 }}>{VERDICT_EMOJI[v]}</span>
           <div>
             <div style={{ fontSize: 19, fontWeight: 900, color: accent, lineHeight: 1.05, letterSpacing: "0.01em" }}>
-              {VERDICT_TITLE[v]}
+              {title}
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{breadth.label}</div>
           </div>

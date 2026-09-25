@@ -78,15 +78,23 @@ export const initialSp500Signal: Sp500Signal = { ok: false };
 
 /** Lee la señal del backend. Nunca lanza: en caso de fallo devuelve ok:false con motivo. */
 export async function fetchSp500Signal(profile: Sp500Profile = "EQUILIBRADO", force = false): Promise<Sp500Signal> {
+  // force=1 recalcula en servidor: margen mayor que el GET normal de 8 s.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), force ? 25000 : 8000);
   try {
     const params = new URLSearchParams({ profile });
     if (force) params.set("force", "1");
-    const res = await fetch(`/api/sp500?${params.toString()}`, { headers: { Accept: "application/json" } });
+    const res = await fetch(`/api/sp500?${params.toString()}`, { headers: { Accept: "application/json" }, signal: controller.signal });
     const json = (await res.json()) as Sp500Signal;
     if (!res.ok) return { ok: false, error: json?.error ?? `HTTP_${res.status}`, message: json?.message ?? "El módulo SP500 no pudo calcular la señal." };
     return json;
   } catch (e) {
+    if (controller.signal.aborted) {
+      return { ok: false, error: "TIMEOUT", message: "Tiempo de espera agotado al consultar /api/sp500 — dato no actualizado" };
+    }
     return { ok: false, error: "NETWORK", message: e instanceof Error ? e.message : "Fallo de red al consultar /api/sp500" };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

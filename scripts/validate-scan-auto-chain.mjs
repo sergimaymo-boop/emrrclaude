@@ -10,7 +10,8 @@ assert.match(dashboardSource, /while\s*\(\s*snapshotNeedsContinuation\(snapshot\
 assert.match(dashboardSource, /continueScanSnapshot\(snapshot\.snapshotToken/);
 assert.match(dashboardSource, /MAX_AUTO_BATCH_RETRIES\s*=\s*2/);
 assert.match(dashboardSource, /Analizando\.\.\. batch/);
-assert.match(dashboardSource, /finalizeScanSnapshot\(snapshot\.snapshotToken\)/);
+// No existe endpoint finalize (CLAUDE.md §3.2): el guardado ocurre dentro de start/continue.
+assert.doesNotMatch(dashboardSource, /finalizeScanSnapshot/);
 assert.match(serviceSource, /AbortController/);
 assert.match(serviceSource, /timeoutMs\s*=\s*8000/);
 assert.match(snapshotSource, /filterEstimatedEligibleAssets/);

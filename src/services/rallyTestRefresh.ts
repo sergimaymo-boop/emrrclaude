@@ -1,5 +1,6 @@
 /**
- * RALLY-TEST — servicio de laboratorio (copia funcional de rallyRefresh.ts, 18-ago-2026).
+ * RALLY-TEST — servicio de laboratorio (nació como copia de rallyRefresh.ts el 18-ago-2026;
+ * desde el 2-sep-2026 sirve al motor PROPIO LAB-M189 v1.1).
  *
  * ⚠ NO toca Rally Leaders: endpoints propios (/api/rally-test/*), snapshot propio en
  * Redis y motor propio en el backend (rallyScoreEngineTest.js). Un scan aquí no
@@ -16,14 +17,127 @@ export type {
   RallyEntryZone,
   RallyMetrics,
   RallyNewsItem,
+  RallyNewsResult,
   RallyRunway,
   RallyScanResponse,
   RallyState,
+  RallySessionFields,
   RallyWarningFlag,
 } from "./rallyRefresh";
 export { initialRallyState } from "./rallyRefresh";
 
-import type { RallyAsset, RallyNewsItem } from "./rallyRefresh";
+import type { RallyAsset, RallyNewsResult, RallyScanResponse as RallyScanResponseT, RallySessionFields } from "./rallyRefresh";
+
+// ── Utilidades PROPIAS del laboratorio (25-sep-2026): copias, no importadas de
+// producción — Rally-Test y Rally Leaders son módulos independientes. ──
+
+const GET_TIMEOUT_MS = 8000;
+
+async function getWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), GET_TIMEOUT_MS);
+  try {
+    return await fetch(url, { method: "GET", headers: { accept: "application/json" }, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+/** null solo si el servidor confirma que no hay scan; cualquier otro fallo LANZA. */
+async function fetchLastScanFrom(url: string): Promise<RallyScanResponseT | null> {
+  const res = await getWithTimeout(url);
+  let data: { ok?: boolean; error?: string } | null = null;
+  try { data = await res.json(); } catch { data = null; }
+  if (res.status === 404 && data?.error === "NO_STORED_RALLY_SNAPSHOT") return null;
+  if (!res.ok || !data) throw new Error(`${url}_HTTP_${res.status}`);
+  if (!data.ok) throw new Error(`${url}_${data.error ?? "NOT_OK"}`);
+  return data as RallyScanResponseT;
+}
+
+async function fetchNewsFrom(url: string): Promise<RallyNewsResult> {
+  try {
+    const res = await getWithTimeout(url);
+    if (!res.ok) return { failed: true, news: {} };
+    const data = await res.json();
+    if (!data?.ok || !data.news || typeof data.news !== "object") return { failed: true, news: {} };
+    return { failed: false, news: data.news };
+  } catch {
+    return { failed: true, news: {} };
+  }
+}
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const TZ = "Atlantic/Canary";
+
+export function formatSessionDate(iso: string | null | undefined): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "—";
+  return `${iso.slice(8, 10)}-${MESES[Number(iso.slice(5, 7)) - 1] ?? "?"}`;
+}
+
+function canaryDay(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
+export interface ScanAge { when: string; age: string; stale: boolean }
+
+export function scanAgeInfo(scanCompletedAtUtc: string | null | undefined, now: Date = new Date()): ScanAge | null {
+  if (!scanCompletedAtUtc) return null;
+  const t = new Date(scanCompletedAtUtc);
+  if (Number.isNaN(t.getTime())) return null;
+  const when = t.toLocaleString("es-ES", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const mins = Math.max(0, Math.round((now.getTime() - t.getTime()) / 60000));
+  const age = mins < 60 ? `hace ${mins} min` : mins < 48 * 60 ? `hace ${Math.round(mins / 60)} h` : `hace ${Math.round(mins / 1440)} d`;
+  const start = new Date(`${canaryDay(t)}T12:00:00Z`);
+  const end = new Date(`${canaryDay(now)}T12:00:00Z`);
+  let weekdays = 0;
+  for (let d = new Date(start); d < end && weekdays < 10;) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) weekdays++;
+  }
+  return { when, age, stale: weekdays > 1 };
+}
+
+export interface SessionSummary { date: string | null; forming: boolean; missingCount: number }
+
+export function summarizeSessions(assets: { metrics: RallySessionFields | null }[]): SessionSummary {
+  const counts = new Map<string, { n: number; forming: number }>();
+  let missingCount = 0;
+  for (const a of assets) {
+    const m = a.metrics;
+    if (m?.missingSessions?.length) missingCount++;
+    if (!m?.lastBarDate) continue;
+    const c = counts.get(m.lastBarDate) ?? { n: 0, forming: 0 };
+    c.n++;
+    if (m.lastBarForming) c.forming++;
+    counts.set(m.lastBarDate, c);
+  }
+  let date: string | null = null;
+  let best = { n: 0, forming: 0 };
+  for (const [k, v] of counts) if (v.n > best.n || (v.n === best.n && date != null && k > date)) { date = k; best = v; }
+  return { date, forming: best.n > 0 && best.forming * 2 >= best.n, missingCount };
+}
+
+export interface RowSessionNote { missing: boolean; tag: string | null; detail: string | null }
+
+export function rowSessionNote(m: RallySessionFields | null | undefined, summary: SessionSummary): RowSessionNote {
+  if (m?.missingSessions?.length) {
+    return {
+      missing: true,
+      tag: "SIN DATO HOY",
+      detail: `Sin dato de la sesión de hoy en la fuente (falta la del ${m.missingSessions.map(formatSessionDate).join(", ")}): el % del día no se puede calcular. Último precio disponible: sesión del ${formatSessionDate(m.lastBarDate)}.`,
+    };
+  }
+  if (!m?.lastBarDate || !summary.date) return { missing: false, tag: null, detail: null };
+  const forming = !!m.lastBarForming;
+  if (m.lastBarDate === summary.date && forming === summary.forming) return { missing: false, tag: null, detail: null };
+  const estado = forming ? "en curso" : "al cierre";
+  return {
+    missing: false,
+    tag: `SES. ${formatSessionDate(m.lastBarDate).toUpperCase()}${forming ? " EN CURSO" : ""}`,
+    detail: `Precio y % de la sesión del ${formatSessionDate(m.lastBarDate)} (${estado}), distinta de la del resto del top-10.`,
+  };
+}
 
 /**
  * MÉTRICAS PROPIAS del motor LAB-M189 (declaradas aquí el 7-sep-2026, cuando la
@@ -32,7 +146,7 @@ import type { RallyAsset, RallyNewsItem } from "./rallyRefresh";
  * momRaw/mom63/mom126 en %, vol126 anualizada en %, prox52w = % del máximo de
  * 52 semanas, ext50 = % sobre la EMA50. tq/r2 = calidad de tendencia 126d.
  */
-export interface RallyTestMetrics {
+export interface RallyTestMetrics extends RallySessionFields {
   lastClose?: number | null;
   dayChangePct?: number | null;
   momRaw?: number | null;
@@ -65,12 +179,6 @@ export function estimateNextReview(scanCompletedAtUtc: string | null | undefined
 
 import type { RallyScanResponse } from "./rallyRefresh";
 
-/**
- * Calibración HEREDADA del módulo de producción en el momento de la copia.
- * ⚠ Estas cifras describen la estrategia CERTIFICADA (C0). En cuanto Rally-Test
- * cambie cualquier parámetro (señal, pesos, stops, filtros), DEJAN DE APLICAR y hay
- * que recalcularlas con su propio backtest antes de enseñarlas como resultado.
- */
 /** Amplitud del universo medida durante el scan — OBSERVABLE de salud del
  *  mercado (4-sep-2026). NO entra en score, pesos ni selección: es información
  *  para el lector. `analizados` = tickers con histórico suficiente; `positivos`
@@ -89,6 +197,10 @@ export const RALLY_TEST_BASELINE = {
     a50pb: "62,3% media · 54,0% peor fase",
     // El riesgo REAL (pico-valle sin ventanear; v1.1 con el trailing 45%):
     ddRealPeorFase: "−38,8%", dd2022: "−11,6%", dd2022C0: "−12,9%",
+    // 2022 de v1.0 (−16,5%) → v1.1 (−11,6%): la mejora viene del cambio de CADENCIA
+    // (R42→R63), no del stop (auditoría de backtest 25-sep-2026). El stop 45% es ~gratis:
+    // −0,4 pp de confirm (t≈0) y DD real 38,8% vs 39,6% sin stop.
+    dd2022v10: "−16,5%", ddSinStop: "−39,6%",
     // La verdad sobre el edge: a igual tamaño de libro (K=10) este motor PIERDE
     // contra C0 en 64/64 configs — la ventaja es de la CONCENTRACIÓN top-5, no
     // del motor; esperanza honesta tras descuentos: +2 a +4 pp/año.
@@ -128,34 +240,17 @@ export async function continueRallyTestScan(rallyToken: string): Promise<RallySc
   });
 }
 
+/** null SOLO si el servidor confirma que no hay scan de test; cualquier fallo LANZA. */
 export async function fetchLastRallyTestScan(): Promise<RallyScanResponse | null> {
-  try {
-    const res = await fetch("/api/rally-test/last", {
-      method: "GET",
-      headers: { accept: "application/json" },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.ok) return null;
-    return data as RallyScanResponse;
-  } catch {
-    return null;
-  }
+  return fetchLastScanFrom("/api/rally-test/last");
 }
 
 /**
  * Motivo del movimiento por ticker del ÚLTIMO scan de test (7-sep-2026).
  * Endpoint propio del laboratorio (/api/rally-test/news → action=test-news,
  * caché Redis con prefijo test:): jamás lee ni pisa las noticias de producción.
- * Solo display — si falla, el panel funciona exactamente igual.
+ * Solo display — si falla, el panel lo dice ("noticias no disponibles") y sigue igual.
  */
-export async function fetchRallyTestNews(): Promise<Record<string, RallyNewsItem | null>> {
-  try {
-    const res = await fetch("/api/rally-test/news", { method: "GET", headers: { accept: "application/json" } });
-    if (!res.ok) return {};
-    const data = await res.json();
-    return data?.ok && data.news && typeof data.news === "object" ? data.news : {};
-  } catch {
-    return {};
-  }
+export async function fetchRallyTestNews(): Promise<RallyNewsResult> {
+  return fetchNewsFrom("/api/rally-test/news");
 }

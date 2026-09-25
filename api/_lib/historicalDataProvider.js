@@ -2,7 +2,9 @@ import { PROVIDER_EXCHANGES } from "./universeEngine.js";
 import { cascadeHistory } from "./providerCascade.js";
 
 const PROVIDER_TIMEOUT_MS = 8000;
-const CACHE_TTL_SECONDS = 86400;
+// 15 min (25-sep-2026; antes 24 h): una lambda caliente servía por la tarde las barras
+// bajadas por la mañana — precios de horas atrás presentados como actuales.
+const CACHE_TTL_SECONDS = 900;
 // 400 calendar days ≈ 280 trading days — triggers Yahoo "2y" path (>300) → ~500 barras
 const DEFAULT_LOOKBACK_DAYS = 400;
 // 520 = margen por encima de los ~509 que devuelve Yahoo 2y en tickers EU
@@ -191,6 +193,7 @@ export async function fetchEodhdHistoricalBars(providerSymbol, options = {}) {
       // Huecos de sesión reciente detectados por el proveedor (23-sep-2026): el motor
       // de score los usa para no calcular dayChangePct contra una barra multi-día.
       gapDates: Array.isArray(result.gapDates) ? result.gapDates : [],
+      lastBarForming: result.lastBarForming === true,
     });
   }
 

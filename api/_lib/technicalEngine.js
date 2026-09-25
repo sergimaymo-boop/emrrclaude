@@ -92,6 +92,25 @@ function maxDrawdownPercent(closes) {
   return maxDrawdown;
 }
 
+// SPY alineado POR FECHA a las barras del activo (25-sep-2026) — copia PROPIA del
+// TOP 8 (módulos independientes). Antes se comparaban posiciones: con el SPY
+// cacheado de días atrás o calendarios distintos (tickers EU) "hace N sesiones"
+// apuntaba a fechas distintas. Cierre del SPY de esa fecha o la anterior más cercana
+// (máx. 4 días naturales de desfase); si no, null — nunca una comparación falseada.
+function alignBenchmarkByDate(assetBars, benchmarkBars, maxLagDays = 4) {
+  const bench = (benchmarkBars ?? []).filter((b) => b?.date && Number.isFinite(b.close));
+  const out = [];
+  let j = 0;
+  for (const bar of assetBars ?? []) {
+    while (j + 1 < bench.length && bench[j + 1].date <= bar.date) j++;
+    const b = bench[j];
+    if (!b || !bar?.date || b.date > bar.date) { out.push(null); continue; }
+    const lagDays = (Date.parse(bar.date) - Date.parse(b.date)) / 86400000;
+    out.push(lagDays <= maxLagDays ? b.close : null);
+  }
+  return out;
+}
+
 export function calculateTechnicals(rawBars, benchmarkRawBars = []) {
   const bars = Array.isArray(rawBars) ? rawBars.map(normalizeBar).filter(hasValidOhlcv) : [];
   const benchmarkBars = Array.isArray(benchmarkRawBars)
@@ -133,7 +152,7 @@ export function calculateTechnicals(rawBars, benchmarkRawBars = []) {
   const ema20SlopePercent = ema20 === null || ema20Previous === null ? null : percentChange(ema20, ema20Previous);
   const maxDrawdown20 = maxDrawdownPercent(closes.slice(-20));
 
-  const benchmarkCloses = benchmarkBars.map((bar) => bar.close);
+  const benchmarkCloses = alignBenchmarkByDate(bars, benchmarkBars);
   const assetReturn20 = momentum20;
   const benchmarkReturn20 = benchmarkCloses.length >= 21
     ? percentChange(benchmarkCloses.at(-1), benchmarkCloses.at(-21))

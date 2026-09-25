@@ -12,10 +12,10 @@ assert.match(emptyDataSource, /affectsScore:\s*false/);
 assert.match(emptyDataSource, /affectsRanking:\s*false/);
 assert.match(emptyDataSource, /affectsExec:\s*false/);
 assert.match(emptyDataSource, /operationalDataStatus:\s*"DATA_UNAVAILABLE"/);
-assert.match(dashboardSource, /NO_APPROVED_REAL_FEAR_GREED_SOURCE/);
+assert.match(emptyDataSource, /NO_APPROVED_REAL_FEAR_GREED_SOURCE/);
 assert.doesNotMatch(dashboardSource, /refreshFearGreed|MOCK/);
-assert.match(panelSource, /Fear & Greed unavailable/);
-assert.match(panelSource, /DATA UNAVAILABLE/);
-assert.match(panelSource, /not used for Score, Ranking or EXEC/);
+// 25-sep-2026: el panel dice "No disponible" (y "fallo de la fuente" si falló la petición) — nunca un 50 inventado.
+assert.match(panelSource, /No disponible \(fallo de la fuente\)/);
+assert.doesNotMatch(panelSource, /MOCK/);
 
 console.log("Fear & Greed refresh validation OK.");

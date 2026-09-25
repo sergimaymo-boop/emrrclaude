@@ -206,6 +206,19 @@ export async function handler(req, res) {
     // Primary source: CNN Business Fear & Greed Index (the reference value users compare against).
     // Fall back to the internal composite ONLY when the CNN feed is unreachable.
     const useCnn = cnnResult.ok;
+    // Sin CNN y con menos de 4 de 7 componentes reales el composite sería casi todo
+    // relleno neutro (50) presentado como dato (25-sep-2026): se declara NO disponible.
+    const componentsAvailable = [vixValue, spyChange, hygChange, moveValue, vvixValue, lqdChange, tnxChange]
+      .filter((v) => v !== null).length;
+    if (!useCnn && componentsAvailable < 4) {
+      return res.status(200).json({
+        ok: false,
+        status: "NOT_AVAILABLE",
+        reason: `CNN no disponible (${cnnResult.reason}) y solo ${componentsAvailable}/7 componentes internos con dato`,
+        componentsAvailable,
+        timestamp: new Date().toISOString(),
+      });
+    }
     const score  = useCnn ? cnnResult.score  : internalScore;
     const rating = useCnn ? cnnResult.rating : internalRating;
     const label  = RATING_LABELS[rating];
@@ -234,6 +247,7 @@ export async function handler(req, res) {
       componentScores: { VIX: sVix, SPY: sSpy, HYG: sHyg, MOVE: sMove, VVIX: sVvix, LQD: sLqd, TNX: sTnx },
       internalScore,
       internalRating,
+      componentsAvailable,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {

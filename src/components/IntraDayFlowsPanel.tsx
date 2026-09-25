@@ -4,8 +4,8 @@ import { useState } from "react";
 
 interface StockMover {
   ticker: string;
-  price: number;
-  change: number;
+  price: number | null;
+  change: number | null;
 }
 
 interface SectorFlow {
@@ -13,13 +13,16 @@ interface SectorFlow {
   key: string;
   name: string;
   etf: string;
-  currentPrice: number;
-  intradayChange: number;
-  change30min: number;
-  changeMomentum: number;
-  relativeVolume: number;
-  flowScore: number;
-  direction: "STRONG_IN" | "IN" | "NEUTRAL" | "OUT" | "STRONG_OUT";
+  currentPrice: number | null;
+  intradayChange: number | null;
+  change30min: number | null;
+  changeMomentum: number | null;
+  relativeVolume: number | null;
+  relativeVolumeCapped?: boolean;
+  flowScore: number | null;
+  direction: "STRONG_IN" | "IN" | "NEUTRAL" | "OUT" | "STRONG_OUT" | null;
+  sessionDate?: string | null;
+  changeBasis?: "open_to_last" | "close_vs_open";
   topMover: StockMover | null;    // single best stock in this sector today
   topMovers: StockMover[];        // backward compat (same as [topMover])
 }
@@ -28,7 +31,13 @@ export interface IntraDayFlowsState {
   status: "IDLE" | "SCANNING" | "DONE" | "ERROR";
   scannedAt: string | null;
   marketOpen: boolean;
-  spy: { intradayChange: number; currentPrice: number; relativeVolume: number } | null;
+  spy: {
+    intradayChange: number | null;
+    currentPrice: number | null;
+    relativeVolume: number | null;
+    relativeVolumeCapped?: boolean;
+    sessionDate?: string | null;
+  } | null;
   sectors: SectorFlow[];
   note: string;
 }
@@ -39,7 +48,12 @@ export function initialFlowsState(): IntraDayFlowsState {
 
 // ─── Color scale (heat map, like Fidelity/Bloomberg) ─────────────────────────
 
-function tileColors(pct: number): { bg: string; border: string; textPrimary: string; textSecondary: string } {
+function isNum(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function tileColors(raw: number | null | undefined): { bg: string; border: string; textPrimary: string; textSecondary: string } {
+  const pct = isNum(raw) ? raw : 0;
   const abs = Math.abs(pct);
   const pos = pct >= 0;
 
@@ -69,9 +83,24 @@ function tileColors(pct: number): { bg: string; border: string; textPrimary: str
   };
 }
 
-function fmt(v: number, digits = 2): string {
+function fmt(v: number | null | undefined, digits = 2): string {
+  if (!isNum(v)) return "—";
   const s = v.toFixed(digits);
   return v > 0 ? `+${s}%` : `${s}%`;
+}
+
+function fmtVol(v: number | null | undefined, capped?: boolean): string {
+  if (!isNum(v)) return "Vol —";
+  return capped ? `Vol ≥${v.toFixed(0)}x` : `Vol ${v.toFixed(1)}x`;
+}
+
+function fmtPrice(v: number | null | undefined): string {
+  return isNum(v) ? `$${v.toFixed(2)}` : "—";
+}
+
+function fmtSessionDate(iso: string | null | undefined): string | null {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return null;
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 }
 
 // ─── Single sector tile ───────────────────────────────────────────────────────
@@ -180,7 +209,7 @@ function DetailRow({ sector }: { sector: SectorFlow }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sector.name}</div>
         <div style={{ fontSize: 8, color: "#64748b", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {sector.etf} · 30m {fmt(sector.change30min)} · Vol {sector.relativeVolume.toFixed(1)}x
+          {sector.etf} · 30m {fmt(sector.change30min)} · {fmtVol(sector.relativeVolume, sector.relativeVolumeCapped)}
         </div>
       </div>
 
@@ -226,6 +255,12 @@ interface Props {
 export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
   const [view, setView] = useState<"tiles" | "list">("tiles");
   const { status, sectors, spy, marketOpen, scannedAt } = flowsState;
+  const sessionDate = fmtSessionDate(spy?.sessionDate ?? sectors.find(s => s.sessionDate)?.sessionDate ?? null);
+  const basisLabel = marketOpen
+    ? "var. desde apertura"
+    : `var. apertura→cierre sesión ${sessionDate ?? "¿fecha?"}`;
+  const spyUp = isNum(spy?.intradayChange) && (spy?.intradayChange ?? 0) >= 0;
+  const spyNull = !isNum(spy?.intradayChange);
 
   const isDone     = status === "DONE";
   const isScanning = status === "SCANNING";
@@ -248,14 +283,14 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
               background: marketOpen ? "rgba(16,185,129,0.12)" : "rgba(234,179,8,0.12)",
               border: `1px solid ${marketOpen ? "rgba(16,185,129,0.25)" : "rgba(234,179,8,0.25)"}`,
             }}>
-              {marketOpen ? "LIVE" : "ÚLTIMA SESIÓN"}
+              {marketOpen ? "LIVE" : `ÚLTIMA SESIÓN ${sessionDate ?? "· fecha desconocida"}`}
             </span>
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {scannedAt && (
             <span style={{ fontSize: 9, color: "#475569" }}>
-              {new Date(scannedAt).toLocaleTimeString()}
+              {isError ? "SIN ACTUALIZAR · dato de " : ""}{new Date(scannedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
           {/* Refresh button — visible when done or after error */}
@@ -330,7 +365,9 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
 
       {isError && (
         <div style={{ padding: "16px 0", textAlign: "center" }}>
-          <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>Error al obtener datos</div>
+          <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 8 }}>
+            Error al obtener datos — no se pudieron actualizar los flujos
+          </div>
           {onRefresh && (
             <button
               type="button"
@@ -355,39 +392,43 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
             <div style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
               padding: "7px 12px", marginBottom: 12, borderRadius: 8,
-              background: spy.intradayChange >= 0 ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
-              border: `1px solid ${spy.intradayChange >= 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
+              background: spyNull ? "rgba(255,255,255,0.03)" : spyUp ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
+              border: `1px solid ${spyNull ? "rgba(255,255,255,0.10)" : spyUp ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}`,
             }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>SPY · Benchmark S&P500</span>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                 <span style={{
                   fontSize: 16, fontWeight: 900,
-                  color: spy.intradayChange >= 0 ? "#10b981" : "#ef4444",
+                  color: spyNull ? "#94a3b8" : spyUp ? "#10b981" : "#ef4444",
                   fontVariantNumeric: "tabular-nums",
                 }}>
                   {fmt(spy.intradayChange)}
                 </span>
-                <span style={{ fontSize: 9, color: spy.relativeVolume >= 2 ? "#f59e0b" : "#475569" }}>
-                  Vol {spy.relativeVolume.toFixed(1)}x
+                <span style={{ fontSize: 9, color: isNum(spy.relativeVolume) && spy.relativeVolume >= 2 ? "#f59e0b" : "#475569" }}>
+                  {fmtVol(spy.relativeVolume, spy.relativeVolumeCapped)}
                 </span>
                 <span style={{ fontSize: 10, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
-                  ${spy.currentPrice}
+                  {fmtPrice(spy.currentPrice)}
                 </span>
               </div>
             </div>
           )}
 
+          <div style={{ fontSize: 9, color: marketOpen ? "#64748b" : "#eab308", marginBottom: 8 }}>
+            % sector = {basisLabel} (no vs cierre anterior) · % acción = vs cierre anterior
+          </div>
+
           {/* ── TILE HEAT MAP view ── */}
           {view === "tiles" && (
             <>
               {/* Inflow tiles */}
-              {sectors.filter(s => s.intradayChange > 0).length > 0 && (
+              {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange > 0).length > 0 && (
                 <>
                   <div style={{ fontSize: 9, fontWeight: 800, color: "#10b981", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
                     ▲ Dinero Entrando
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                    {sectors.filter(s => s.intradayChange > 0).map(s => (
+                    {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange > 0).map(s => (
                       <SectorTile key={s.key} sector={s} />
                     ))}
                   </div>
@@ -395,13 +436,13 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
               )}
 
               {/* Neutral */}
-              {sectors.filter(s => s.intradayChange === 0).length > 0 && (
+              {sectors.filter(s => !isNum(s.intradayChange) || s.intradayChange === 0).length > 0 && (
                 <>
                   <div style={{ fontSize: 9, fontWeight: 800, color: "#6b7280", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
-                    → Neutro
+                    → Neutro / sin dato
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                    {sectors.filter(s => s.intradayChange === 0).map(s => (
+                    {sectors.filter(s => !isNum(s.intradayChange) || s.intradayChange === 0).map(s => (
                       <SectorTile key={s.key} sector={s} />
                     ))}
                   </div>
@@ -409,13 +450,13 @@ export function IntraDayFlowsPanel({ flowsState, onRefresh }: Props) {
               )}
 
               {/* Outflow tiles */}
-              {sectors.filter(s => s.intradayChange < 0).length > 0 && (
+              {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange < 0).length > 0 && (
                 <>
                   <div style={{ fontSize: 9, fontWeight: 800, color: "#ef4444", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
                     ▼ Dinero Saliendo
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {sectors.filter(s => s.intradayChange < 0).map(s => (
+                    {sectors.filter(s => isNum(s.intradayChange) && s.intradayChange < 0).map(s => (
                       <SectorTile key={s.key} sector={s} />
                     ))}
                   </div>

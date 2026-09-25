@@ -1,4 +1,33 @@
 import type { MasterIndicator } from "../types";
+import { formatShortDateTime, formatShortTime } from "../services/realDataRefresh";
+import { isMarketOpen } from "../utils/marketHours";
+
+// Salud del feed de indicadores: la mantiene DashboardPage (último fetch OK y si el último falló).
+export interface IndicatorFeedStatus {
+  lastSuccessUtc: string | null;
+  lastFetchFailed: boolean;
+}
+
+// Etiqueta honesta: el servidor no marca los datos viejos, así que la frescura se deduce
+// del estado del mercado US (todos los indicadores cotizan allí) y de la salud del feed.
+export function indicatorBadge(ind: MasterIndicator, feed?: IndicatorFeedStatus): { text: string; color: string; title: string } {
+  if (ind.value === "N/A") {
+    return feed?.lastFetchFailed
+      ? { text: "SIN DATO", color: "#ef4444", title: "Fallo de la fuente — sin dato previo" }
+      : { text: "N/D", color: "#64748b", title: "Dato no disponible" };
+  }
+  if (ind.status === "CACHE") {
+    const when = formatShortDateTime(ind.timestamp.utc);
+    return { text: `CACHE ${when}`, color: "#94a3b8", title: `Restaurado de la caché del navegador — dato del ${when}` };
+  }
+  if (feed?.lastFetchFailed) {
+    const when = formatShortTime(feed.lastSuccessUtc);
+    return { text: `SIN ACT. ${when}`, color: "#eab308", title: `SIN ACTUALIZAR · último dato ${when}` };
+  }
+  return isMarketOpen("United States") === "OPEN"
+    ? { text: "LIVE", color: "#10b981", title: "Mercado US abierto — dato en vivo" }
+    : { text: "CIERRE", color: "#94a3b8", title: "Mercado US cerrado — último cierre de sesión" };
+}
 
 // NOTE: The standalone "Master Indicators" section was removed from the dashboard
 // (redundant with the Fear & Greed panel, which now shows the same raw indicator
@@ -15,13 +44,13 @@ export function getIndicatorColor(symbol: string, value: string, changePercent: 
   return changePercent > 0.05 ? "#10b981" : changePercent < -0.05 ? "#ef4444" : "#6366f1";
 }
 
-export function IndicatorRow({ ind }: { ind: MasterIndicator }) {
+export function IndicatorRow({ ind, feed }: { ind: MasterIndicator; feed?: IndicatorFeedStatus }) {
   const avail  = ind.value !== "N/A";
   const color  = avail ? getIndicatorColor(ind.symbol, ind.value, ind.changePercent) : "#334155";
   const change = ind.changePercent;
   const arrow  = change > 0.05 ? "▲" : change < -0.05 ? "▼" : "—";
   const arrowColor = change > 0.05 ? "#10b981" : change < -0.05 ? "#ef4444" : "#475569";
-  const isLive = ind.dataMode === "REAL";
+  const badge = indicatorBadge(ind, feed);
 
   return (
     <div style={{
@@ -67,13 +96,13 @@ export function IndicatorRow({ ind }: { ind: MasterIndicator }) {
         {avail && change !== 0 ? `${arrow} ${Math.abs(change).toFixed(2)}%` : arrow}
       </span>
 
-      {/* LIVE/CACHE badge */}
-      <span style={{
+      {/* LIVE / CIERRE / CACHE fecha / SIN ACT. hora */}
+      <span title={badge.title} style={{
         fontSize: 9, fontWeight: 800, letterSpacing: "0.04em",
-        color: isLive ? "#10b981" : "#94a3b8",
-        minWidth: 34, textAlign: "right", flexShrink: 0,
+        color: badge.color,
+        minWidth: 34, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap",
       }}>
-        {isLive ? "LIVE" : "CACHE"}
+        {badge.text}
       </span>
     </div>
   );

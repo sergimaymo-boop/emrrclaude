@@ -53,11 +53,13 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
   const batch = eligibleAssets.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
 
   // Process ALL assets in parallel — critical to stay within 10s Vercel limit
+  let fallidos = 0;   // tickers cuya descarga falló: no desaparecen en silencio
   const results = await Promise.all(
     batch.map(async (asset) => {
       try {
         const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
-        if (!histResult.ok || histResult.bars.length < 130) return null;
+        if (!histResult.ok) { fallidos++; return null; }
+        if (histResult.bars.length < 130) return null;
 
         const rallyResult = calculateRallyScore({
           bars: histResult.bars,
@@ -65,6 +67,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           spreadPercent: null,
           region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
           gapDates: histResult.gapDates,
+          lastBarForming: histResult.lastBarForming,
         });
 
         if (!rallyResult.ok || rallyResult.rallyScore < minScore) return null;
@@ -92,6 +95,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           scanId: null,
         };
       } catch {
+        fallidos++;
         return null;
       }
     })
@@ -102,5 +106,6 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
   return {
     candidates: mergeRallyCandidates(existingCandidates, newCandidates),
     providerCalls: batch.length,
+    fallidos,
   };
 }

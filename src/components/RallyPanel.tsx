@@ -20,8 +20,13 @@ import {
   fetchLastRallyScan,
   fetchRallyNews,
   type RallyNewsItem,
+  type SessionSummary,
+  formatSessionDate,
   initialRallyState,
+  rowSessionNote,
+  scanAgeInfo,
   startRallyScan,
+  summarizeSessions,
 } from "../services/rallyRefresh";
 
 const AMBER = "#f59e0b";
@@ -42,30 +47,51 @@ export function RallyPanel() {
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
+  const [tickersFallidos, setTickersFallidos] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   // Motivo del movimiento por ticker (solo display; ver api/_lib/tickerNews.js).
   // Se carga aparte del scan a propósito: si la fuente de noticias falla o tarda,
   // el módulo enseña sus datos igual — la nota es un extra, nunca un bloqueante.
   const [news, setNews] = useState<Record<string, RallyNewsItem | null>>({});
+  const [newsFailed, setNewsFailed] = useState(false);
+  // Honestidad del dato: un fallo NUNCA se disfraza de "sin datos" ni deja el
+  // top-10 anterior como si fuera actual.
+  const [loadError, setLoadError] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     void (async () => {
-      const last = await fetchLastRallyScan();
-      if (!mounted.current) return;
-      if (last?.top10?.length) {
-        setState((s) => ({ ...s, status: "RALLY_FINAL", top10: last.top10 ?? [], isRallyFinal: true } as RallyState));
-        setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
+      try {
+        const last = await fetchLastRallyScan();
+        if (!mounted.current) return;
+        setLoadError(false);
+        if (last?.top10?.length) {
+          setState((s) => ({ ...s, status: "RALLY_FINAL", top10: last.top10 ?? [], isRallyFinal: true } as RallyState));
+          setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
+          setTickersFallidos(last.tickersFallidos ?? 0);
+        }
+      } catch {
+        if (mounted.current) setLoadError(true);
       }
     })();
     return () => { mounted.current = false; };
   }, []);
 
+  // Refresco de la antigüedad mostrada ("hace X", DATO ANTIGUO).
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
   // Carga de los motivos: al montar y cada vez que termina un scan nuevo.
   const cargarNoticias = useCallback(async () => {
-    const n = await fetchRallyNews();
-    if (mounted.current) setNews(n);
+    const r = await fetchRallyNews();
+    if (!mounted.current) return;
+    setNews(r.news);
+    setNewsFailed(r.failed);
   }, []);
   useEffect(() => { void cargarNoticias(); }, [cargarNoticias]);
 
@@ -96,6 +122,9 @@ export function RallyPanel() {
         if (res.top10?.length) {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: res.top10 ?? [], coveragePercent: 100 } as RallyState));
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
+          setTickersFallidos(res.tickersFallidos ?? 0);
+          setScanError(null);
+          setLoadError(false);
           ok = true;
           void cargarNoticias();   // el scan nuevo trae otros tickers: refrescar motivos
           // Aviso a la tarjeta de alineación cartera↔Rally: hay un scan nuevo persistido.
@@ -103,10 +132,14 @@ export function RallyPanel() {
           window.dispatchEvent(new Event(RALLY_SCAN_UPDATED_EVENT));
         } else {
           setState((s) => ({ ...s, status: res.status ?? "RALLY_ERROR" } as RallyState));
+          setScanError(res.message ?? res.error ?? res.status ?? "el scan terminó sin datos");
         }
       }
-    } catch {
-      if (mounted.current) setState((s) => ({ ...s, status: "RALLY_ERROR" } as RallyState));
+    } catch (e) {
+      if (mounted.current) {
+        setState((s) => ({ ...s, status: "RALLY_ERROR" } as RallyState));
+        setScanError(scanErrorReason(e));
+      }
     } finally {
       scanningRef.current = false;
       if (mounted.current) setScanning(false);
@@ -125,6 +158,8 @@ export function RallyPanel() {
   const top10 = state.top10 ?? [];
   const hasData = top10.length > 0;
   const nextReview = estimateNextReview(lastScanCompletedAt);
+  const ageInfo = scanAgeInfo(lastScanCompletedAt, now);
+  const sessions = summarizeSessions(top10);
 
   return (
     <section
@@ -150,7 +185,20 @@ export function RallyPanel() {
         </span>
       </div>
 
-      {!hasData && !scanning && (
+      {!scanning && scanError && (
+        <div role="alert" style={{ margin: "8px 12px 0", padding: "6px 10px", borderRadius: 6, fontSize: 10.5, lineHeight: 1.45, color: "#fecaca", background: `${RED}14`, border: `1px solid ${RED}55` }}>
+          <b style={{ color: RED }}>⚠ No se pudo actualizar el scan</b>
+          {hasData && ageInfo ? <> — se muestra el del <b>{ageInfo.when}</b> (hora Canarias, {ageInfo.age}), NO es actual.</> : "."}
+          <span style={{ color: "#94a3b8" }}> Motivo: {scanError}</span>
+        </div>
+      )}
+      {!scanning && loadError && !hasData && !scanError && (
+        <div role="alert" style={{ padding: "16px", fontSize: 11.5, color: "#fecaca" }}>
+          <b style={{ color: RED }}>⚠ No se pudo cargar el último scan</b> (fallo de conexión o del servidor). No significa que no exista:
+          recarga la página o pulsa <b style={{ color: AMBER }}>Escanear universo</b>.
+        </div>
+      )}
+      {!hasData && !scanning && !loadError && !scanError && (
         <div style={{ padding: "16px", fontSize: 11.5, color: "#cbd5e1" }}>
           Sin escaneo reciente. Pulsa <b style={{ color: AMBER }}>Escanear universo</b> para puntuar los ~600 tickers y
           obtener los 10 con la tendencia alcista más sana (momento a 9 meses, validado con 10 años de backtest).
@@ -164,9 +212,16 @@ export function RallyPanel() {
         <>
           <div style={{ padding: "10px 16px 4px", fontSize: 10, color: "#94a3b8", display: "flex", gap: 14, flexWrap: "wrap" }}>
             <span>Metodología: <b style={{ color: "#cbd5e1" }}>{RALLY_BACKTEST.formula}</b></span>
-            {lastScanCompletedAt && (
-              <span>Último scan: <b style={{ color: "#cbd5e1" }}>{new Date(lastScanCompletedAt).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</b> (cierres diarios, no intradía)</span>
+            {ageInfo && (
+              <span>Último scan: <b style={{ color: "#cbd5e1" }}>{ageInfo.when}</b> <span style={{ color: ageInfo.stale ? AMBER : "#64748b" }}>({ageInfo.age}, hora Canarias)</span>
+                {ageInfo.stale && <StaleTag />}</span>
             )}
+            {tickersFallidos > 0 && (
+              <span style={{ color: AMBER, fontWeight: 700 }}>
+                ⚠ {tickersFallidos} ticker{tickersFallidos === 1 ? "" : "s"} sin datos en este scan (fallo de descarga) — el top-10 puede no ser completo
+              </span>
+            )}
+            <SessionLine summary={sessions} />
             {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
             <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2017-2026.</span>
             {/* Leyenda del aviso de motivo: en móvil no hay tooltip, así que el símbolo
@@ -175,11 +230,15 @@ export function RallyPanel() {
             {Object.values(news).some(Boolean) && (
               <span><b style={{ color: AMBER }}>●</b> junto al ▼ = ese ticker tiene <b style={{ color: "#cbd5e1" }}>motivo del movimiento</b>: despliégalo para leerlo.</span>
             )}
+            {newsFailed && (
+              <span style={{ color: "#fca5a5" }}>⚠ Motivos del movimiento: <b>noticias no disponibles (fallo de la fuente)</b>.</span>
+            )}
           </div>
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
             {top10.map((a, i) => (
               <RallyRow key={a.providerSymbol} asset={a} rank={i + 1} isNarrow={isNarrow} news={news[a.providerSymbol] ?? null}
+                newsFailed={newsFailed} sessions={sessions}
                 expanded={expanded === a.providerSymbol}
                 onToggle={() => setExpanded((e) => (e === a.providerSymbol ? null : a.providerSymbol))} />
             ))}
@@ -251,8 +310,9 @@ const ENTRY_ZONE_STYLE: Record<string, { color: string; label: string; short: st
   SIN_DATOS: { color: SLATE, label: "—", short: "—" },
 };
 
-function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void; news: RallyNewsItem | null }) {
+function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news, newsFailed, sessions }: { asset: RallyAsset; rank: number; isNarrow: boolean; expanded: boolean; onToggle: () => void; news: RallyNewsItem | null; newsFailed: boolean; sessions: SessionSummary }) {
   const m = asset.metrics;
+  const sesNote = rowSessionNote(m, sessions);
   const flags = asset.warningFlags ?? [];
   const entry = asset.entryTiming;
   const entryStyle = ENTRY_ZONE_STYLE[entry?.zone ?? "SIN_DATOS"] ?? ENTRY_ZONE_STYLE.SIN_DATOS;
@@ -302,34 +362,38 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
         style={{ width: 14, flexShrink: 0, textAlign: "center", fontSize: 11 }}>
         {flags.length > 0 ? "⚠" : ""}
       </span>
+      {sesNote.tag && <RowSessionTag tag={sesNote.tag} detail={sesNote.detail} missing={sesNote.missing} />}
     </span>
   );
 
   // Rentabilidad de la SESIÓN en el momento del scan (mercado cerrado → última sesión).
   // Verde/rojo con signo, junto al ticker (izquierda) para que no se confunda con el
   // peso de inversión (ámbar, derecha). Solo informativo: no toca el análisis.
-  const dchg = asset.metrics?.dayChangePct;
-  const dchgColor = dchg == null ? "transparent" : dchg > 0 ? "#22c55e" : dchg < 0 ? "#ef4444" : "#94a3b8";
-  const dchgText = dchg == null ? "" : `${dchg > 0 ? "+" : ""}${dchg.toFixed(2)}%`;
-  const dchgTitle = "Rentabilidad de la sesión en el momento del scan (último precio vs cierre anterior). Con el mercado ABIERTO es el dato en curso a esa hora — puede diferir del tiempo real actual; con mercado cerrado, la de la última sesión. No es el peso de inversión.";
-  // Convención única con flag spacer: en escritorio (reserveWhenNull=true) el hueco de
-  // ancho fijo se renderiza SIEMPRE aunque falte el dato, para que las columnas fijas
-  // (mandato 11-ago-2026) sigan alineadas fila contra fila; en móvil (false) no se
-  // reserva hueco y la línea 1 recupera ese espacio.
-  const dayChangeEl = (width: number, reserveWhenNull: boolean) =>
-    dchg == null && !reserveWhenNull ? null : (
-      <span title={dchg != null ? dchgTitle : undefined}
-        style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
-          width, flexShrink: 0, textAlign: "left", whiteSpace: "nowrap" }}>
-        {dchgText}
-      </span>
-    );
+  // Hueco de la fuente (missingSessions) o dayChangePct null → "—", nunca 0,00% ni blanco.
+  const dchg = sesNote.missing ? null : (asset.metrics?.dayChangePct ?? null);
+  const dchgColor = dchg == null ? "#64748b" : dchg > 0 ? "#22c55e" : dchg < 0 ? "#ef4444" : "#94a3b8";
+  const dchgText = dchg == null ? "—" : `${dchg > 0 ? "+" : ""}${dchg.toFixed(2)}%`;
+  const dchgTitle = sesNote.missing
+    ? (sesNote.detail ?? "Sin dato de la sesión de hoy en la fuente.")
+    : dchg == null
+      ? "Sin dato del % del día en la fuente para este ticker."
+      : m?.lastBarDate
+        ? `Rentabilidad de la sesión del ${formatSessionDate(m.lastBarDate)} ${m.lastBarForming ? "EN CURSO a la hora del scan (intradía, no es un cierre)" : "al cierre"}, vs el cierre anterior. No es el peso de inversión.`
+        : "Rentabilidad de la sesión en el momento del scan (último precio vs cierre anterior; el servidor no informó la fecha de sesión). No es el peso de inversión.";
+  // Hueco de ancho fijo SIEMPRE (con "—" si falta el dato): columnas fijas, mandato 11-ago-2026.
+  const dayChangeEl = (width: number) => (
+    <span title={dchgTitle}
+      style={{ fontSize: 10, fontWeight: 800, color: dchgColor, fontVariantNumeric: "tabular-nums",
+        width, flexShrink: 0, textAlign: "left", whiteSpace: "nowrap" }}>
+      {dchgText}
+    </span>
+  );
   // PRECIO del ticker en la fila COLAPSADA (mandato 23-ago-2026: el precio debe verse
   // sin desplegar; se retira del desplegable para no duplicarlo). Formato es-ES con 2
   // decimales; la moneda va implícita en el mercado del ticker (USD en US, EUR en EU).
   const precio = asset.metrics?.lastClose;
   const precioEl = (width: number) => (
-    <span title="Último precio de cierre en el momento del scan"
+    <span title="Último precio en el momento del scan (su sesión y si es cierre o en curso: ver línea «Precios» arriba)"
       style={{ fontSize: 10.5, fontWeight: 700, color: "#cbd5e1", fontVariantNumeric: "tabular-nums",
         width, flexShrink: 0, textAlign: "right", whiteSpace: "nowrap" }}>
       {typeof precio === "number" ? precio.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
@@ -374,7 +438,7 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
               <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 18, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: "#e2e8f0", flex: "0 1 auto", minWidth: 0, maxWidth: 96, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.ticker}</span>
               {precioEl(52)}
-              {dayChangeEl(48, false)}
+              {dayChangeEl(48)}
               <span style={{ flex: 1, minWidth: 6 }} />
               <span title={weightTitle}
                 style={{ fontSize: 10, fontWeight: 800, color: AMBER, fontVariantNumeric: "tabular-nums", flexShrink: 0, textAlign: "right" }}>
@@ -397,8 +461,10 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
             <span style={{ fontSize: 12, fontWeight: 900, color: rank <= 3 ? AMBER : SLATE, width: 20, textAlign: "right", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{rank}</span>
             <span style={{ fontSize: 12, fontWeight: 800, color: "#e2e8f0", width: 78, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{asset.ticker}</span>
             {precioEl(62)}
-            {dayChangeEl(52, true)}
-            <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.name}</span>
+            {dayChangeEl(52)}
+            <span style={{ fontSize: 10.5, color: "#94a3b8", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {sesNote.tag && <RowSessionTag tag={sesNote.tag} detail={sesNote.detail} missing={sesNote.missing} />}{sesNote.tag ? " " : ""}{asset.name}
+            </span>
             <span title={runway ? `Recorrido restante ${runway.score}/100 — ${runway.reasons.join(" · ")}` : undefined}
               style={{ width: 128, flexShrink: 0, textAlign: "center", fontSize: 8.5, fontWeight: 800, padding: "2px 0", borderRadius: 4,
                 color: runway ? runwayStyle.color : "transparent",
@@ -438,7 +504,12 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
       {expanded && (
         <div style={{ padding: "4px 4px 12px 34px", display: "flex", flexDirection: "column", gap: 8 }}>
           {isNarrow && <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{asset.name}</div>}
-          <MotivoDelMovimiento news={news} dayChangePct={asset.metrics?.dayChangePct ?? null} />
+          {sesNote.detail && (
+            <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: sesNote.missing ? "#fca5a5" : "#fde68a", background: `${sesNote.missing ? RED : AMBER}12`, border: `1px solid ${sesNote.missing ? RED : AMBER}44` }}>
+              {sesNote.detail}
+            </div>
+          )}
+          <MotivoDelMovimiento news={news} newsFailed={newsFailed} dayChangePct={dchg} />
           {entry && (
             <div style={{ fontSize: 10.5, padding: "6px 10px", borderRadius: 6, color: entryStyle.color, background: `${entryStyle.color}14`, border: `1px solid ${entryStyle.color}44` }}>
               <b>{entryStyle.label}</b> — {entry.label}
@@ -483,14 +554,17 @@ function RallyRow({ asset, rank, isNarrow, expanded, onToggle, news }: { asset: 
  * Si no hay noticia se dice explícitamente — nunca se rellena con una explicación
  * inventada ni se deja el hueco en blanco.
  */
-function MotivoDelMovimiento({ news, dayChangePct }: { news: RallyNewsItem | null; dayChangePct: number | null | undefined }) {
+function MotivoDelMovimiento({ news, newsFailed, dayChangePct }: { news: RallyNewsItem | null; newsFailed: boolean; dayChangePct: number | null | undefined }) {
   const sube = typeof dayChangePct === "number" && dayChangePct > 0;
   const baja = typeof dayChangePct === "number" && dayChangePct < 0;
-  const color = !news ? "#64748b" : sube ? GREEN : baja ? RED : SLATE;
-  const etiqueta = !news ? "SIN MOTIVO IDENTIFICADO" : sube ? "MOTIVO ▲" : baja ? "MOTIVO ▼" : "MOTIVO";
+  const failed = !news && newsFailed;
+  const color = failed ? "#eab308" : !news ? "#64748b" : sube ? GREEN : baja ? RED : SLATE;
+  const etiqueta = failed ? "NOTICIAS NO DISPONIBLES" : !news ? "SIN MOTIVO IDENTIFICADO" : sube ? "MOTIVO ▲" : baja ? "MOTIVO ▼" : "MOTIVO";
   const cuerpo = news
     ? news.headline
-    : "Ninguna noticia relevante de la empresa en las últimas sesiones: el movimiento no tiene un catalizador identificable.";
+    : failed
+      ? "Noticias no disponibles (fallo de la fuente): no se sabe si hay o no un catalizador."
+      : "Ninguna noticia relevante de la empresa en las últimas sesiones: el movimiento no tiene un catalizador identificable.";
   const fecha = news?.publishedAtUtc
     ? new Date(news.publishedAtUtc).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
     : null;
@@ -524,4 +598,50 @@ function Stat({ label, value, tone = "#e2e8f0" }: { label: string; value: string
       <div style={{ fontSize: 12, fontWeight: 800, color: tone, fontVariantNumeric: "tabular-nums", marginTop: 1 }}>{value}</div>
     </div>
   );
+}
+
+function StaleTag() {
+  return (
+    <span title="El scan tiene más de 1 día hábil: sus precios y su top-10 no reflejan el mercado actual. Re-escanea."
+      style={{ marginLeft: 6, fontSize: 8.5, fontWeight: 800, letterSpacing: "0.06em", padding: "1px 6px", borderRadius: 4,
+        color: AMBER, background: `${AMBER}18`, border: `1px solid ${AMBER}66`, whiteSpace: "nowrap" }}>
+      DATO ANTIGUO
+    </span>
+  );
+}
+
+/** Línea de panel: de qué sesión son los precios y el % del día, y si es cierre o intradía. */
+function SessionLine({ summary }: { summary: SessionSummary }) {
+  return (
+    <span>
+      Precios y % del día:{" "}
+      {summary.date ? (
+        <b style={{ color: summary.forming ? AMBER : "#cbd5e1" }}>
+          sesión {formatSessionDate(summary.date)} · {summary.forming ? "EN CURSO (intradía a la hora del scan, no es cierre)" : "AL CIERRE"}
+        </b>
+      ) : (
+        <b style={{ color: "#64748b" }}>sesión no informada por el servidor</b>
+      )}
+      {summary.missingCount > 0 && (
+        <span style={{ color: "#fca5a5" }}> · {summary.missingCount} sin dato de hoy en la fuente (—)</span>
+      )}
+    </span>
+  );
+}
+
+function RowSessionTag({ tag, detail, missing }: { tag: string; detail: string | null; missing: boolean }) {
+  const c = missing ? RED : AMBER;
+  return (
+    <span title={detail ?? undefined}
+      style={{ fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 3, color: c, background: `${c}14`, border: `1px solid ${c}55`, whiteSpace: "nowrap", flexShrink: 0 }}>
+      {tag}
+    </span>
+  );
+}
+
+function scanErrorReason(e: unknown): string {
+  if (e instanceof DOMException && e.name === "AbortError") return "tiempo de espera agotado";
+  const msg = e instanceof Error ? e.message : String(e);
+  const http = /_HTTP_(\d{3})/.exec(msg);
+  return http ? `error del servidor (HTTP ${http[1]})` : msg || "error desconocido";
 }

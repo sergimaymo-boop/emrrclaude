@@ -46,7 +46,8 @@ export const initialSystemStatus: SystemStatus = {
   marketHours: "CLOSED",
   marketMode: "CLOSED",
   readiness: "READY",
-  lastScan: initialTimestamp,
+  // Sin scan completado conocido: "—" (nunca la hora de apertura de la página).
+  lastScan: { utc: "", local: "—" },
   updatedAt: initialTimestamp,
 };
 

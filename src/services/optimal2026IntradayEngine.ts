@@ -202,7 +202,10 @@ export interface Optimal2026Derived {
   items: Optimal2026ItemWithSignal[];
   isLive: boolean;
   isPricesStale: boolean;
-  deployPct: number;
+  /** null = sin dato de despliegue en el snapshot (nunca un 30% por defecto). */
+  deployPct: number | null;
+  /** Último refresco de precio en vivo de cualquier item (ms epoch), null si ninguno. */
+  latestPriceRefreshMs: number | null;
 }
 
 export function deriveOptimal2026Display(data: Optimal2026Result): Optimal2026Derived {
@@ -222,9 +225,9 @@ export function deriveOptimal2026Display(data: Optimal2026Result): Optimal2026De
   const isPricesStale = isLive && rawItems.length > 0
     && (latestRefreshMs === 0 || Date.now() - latestRefreshMs > STALE_MS);
 
-  const deployPct = data.deployPct ?? 30;
+  const deployPct = typeof data.deployPct === "number" && Number.isFinite(data.deployPct) ? data.deployPct : null;
 
-  return { items, isLive, isPricesStale, deployPct };
+  return { items, isLive, isPricesStale, deployPct, latestPriceRefreshMs: latestRefreshMs > 0 ? latestRefreshMs : null };
 }
 
 // ── Backtest comparison (resultados REALES del sweep propio) ──────────────────

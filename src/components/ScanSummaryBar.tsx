@@ -51,7 +51,7 @@ export function ScanSummaryBar({ systemStatus }: ScanSummaryBarProps) {
   const coverage = u.coveragePercent ?? 0;
   const euOpen = systemStatus.marketMode === "EU_OPEN" || systemStatus.marketMode === "BOTH_OPEN";
   const usOpen = systemStatus.marketMode === "US_OPEN" || systemStatus.marketMode === "BOTH_OPEN";
-  const lastScan = systemStatus.lastScan?.local ?? "—";
+  const lastScan = systemStatus.lastScan?.local || "—";
   const scope = u.resultScope;
 
   const universeSubLabel =

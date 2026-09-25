@@ -155,7 +155,10 @@ export async function loadLastIBKPortfolio() {
 
 // ─── SPY Benchmark cache (4h TTL) — ensures RS is always calculable ───────────
 const KV_SPY_KEY = "benchmark_spy_bars";
-const KV_SPY_TTL_SECONDS = 72 * 60 * 60; // 72h — el cierre diario del SPY sigue válido días para EMA200/régimen (evita re-fetch bajo rate-limit)
+// 4 h (25-sep-2026; antes 72 h): un SPY de hace 3 sesiones falseaba la fuerza relativa.
+// Cada motor alinea además el SPY por fecha (copia propia en cada módulo): si aun así el SPY
+// cacheado se queda atrás más de 4 días, la fuerza relativa sale null, no inventada.
+const KV_SPY_TTL_SECONDS = 4 * 60 * 60;
 
 export async function saveBenchmarkBars(bars) {
   try {

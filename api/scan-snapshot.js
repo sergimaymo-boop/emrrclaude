@@ -22,7 +22,7 @@ import { fetchEodhdSpread } from './_lib/spreadDataProvider.js';
 import { evaluateCandidate, buildOperationalTop8FromEvaluations, buildEligibilityDiagnostics, summarizeEvaluations } from './_lib/candidateEvaluationEngine.js';
 import { saveLastScanSnapshot, loadLastScanSnapshot, loadBenchmarkBars, saveBenchmarkBars } from './_lib/kvStorage.js';
 import { raceBenchmarkHistory } from './_lib/providerCascade.js';
-import { filterActiveOperableAssets, getActiveMarketsAt, parseSnapshotBatchSize, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
+import { filterActiveOperableAssets, getActiveMarketsAt, marketStatusForExchange, parseSnapshotBatchSize, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME = 'EMRR 2.0 / Tendencias';
 const DEFAULT_BATCH_SIZE = 50;
@@ -75,20 +75,6 @@ async function readJsonBody(req) {
   if (typeof req.body === 'object') return req.body;
   if (typeof req.body === 'string') { try { return JSON.parse(req.body); } catch { return {}; } }
   return {};
-}
-
-function isWeekend(date) { const d = date.getUTCDay(); return d === 0 || d === 6; }
-function inRange(date, s, e) { const m = date.getUTCHours() * 60 + date.getUTCMinutes(); return m >= s && m < e; }
-function isUsDst(date) { const mo = date.getUTCMonth() + 1; return mo >= 3 && mo <= 11; }
-function marketStatusForExchange(exchange, date) {
-  if (isWeekend(date)) return 'CLOSED';
-  const n = String(exchange ?? '').toUpperCase();
-  if (n.includes('NASDAQ') || n.includes('NYSE') || n === 'USA_SUPPORTED')
-    return inRange(date, isUsDst(date) ? 13*60+30 : 14*60+30, isUsDst(date) ? 20*60 : 21*60) ? 'OPEN' : 'CLOSED';
-  if (n.includes('LSE') || n.includes('LONDON')) return inRange(date, 8*60, 16*60+30) ? 'OPEN' : 'CLOSED';
-  if (n.includes('XETRA') || n.includes('EURONEXT') || n.includes('BORSA') || n.includes('ITALIANA') || n.includes('SIX') || n.includes('MILAN') || n.includes('PARIS') || n.includes('AMSTERDAM'))
-    return inRange(date, 7*60, 15*60+30) ? 'OPEN' : 'CLOSED';
-  return 'CLOSED';
 }
 
 async function fetchBenchmarkBars() {

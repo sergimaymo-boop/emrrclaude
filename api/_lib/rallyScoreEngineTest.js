@@ -135,7 +135,7 @@ function computeRunwayTest(price, ema50, trendAge, proximity52w) {
  * processor (bars del proveedor con cierres AJUSTADOS; spyBars se acepta y se
  * ignora — esta señal no es relativa al índice).
  */
-export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [] }) {
+export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [], lastBarForming = false }) {
   void spyBars; void spreadPercent; void region;
   if (!Array.isArray(bars) || bars.length < MIN_BARS) {
     return { ok: false, reason: `NEED_${MIN_BARS}_BARS` };
@@ -247,6 +247,11 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     metrics: {
       lastClose: Math.round(pNow * 100) / 100,
       dayChangePct: (!sessionGapBetween && isNum(prev) && prev > 0) ? round1((pNow / prev - 1) * 100) : null,
+      // Sesión de lastClose, si sigue abierta (precio intradía, no cierre) y sesiones
+      // posteriores que la fuente no rellenó (25-sep-2026). Solo display.
+      lastBarDate,
+      lastBarForming: lastBarForming === true,
+      missingSessions: Array.isArray(gapDates) && lastBarDate ? gapDates.filter((d) => d > lastBarDate) : [],
       momRaw: round1(mom * 100),        // % de la señal 189s10 — desempate del merge
       mom63: mom63 != null ? round1(mom63 * 100) : null,
       mom126: mom126 != null ? round1(mom126 * 100) : null,
@@ -286,9 +291,16 @@ export function assignSuggestedWeights(assets) {
       ws = raw.map((v) => Math.min(W_HI, Math.max(W_LO, v * t)));
     }
   }
+  // Redondeo a 0,1 por MAYOR RESTO (25-sep-2026): redondear cada peso por separado
+  // hacía que el top-5 sumase 99,9 o 100,1 en ~35% de los casos.
+  const decimas = ws.map((w) => Math.floor(w * 10));
+  let faltan = Math.round(ws.reduce((s, w) => s + w, 0) * 10) - decimas.reduce((s, d) => s + d, 0);
+  ws.map((w, i) => ({ i, resto: w * 10 - decimas[i] }))
+    .sort((x, y) => y.resto - x.resto)
+    .forEach(({ i }) => { if (faltan > 0) { decimas[i]++; faltan--; } });
   return list.map((a, i) => ({
     ...a,
     rank: i + 1,
-    suggestedWeightPct: i < inv.length ? Math.round(ws[i] * 10) / 10 : 0,
+    suggestedWeightPct: i < inv.length ? decimas[i] / 10 : 0,
   }));
 }

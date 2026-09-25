@@ -32,7 +32,6 @@
  */
 
 import { calculateEma, calculateAtr } from "./technicalEngine.js";
-
 export const RALLY_ENGINE_VERSION = "4.0.0";
 
 const WEIGHTS = {
@@ -576,7 +575,7 @@ export function rotationRank(rallyScore, runwayScore) {
   return Math.round((0.7 * s + 0.3 * r) * 10) / 10;
 }
 
-export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [] }) {
+export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, region = "USA", gapDates = [], lastBarForming = false }) {
   // v4.0: el score necesita 189 sesiones de momento 9m + margen; con menos histórico
   // el ticker queda DISCARD (sin 9 meses cotizando no hay señal comparable).
   const MIN_BARS = 200;
@@ -654,7 +653,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   const avgValue20 = avgVol20 * lastClose;
 
   // ─── RS vs SPY (curve normalization, no artificial cap) ───
-  const spyCloses = spyBars.map(b => b.close).filter(Number.isFinite);
+  const spyCloses = alignBenchmarkByDate(bars, spyBars);
   const rs3m = calculateRelativeReturn(closes, spyCloses, 63);
   const rs6m = calculateRelativeReturn(closes, spyCloses, 126);
   const rs5d = calculateRelativeReturn(closes, spyCloses, 5);
@@ -706,6 +705,11 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
       // recurso). Con mercado cerrado = variación de la última sesión.
       // SOLO informativo para la fila del panel: no entra en score, stops ni pesos.
       dayChangePct,
+      // Sesión a la que pertenece lastClose, si esa sesión sigue abierta (precio
+      // intradía, no cierre) y sesiones posteriores que la fuente no rellenó.
+      lastBarDate: lastBar?.date ?? null,
+      lastBarForming: lastBarForming === true,
+      missingSessions: Array.isArray(gapDates) && lastBar?.date ? gapDates.filter(d => d > lastBar.date) : [],
       ema5:  ema5  ? Math.round(ema5  * 100) / 100 : null,
       ema20: ema20 ? Math.round(ema20 * 100) / 100 : null,
       ema50: ema50 ? Math.round(ema50 * 100) / 100 : null,
@@ -732,8 +736,30 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   };
 }
 
+// SPY alineado POR FECHA a las barras del activo (25-sep-2026) — copia PROPIA de
+// Rally Leaders (módulos independientes). Antes se comparaban posiciones: con el SPY
+// cacheado de días atrás o calendarios distintos (tickers EU) "hace N sesiones"
+// apuntaba a fechas distintas. Cierre del SPY de esa fecha o la anterior más cercana
+// (máx. 4 días naturales de desfase); si no, null — nunca una comparación falseada.
+function alignBenchmarkByDate(assetBars, benchmarkBars, maxLagDays = 4) {
+  const bench = (benchmarkBars ?? []).filter(b => b?.date && Number.isFinite(b.close));
+  const out = [];
+  let j = 0;
+  for (const bar of assetBars ?? []) {
+    while (j + 1 < bench.length && bench[j + 1].date <= bar.date) j++;
+    const b = bench[j];
+    if (!b || !bar?.date || b.date > bar.date) { out.push(null); continue; }
+    const lagDays = (Date.parse(bar.date) - Date.parse(b.date)) / 86400000;
+    out.push(lagDays <= maxLagDays ? b.close : null);
+  }
+  return out;
+}
+
 function calculateRelativeReturn(assetCloses, benchmarkCloses, lookback) {
   if (assetCloses.length < lookback + 1 || benchmarkCloses.length < lookback + 1) return null;
+  const bNow = benchmarkCloses[benchmarkCloses.length - 1];
+  const bPast = benchmarkCloses[benchmarkCloses.length - lookback - 1];
+  if (!Number.isFinite(bNow) || !Number.isFinite(bPast)) return null;
   const assetReturn = returnPercent(assetCloses, lookback);
   const benchReturn = returnPercent(benchmarkCloses, lookback);
   if (assetReturn === null || benchReturn === null) return null;

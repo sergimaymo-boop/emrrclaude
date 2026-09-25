@@ -58,6 +58,10 @@ export interface MarketBreadthResult {
   cachedAtUtc?: string;
   fromCache?: boolean;
   reason?: string;
+  // Honestidad del dato (cliente): LOADING / OK / UNAVAILABLE (nunca hubo dato bueno).
+  loadState?: "LOADING" | "OK" | "UNAVAILABLE";
+  fetchedAtUtc?: string | null;
+  refreshFailed?: boolean;
 }
 
 export function initialMarketBreadth(): MarketBreadthResult {
@@ -67,19 +71,42 @@ export function initialMarketBreadth(): MarketBreadthResult {
     score: null,
     color: "#64748b",
     label: "Calculando amplitud de mercado…",
+    loadState: "LOADING",
+    fetchedAtUtc: null,
+    refreshFailed: false,
   };
 }
 
-export async function fetchMarketBreadth(): Promise<MarketBreadthResult> {
+// Tras un fallo: conserva el último veredicto bueno marcado SIN ACTUALIZAR; si nunca lo hubo, "No disponible".
+export function markMarketBreadthFailed(prev: MarketBreadthResult, reason?: string): MarketBreadthResult {
+  if (prev.loadState === "OK") return { ...prev, refreshFailed: true };
+  return {
+    ...initialMarketBreadth(),
+    ok: false,
+    label: "No disponible (fallo de la fuente)",
+    reason,
+    loadState: "UNAVAILABLE",
+    refreshFailed: true,
+  };
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch("/api/market-breadth", { method: "GET", headers: { accept: "application/json" } });
-    if (!res.ok) return initialMarketBreadth();
-    const data = await res.json();
-    if (!data || data.ok === false) return initialMarketBreadth();
-    return data as MarketBreadthResult;
-  } catch {
-    return initialMarketBreadth();
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
   }
+}
+
+// Lanza ante fallo (red, timeout, HTTP, ok:false): el llamante decide con markMarketBreadthFailed.
+export async function fetchMarketBreadth(): Promise<MarketBreadthResult> {
+  const res = await fetchWithTimeout("/api/market-breadth", { method: "GET", headers: { accept: "application/json" } }, 8000);
+  if (!res.ok) throw new Error(`MARKET_BREADTH_HTTP_${res.status}`);
+  const data = await res.json();
+  if (!data || data.ok === false) throw new Error(data?.reason ?? data?.error ?? "MARKET_BREADTH_UNAVAILABLE");
+  return { ...(data as MarketBreadthResult), loadState: "OK", fetchedAtUtc: new Date().toISOString(), refreshFailed: false };
 }
 
 /**
@@ -102,17 +129,17 @@ export async function enrichBreadthWithLiveQuotes(result: MarketBreadthResult): 
 /**
  * Orquesta el recálculo bajo demanda del veredicto de amplitud: encadena el loop
  * multi-batch (start → continue… → final), igual que el frontend orquesta el scan.
- * Devuelve el veredicto final (o el último cacheado si algo falla). Pensado para el
+ * Devuelve el veredicto final (o el último cacheado si algo falla; lanza si tampoco hay caché). Pensado para el
  * botón SCAN: un run intradía (close-based, no contamina el histórico nocturno).
  * @param onProgress callback opcional con el % de cobertura (0-100) para feedback de UI.
  */
 export async function runBreadthScan(onProgress?: (coverage: number) => void): Promise<MarketBreadthResult> {
   const post = (body?: unknown) =>
-    fetch(`/api/market-breadth?action=${body ? "continue" : "start"}`, {
+    fetchWithTimeout(`/api/market-breadth?action=${body ? "continue" : "start"}`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: body ? JSON.stringify(body) : undefined,
-    }).then((r) => r.json());
+    }, 30000).then((r) => r.json());
 
   try {
     let data = await post();
@@ -124,7 +151,7 @@ export async function runBreadthScan(onProgress?: (coverage: number) => void): P
     }
     if (data && data.isFinal) {
       if (onProgress) onProgress(100);
-      return data as MarketBreadthResult;
+      return { ...(data as MarketBreadthResult), loadState: "OK", fetchedAtUtc: new Date().toISOString(), refreshFailed: false };
     }
     // No completó (p.ej. REAL_API_CALLS_DISABLED) → servir el último cacheado.
     return await fetchMarketBreadth();

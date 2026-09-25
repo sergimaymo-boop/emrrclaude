@@ -6,7 +6,7 @@
  * Aislado: un fallo aquí NUNCA afecta a otros módulos (devuelve estado/seguro).
  */
 
-import { fetchLiveQuoteMap, liveTickerOf } from "./liveQuotes";
+import { fetchLiveQuoteMap, liveTickerOf, type LiveQuote } from "./liveQuotes";
 
 export interface Optimal2026Item {
   rank: number;
@@ -157,12 +157,16 @@ function mirrorPortfolioToServer(portfolio: IBKPortfolio): void {
         currency: ibkPositionCurrency(p),
       })),
     };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
     void fetch("/api/rally-scan/ibk-portfolio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       keepalive: true,
-    }).catch(() => { /* silencioso: el espejo nunca interfiere */ });
+      signal: controller.signal,
+    }).catch(() => { /* silencioso: el espejo nunca interfiere */ })
+      .finally(() => clearTimeout(timer));
   } catch { /* silencioso: el espejo nunca interfiere */ }
 }
 
@@ -1029,15 +1033,56 @@ export function initialOptimal2026(): Optimal2026Result {
   return { ok: true, items: [] };
 }
 
+// ── Salud de las cargas (para que la UI diga "SIN ACTUALIZAR" en vez de callar) ──
+// DashboardPage conserva el estado anterior cuando una carga falla; este registro
+// permite al panel saber que lo que enseña ya no es el último dato.
+export interface Optimal2026FetchHealth {
+  snapshotOkAt: number | null;
+  snapshotFailAt: number | null;
+  snapshotError: string | null;
+  quotesOkAt: number | null;
+  quotesFailAt: number | null;
+}
+
+let fetchHealth: Optimal2026FetchHealth = {
+  snapshotOkAt: null, snapshotFailAt: null, snapshotError: null, quotesOkAt: null, quotesFailAt: null,
+};
+const healthListeners = new Set<() => void>();
+
+function updateFetchHealth(patch: Partial<Optimal2026FetchHealth>): void {
+  fetchHealth = { ...fetchHealth, ...patch };
+  healthListeners.forEach((fn) => fn());
+}
+
+export function getOptimal2026FetchHealth(): Optimal2026FetchHealth {
+  return fetchHealth;
+}
+
+export function subscribeOptimal2026FetchHealth(listener: () => void): () => void {
+  healthListeners.add(listener);
+  return () => { healthListeners.delete(listener); };
+}
+
 export async function fetchOptimal2026(): Promise<Optimal2026Result> {
-  const res = await fetch("/api/optimal2026");
-  if (res.status === 404) {
-    // No data yet — return empty state gracefully
-    return { ok: true, items: [], message: "Sin datos aún. Ejecuta un scan completo." };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch("/api/optimal2026", { signal: controller.signal });
+    if (res.status === 404) {
+      updateFetchHealth({ snapshotOkAt: Date.now(), snapshotError: null });
+      return { ok: true, items: [], message: "Sin datos aún. Ejecuta un scan completo." };
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as Optimal2026Result;
+    updateFetchHealth({ snapshotOkAt: Date.now(), snapshotError: null });
+    return data;
+  } catch (e) {
+    const reason = controller.signal.aborted ? "tiempo de espera agotado" : e instanceof Error ? e.message : "fallo de red";
+    updateFetchHealth({ snapshotFailAt: Date.now(), snapshotError: reason });
+    throw new Error(`Optimal2026 fetch failed: ${reason}`);
+  } finally {
+    clearTimeout(timer);
   }
-  if (!res.ok) throw new Error(`Optimal2026 fetch failed: ${res.status}`);
-  const data = await res.json();
-  return data as Optimal2026Result;
 }
 
 /**
@@ -1050,13 +1095,24 @@ export async function enrichOptimal2026WithLiveQuotes(
   items: Optimal2026Item[],
 ): Promise<Optimal2026Item[]> {
   if (!Array.isArray(items) || items.length === 0) return items;
-  const map = await fetchLiveQuoteMap(items.map((it) => it.symbol));
-  if (map.size === 0) return items;
+  // fetchLiveQuoteMap no acepta signal: tope de 8 s por carrera, tratado como fallo.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<Map<string, LiveQuote>>((resolve) => {
+    timer = setTimeout(() => resolve(new Map()), 8000);
+  });
+  const map = await Promise.race([fetchLiveQuoteMap(items.map((it) => it.symbol)), timeout]);
+  if (timer !== undefined) clearTimeout(timer);
+  if (map.size === 0) {
+    updateFetchHealth({ quotesFailAt: Date.now() });
+    return items;
+  }
+  updateFetchHealth({ quotesOkAt: Date.now() });
   const now = new Date().toISOString();
   return items.map((it) => {
     const q = map.get(liveTickerOf(it.symbol));
+    // % del día null del proveedor → null ("—"), nunca el % viejo del scan junto a un precio nuevo.
     return q
-      ? { ...it, price: q.price, pctDay: q.changePercent ?? it.pctDay, priceRefreshedAt: now }
+      ? { ...it, price: q.price, pctDay: q.changePercent, priceRefreshedAt: now }
       : it;
   });
 }

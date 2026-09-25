@@ -65,7 +65,11 @@ export async function handler(req, res) {
 
   // 3) señal
   const previous = force ? null : await kvGet(SP500_KEY).catch(() => null);
-  const signal = computeSp500Signal(history.bars, { profile, previousSignal: previous?.ok ? previous : null });
+  // Señal SOLO sobre cierres (25-sep-2026): con la bolsa abierta la última vela es un
+  // precio intradía; el backtest y la señal se definen a cierre de sesión.
+  const bars = history.lastBarForming ? history.bars.slice(0, -1) : history.bars;
+  const excludedFormingBarDate = history.lastBarForming ? history.bars.at(-1)?.date ?? null : null;
+  const signal = computeSp500Signal(bars, { profile, previousSignal: previous?.ok ? previous : null });
 
   if (!signal.ok) {
     return res.status(422).json({
@@ -75,7 +79,7 @@ export async function handler(req, res) {
     });
   }
 
-  const payload = { ...signal, dataProvider: history.provider ?? null, servedFrom: "computed" };
+  const payload = { ...signal, dataProvider: history.provider ?? null, servedFrom: "computed", excludedFormingBarDate };
   try {
     await kvSet(SP500_KEY, payload, CACHE_TTL_SECONDS);
   } catch {

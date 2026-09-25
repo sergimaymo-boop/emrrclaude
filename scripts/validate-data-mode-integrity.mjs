@@ -32,7 +32,7 @@ assert.doesNotMatch(emptyDataSource, /dataMode:\s*"MOCK"|MIXED|MOCK_FALLBACK/);
 assert.match(top8Source, /TOP 8 DATA UNAVAILABLE/);
 assert.match(top8Source, /No fixed list/);
 assert.doesNotMatch(top8Source, /MOCK_FALLBACK|MIXED/);
-assert.match(fearSource, /Fear & Greed unavailable/);
+assert.match(fearSource, /No disponible/);
 assert.doesNotMatch(fearSource, /Mock refresh|MOCK/);
 assert.match(refreshSource, /deriveDashboardDataMode/);
 assert.doesNotMatch(refreshSource, /Mixed real price|Mock data|MOCK_FALLBACK/);

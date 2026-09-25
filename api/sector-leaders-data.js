@@ -54,7 +54,9 @@ const EOD_SECTORS = [
 ];
 
 const YAHOO_UA = "Mozilla/5.0 (compatible; EMRR/2.0)";
-const TIMEOUT_MS = 7000;
+const TIMEOUT_MS = 8000;
+const APP = "EMRR";
+const ENDPOINT = "/api/sector-leaders-data";
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -131,40 +133,57 @@ async function fetchIntraday5min(symbol) {
   if (lastIdx < 0) return null;
   lastClose = closes[lastIdx];
 
-  const openPrice = finiteOrNull(meta.regularMarketOpen) ?? validCloses[0];
-  const intradayChange = openPrice > 0 ? ((lastClose - openPrice) / openPrice) * 100 : 0;
+  // Apertura real: meta.regularMarketOpen o el OPEN de la primera vela (no su cierre).
+  // Sin apertura → null (nunca un 0,00% inventado).
+  const opens = (q.open ?? []).map(finiteOrNull);
+  const firstOpen = opens.find(v => Number.isFinite(v) && v > 0) ?? null;
+  const openPrice = finiteOrNull(meta.regularMarketOpen) ?? firstOpen;
+  const intradayChange = openPrice !== null && openPrice > 0
+    ? ((lastClose - openPrice) / openPrice) * 100 : null;
 
   // Change in last ~30 min (6 bars of 5min)
   const idx30 = Math.max(0, lastIdx - 6);
   const price30 = closes[idx30];
   const change30min = Number.isFinite(price30) && price30 > 0
-    ? ((lastClose - price30) / price30) * 100 : 0;
+    ? ((lastClose - price30) / price30) * 100 : null;
 
   // Momentum: last 5 min (1 bar)
   const prevClose = closes[lastIdx - 1];
   const changeMomentum = Number.isFinite(prevClose) && prevClose > 0
-    ? ((lastClose - prevClose) / prevClose) * 100 : 0;
+    ? ((lastClose - prevClose) / prevClose) * 100 : null;
+
+  const timestamps = result.timestamp ?? [];
+  const lastTs = finiteOrNull(timestamps[lastIdx]) ?? finiteOrNull(meta.regularMarketTime);
+  const lastBarUtc = lastTs !== null ? new Date(lastTs * 1000).toISOString() : null;
 
   // Relative volume: last 3 bars vs earlier bars (rough rvol)
   const recentVols = volumes.slice(Math.max(0, lastIdx - 2), lastIdx + 1).filter(v => v > 0);
   const earlyVols  = volumes.slice(0, Math.max(1, lastIdx - 2)).filter(v => v > 0);
   const recentAvg  = recentVols.length ? recentVols.reduce((a,b) => a+b, 0) / recentVols.length : 0;
   const earlyAvg   = earlyVols.length  ? earlyVols.reduce((a,b) => a+b, 0)  / earlyVols.length  : recentAvg;
-  const relativeVolume = earlyAvg > 0 ? Math.min(recentAvg / earlyAvg, 5) : 1;
+  const RVOL_CAP = 5;
+  const rawRvol = earlyAvg > 0 && recentAvg > 0 ? recentAvg / earlyAvg : null;
+  const relativeVolume = rawRvol !== null ? Math.min(rawRvol, RVOL_CAP) : null;
+  const relativeVolumeCapped = rawRvol !== null && rawRvol >= RVOL_CAP;
 
   // Flow score: price move × volume amplification (-100 to +100)
-  const rawScore = intradayChange * Math.sqrt(relativeVolume);
-  const flowScore = Math.max(-100, Math.min(100, rawScore * 10));
+  const flowScore = intradayChange !== null && relativeVolume !== null
+    ? Math.max(-100, Math.min(100, intradayChange * Math.sqrt(relativeVolume) * 10))
+    : null;
 
+  const r = (v, d) => (v === null ? null : +v.toFixed(d));
   return {
     symbol,
     currentPrice: +lastClose.toFixed(2),
-    openPrice:    +openPrice.toFixed(2),
-    intradayChange: +intradayChange.toFixed(2),
-    change30min:    +change30min.toFixed(2),
-    changeMomentum: +changeMomentum.toFixed(2),
-    relativeVolume: +relativeVolume.toFixed(2),
-    flowScore:      +flowScore.toFixed(1),
+    openPrice:    r(openPrice, 2),
+    intradayChange: r(intradayChange, 2),
+    change30min:    r(change30min, 2),
+    changeMomentum: r(changeMomentum, 2),
+    relativeVolume: r(relativeVolume, 2),
+    relativeVolumeCapped,
+    flowScore:      r(flowScore, 1),
+    lastBarUtc,
+    sessionDate: lastBarUtc ? lastBarUtc.slice(0, 10) : null,
   };
 }
 
@@ -181,8 +200,8 @@ async function fetchStockQuote(ticker) {
   if (!price) return null;
   const change = prevClose && prevClose > 0
     ? +( ((price - prevClose) / prevClose) * 100 ).toFixed(2)
-    : finiteOrNull(meta.regularMarketChangePercent) ?? 0;
-  return { ticker, price: +price.toFixed(2), change };
+    : finiteOrNull(meta.regularMarketChangePercent);
+  return { ticker, price: +price.toFixed(2), change, changeBasis: "vs_prev_close" };
 }
 
 // ─── Intraday handler ─────────────────────────────────────────────────────────
@@ -206,11 +225,11 @@ async function handleIntraday(res) {
         etf: sector.etf,
         holdings: sector.holdings,
         ...data,
-        direction: flowDirection(data.flowScore),
+        direction: data.flowScore === null ? null : flowDirection(data.flowScore),
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.flowScore - a.flowScore)
+    .sort((a, b) => (b.flowScore ?? -Infinity) - (a.flowScore ?? -Infinity))
     .map((s, i) => ({ ...s, rank: i + 1 }));
 
   // 3. Fetch top stock for ALL sectors in parallel
@@ -220,8 +239,7 @@ async function handleIntraday(res) {
     sectors.map(sector =>
       Promise.all(sector.holdings.map(fetchStockQuote))
         .then(quotes => {
-          const valid = quotes.filter(Boolean);
-          const sectorPositive = sector.intradayChange >= 0;
+          const valid = quotes.filter(q => q && q.change !== null);
           // For green sectors: pick highest gainer; for red sectors: pick highest gainer too
           // (shows the stock holding up best or leading the move)
           const sorted = valid.sort((a, b) => b.change - a.change);
@@ -276,22 +294,36 @@ async function handleIntraday(res) {
     && minutesSinceMidnight >= usOpenMinuteUtc
     && minutesSinceMidnight < usCloseMinuteUtc;
 
+  // intradayChange es SIEMPRE apertura→último precio de la sesión, no vs cierre anterior.
+  const changeBasis = marketOpen ? "open_to_last" : "close_vs_open";
+  const sessionDate = spyData?.sessionDate
+    ?? enrichedSectors.find(s => s.sessionDate)?.sessionDate ?? null;
+  const withBasis = enrichedSectors.map(s => ({ ...s, changeBasis }));
+
   res.status(200).json({
     ok: true,
+    app: APP,
+    endpoint: ENDPOINT,
+    timestampUtc: now.toISOString(),
     mode: "intraday",
     marketOpen,
     scannedAtUtc: now.toISOString(),
+    sessionDate,
+    changeBasis,
     spy: spyData ? {
       intradayChange: spyData.intradayChange,
       currentPrice:   spyData.currentPrice,
       relativeVolume: spyData.relativeVolume,
+      relativeVolumeCapped: spyData.relativeVolumeCapped,
+      sessionDate:    spyData.sessionDate,
+      changeBasis,
     } : null,
-    sectors: enrichedSectors,
-    sectorCount: enrichedSectors.length,
+    sectors: withBasis,
+    sectorCount: withBasis.length,
     providers: ["Yahoo Finance (5-min ETF)", "Yahoo Finance (stock quotes)"],
     note: marketOpen
-      ? "Datos intraday en tiempo real (Yahoo Finance, ~2-5 min delay)"
-      : "Mercado cerrado — datos de última sesión disponibles",
+      ? "Datos intraday (Yahoo Finance, ~2-5 min delay) — variación desde la apertura"
+      : `Mercado cerrado — sesión ${sessionDate ?? "desconocida"}: variación apertura→cierre, no vs cierre anterior`,
   });
 }
 
@@ -322,9 +354,10 @@ async function handleEod(res) {
         return b.performance5d - a.performance5d;
       });
 
-    res.status(200).json({ ok: true, sectors, timestamp: new Date().toISOString() });
+    const ts = new Date().toISOString();
+    res.status(200).json({ ok: true, app: APP, endpoint: ENDPOINT, timestampUtc: ts, sectors, timestamp: ts });
   } catch (err) {
-    res.status(500).json({ ok: false, error: String(err?.message ?? err), sectors: [] });
+    res.status(500).json({ ok: false, app: APP, endpoint: ENDPOINT, timestampUtc: new Date().toISOString(), error: String(err?.message ?? err), sectors: [] });
   }
 }
 
@@ -333,6 +366,12 @@ async function handleEod(res) {
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const mode = req.query?.mode;
-  if (mode === "intraday") return handleIntraday(res);
+  if (mode === "intraday") {
+    try {
+      return await handleIntraday(res);
+    } catch (err) {
+      return res.status(500).json({ ok: false, app: APP, endpoint: ENDPOINT, timestampUtc: new Date().toISOString(), error: "INTERNAL_ERROR", detail: String(err?.message ?? err) });
+    }
+  }
   return handleEod(res);
 }

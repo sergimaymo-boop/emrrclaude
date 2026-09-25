@@ -5,6 +5,8 @@
  */
 import type { MarketRisk } from "../services/marketRiskRefresh";
 import { useIsNarrow } from "../hooks/useIsNarrow";
+import { isMarketOpen } from "../utils/marketHours";
+import { formatShortTime } from "../services/realDataRefresh";
 
 const EMOJI: Record<string, string> = { BAJO: "🟢", MEDIO: "🟡", ALTO: "🔴", UNKNOWN: "⚪" };
 
@@ -13,6 +15,13 @@ export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
   const accent = risk.color ?? "#64748b";
   const fmt = (v: number | null | undefined, d = 1) => (typeof v === "number" ? v.toFixed(d) : "—");
   const fmtPc = (v: number | null | undefined) => (typeof v === "number" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}%` : "—");
+  const usOpen = isMarketOpen("United States") === "OPEN";
+  const hasData = risk.loadState === "OK";
+  const freshness = !hasData
+    ? risk.loadState === "LOADING" ? "cargando…" : "sin dato"
+    : risk.refreshFailed
+      ? `SIN ACTUALIZAR · dato de ${formatShortTime(risk.fetchedAtUtc)}`
+      : usOpen ? "en vivo" : "mercado cerrado · último cierre";
 
   return (
     <section style={{
@@ -22,9 +31,9 @@ export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", background: `${accent}1a`, borderBottom: `1px solid ${accent}44` }}>
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.10em", textTransform: "uppercase", color: accent }}>
-          ⚡ Riesgo de mercado · HOY
+          ⚡ Riesgo de mercado · {usOpen ? "HOY" : "ÚLTIMO CIERRE"}
         </span>
-        <span style={{ fontSize: 8, fontWeight: 700, color: "#94a3b8" }}>tiempo real · no predice dirección</span>
+        <span style={{ fontSize: 8, fontWeight: 700, color: risk.refreshFailed ? "#eab308" : "#94a3b8", textAlign: "right" }}>{freshness} · no predice dirección</span>
       </div>
 
       <div style={{ display: "flex", flexDirection: isNarrow ? "column" : "row", alignItems: isNarrow ? "stretch" : "center", gap: isNarrow ? 10 : 18, padding: "12px 16px" }}>
@@ -44,7 +53,10 @@ export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
           <div style={{ fontSize: 11, color: "#e2e8f0", lineHeight: 1.5 }}>
             {risk.sharpDropProb != null ? (
               <>A este nivel, históricamente <b style={{ color: accent }}>~{risk.sharpDropProb}%</b> de los días sufren una <b>caída brusca (&gt;3%) en 5 días</b>.</>
-            ) : "Esperando datos de volatilidad…"}
+            ) : risk.loadState === "LOADING" ? "Esperando datos de volatilidad…" : "Sin dato de volatilidad: la fuente no respondió."}
+          </div>
+          <div style={{ fontSize: 8.5, color: "#64748b", marginTop: 3 }}>
+            Escala propia de este semáforo (VIX &lt;16 / 16-21 / &gt;21), distinta de la de la fila VIX de Indicadores (&lt;15 / 15-20 / &gt;20).
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }}>
             <Chip label="VIX" value={`${fmt(risk.vix)} (${fmtPc(risk.vixChange)})`} tone={accent} />

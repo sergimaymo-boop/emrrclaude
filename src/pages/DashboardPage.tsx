@@ -7,7 +7,6 @@ import { TechnicalHeader } from "../components/TechnicalHeader";
 import { Toast } from "../components/Toast";
 import {
   initialSystemStatus,
-  unavailableFearGreed,
   unavailableMasterIndicators,
   unavailableTop8,
 } from "../data/emptyDashboardData";
@@ -16,17 +15,20 @@ import {
   continueScanSnapshot,
   deriveDashboardDataMode,
   deriveIndicatorsDataMode,
+  fetchIntradayFlows,
   fetchLastScanSnapshot,
   fetchMasterIndicators,
   fetchVisibleTop8Quotes,
-  finalizeScanSnapshot,
+  formatShortDateTime,
   mergeMasterIndicators,
   mergeScanSnapshotUniverseStatus,
   mergeVisibleTop8Quotes,
   startScanSnapshot,
+  type ScanSnapshotResponse,
   updateSystemStatusForDataMode,
 } from "../services/realDataRefresh";
-import type { FearGreed, MasterIndicator, ScanState, SystemStatus, TimestampPair, Top8Asset } from "../types";
+import type { MasterIndicator, ScanState, SystemStatus, TimestampPair, Top8Asset } from "../types";
+import type { IndicatorFeedStatus } from "../components/MasterIndicatorsGrid";
 import { ERROR_SCORE_INPUT_INTEGRITY } from "../utils/operationalDataPolicy";
 import { refreshSystemMarketStatus, refreshTop8MarketStatus } from "../utils/systemStatus";
 import { createTimestampPair } from "../utils/time";
@@ -34,11 +36,12 @@ import {
   type MarketBreadthResult,
   fetchMarketBreadth,
   initialMarketBreadth,
+  markMarketBreadthFailed,
   runBreadthScan,
   enrichBreadthWithLiveQuotes,
 } from "../services/marketBreadthRefresh";
 import { MarketBreadthPanel } from "../components/MarketBreadthPanel";
-import { type MarketRisk, fetchMarketRisk, initialMarketRisk } from "../services/marketRiskRefresh";
+import { type MarketRisk, fetchMarketRisk, initialMarketRisk, markMarketRiskFailed } from "../services/marketRiskRefresh";
 import { MarketRiskGauge } from "../components/MarketRiskGauge";
 import { IntraDayFlowsPanel, type IntraDayFlowsState, initialFlowsState } from "../components/IntraDayFlowsPanel";
 import { type ScanPhase } from "../components/StickyMiniHeader";
@@ -71,6 +74,7 @@ const SCAN_STATE_STORAGE_KEY = "emrr_scan_state";
 const SESSION_CACHE_STORAGE_KEY = "emrr_session_cache";
 const SESSION_CACHE_TTL_MS = 4 * 60 * 60 * 1000;
 const MAX_AUTO_BATCH_RETRIES = 2;
+const RETURN_REFRESH_MS = 60_000;
 
 interface SessionCache {
   masterIndicators?: {
@@ -78,7 +82,7 @@ interface SessionCache {
     timestamp: TimestampPair;
     dataMode: SystemStatus["dashboardDataMode"];
   };
-  scanState?: Partial<ScanState>;
+  scanState?: Partial<ScanState> & { savedAtUtc?: string };
   top8Result?: {
     assets: Top8Asset[];
     timestamp: TimestampPair;
@@ -125,19 +129,29 @@ function storeScanState(scanState: Partial<ScanState>) {
   } catch { /* quota/modo privado: el scan sigue, solo se pierde la reanudación entre sesiones */ }
 }
 
+function isFreshUtc(utc: string | null | undefined): boolean {
+  if (!utc) return false;
+  const t = new Date(utc).getTime();
+  return Number.isFinite(t) && Date.now() - t <= SESSION_CACHE_TTL_MS;
+}
+
+// Caducidad POR ÍTEM, según la hora en que se guardó cada uno (antes sessionTimestamp se
+// reescribía en cada guardado y la caducidad de 4 h no llegaba a aplicarse nunca).
 function loadSessionCache(): SessionCache | null {
   try {
     const raw = window.localStorage.getItem(SESSION_CACHE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SessionCache;
-    const timestamp = new Date(parsed.sessionTimestamp);
-    if (Number.isNaN(timestamp.getTime())) return null;
-    if (Date.now() - timestamp.getTime() > SESSION_CACHE_TTL_MS) {
+    const cache: SessionCache = { sessionTimestamp: parsed.sessionTimestamp };
+    if (parsed.masterIndicators && isFreshUtc(parsed.masterIndicators.timestamp?.utc)) cache.masterIndicators = parsed.masterIndicators;
+    if (parsed.top8Result && isFreshUtc(parsed.top8Result.timestamp?.utc)) cache.top8Result = parsed.top8Result;
+    if (parsed.scanState && isFreshUtc(parsed.scanState.savedAtUtc)) cache.scanState = parsed.scanState;
+    if (!cache.masterIndicators && !cache.top8Result && !cache.scanState) {
       window.localStorage.removeItem(SESSION_CACHE_STORAGE_KEY);
       window.localStorage.removeItem(SCAN_STATE_STORAGE_KEY);
       return null;
     }
-    return parsed;
+    return cache;
   } catch {
     return null;
   }
@@ -166,8 +180,8 @@ function clearSessionCacheForNewScan() {
 
 export function DashboardPage({ onLogout }: DashboardPageProps) {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>(initialSystemStatus);
-  const [fearGreed, setFearGreed] = useState<FearGreed>(unavailableFearGreed);
   const [masterIndicators, setMasterIndicators] = useState<MasterIndicator[]>(unavailableMasterIndicators);
+  const [indicatorsFeed, setIndicatorsFeed] = useState<IndicatorFeedStatus>({ lastSuccessUtc: null, lastFetchFailed: false });
   const [top8, setTop8] = useState<Top8Asset[]>(unavailableTop8);
   const [scanState, setScanState] = useState<ScanState>({
     label: "Ready for SCAN FULL",
@@ -233,13 +247,25 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Amplitud — veredicto cacheado + precios en VIVO de la watchlist (el veredicto/ranking no cambia).
+  // Un fallo conserva el último veredicto bueno marcado SIN ACTUALIZAR (o "No disponible").
   async function loadMarketBreadth() {
+    let res: MarketBreadthResult;
     try {
-      const res = await fetchMarketBreadth();
-      setMarketBreadth(res);
-      const enriched = await enrichBreadthWithLiveQuotes(res);
-      setMarketBreadth(enriched);
-    } catch { /* conserva el estado actual */ }
+      res = await fetchMarketBreadth();
+    } catch (error) {
+      setMarketBreadth((prev) => markMarketBreadthFailed(prev, error instanceof Error ? error.message : undefined));
+      return;
+    }
+    setMarketBreadth(res);
+    try {
+      setMarketBreadth(await enrichBreadthWithLiveQuotes(res));
+    } catch { /* solo precios de la watchlist (no mostrada); el veredicto ya está aplicado */ }
+  }
+
+  function loadMarketRisk() {
+    fetchMarketRisk()
+      .then(setMarketRisk)
+      .catch(() => setMarketRisk((prev) => markMarketRiskFailed(prev)));
   }
 
   function showToast(message: string, tone: ToastState["tone"]) {
@@ -316,6 +342,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       .then((response) => {
         const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, response);
         setMasterIndicators(mergedIndicators.indicators);
+        setIndicatorsFeed({ lastSuccessUtc: new Date().toISOString(), lastFetchFailed: false });
         saveSessionCache({
           masterIndicators: {
             data: mergedIndicators.indicators,
@@ -334,8 +361,29 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         );
       })
       .catch(() => {
-        setMasterIndicators((current) => (current.length ? current : unavailableMasterIndicators));
+        // Se conserva el último dato bueno; la UI lo marca "SIN ACTUALIZAR · último dato hh:mm".
+        setIndicatorsFeed((current) => ({ ...current, lastFetchFailed: true }));
       });
+  }
+
+  function applyLastSavedSnapshot(snapshot: ScanSnapshotResponse, replaceTop8: boolean) {
+    setSystemStatus((current) => mergeScanSnapshotUniverseStatus(current, snapshot));
+    const lastTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
+    if (!replaceTop8 || lastTop8.length === 0) return;
+    setTop8(lastTop8);
+    // Refresca precios reales del Top 8 de la última sesión — evita DATA_UNAVAILABLE.
+    refreshVisibleQuotes(lastTop8);
+    const lastSessionScope = "GLOBAL_TOP8_FINAL" as const;
+    setScanState((current) => ({
+      ...current,
+      scanId: snapshot.scanId,
+      coveragePercent: snapshot.coveragePercent,
+      batchesTotal: snapshot.batchesTotal,
+      batchesCompleted: snapshot.batchesCompleted,
+      resultScope: lastSessionScope,
+      scanExecutionMode: lastSessionScope,
+      label: `LAST SESSION TOP 8 - ${formatShortDateTime(snapshot.scanCompletedAtUtc)}`,
+    }));
   }
 
   // Initialize push notifications on mount
@@ -346,8 +394,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
   useEffect(() => {
     const sessionCache = loadSessionCache();
     if (sessionCache?.masterIndicators?.data.length) {
+      const savedAt = sessionCache.masterIndicators.timestamp;
       const cachedIndicators = sessionCache.masterIndicators.data.map((indicator) => ({
         ...indicator,
+        // Etiqueta "CACHE dd/mm hh:mm" con la hora en que se guardó — nunca LIVE.
+        status: indicator.value === "N/A" ? indicator.status : "CACHE" as const,
+        timestamp: savedAt,
         dataMode: indicator.dataMode === "REAL" ? "LAST_SESSION" as const : indicator.dataMode,
         operationalBlockReasons: [
           ...new Set([...indicator.operationalBlockReasons, "LAST_SESSION_CACHE_REQUIRES_REFRESH"]),
@@ -365,6 +417,13 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
     if (sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100) {
       setTop8(sessionCache.top8Result.assets);
+      const cachedCompletedAt = sessionCache.top8Result.assets[0]?.scanCompletedAtUtc;
+      if (cachedCompletedAt) {
+        setSystemStatus((current) => ({
+          ...current,
+          lastScan: { utc: cachedCompletedAt, local: formatShortDateTime(cachedCompletedAt) },
+        }));
+      }
       // Refresca precios reales del Top 8 restaurado (caché) — evita DATA_UNAVAILABLE al cargar.
       refreshVisibleQuotes(sessionCache.top8Result.assets);
     }
@@ -396,39 +455,24 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     loadMasterIndicators();
 
     const hasTop8InSession = Boolean(sessionCache?.top8Result?.assets.length && sessionCache.scanState?.coveragePercent === 100);
-
-    // El TOP 8 SIEMPRE muestra el último scan 100% completado guardado en servidor
-    // cuando no hay uno en la sesión actual (petición del usuario: "que cargue bien
-    // todos los tickets" — antes el panel quedaba VACÍO durante el horario de mercado
-    // hasta pulsar SCAN FULL). Los precios se refrescan en vivo (refreshVisibleQuotes)
-    // y el label marca "LAST SESSION TOP 8 - fecha", así no se confunde con datos
-    // en vivo. Pulsar SCAN FULL recalcula el ranking con los mercados abiertos ahora.
-    if (!hasTop8InSession) {
-      fetchLastScanSnapshot()
-        .then((snapshot) => {
-          if (!snapshot) return;
-          const lastTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
-          if (lastTop8.length === 0) return;
-          setTop8(lastTop8);
-          // Refresca precios reales del Top 8 de la última sesión — evita DATA_UNAVAILABLE.
-          refreshVisibleQuotes(lastTop8);
-          setSystemStatus((current) => mergeScanSnapshotUniverseStatus(current, snapshot));
-          const lastSessionScope = "GLOBAL_TOP8_FINAL" as const;
-          setScanState((current) => ({
-            ...current,
-            scanId: snapshot.scanId,
-            coveragePercent: snapshot.coveragePercent,
-            batchesTotal: snapshot.batchesTotal,
-            batchesCompleted: snapshot.batchesCompleted,
-            resultScope: lastSessionScope,
-            scanExecutionMode: lastSessionScope,
-            label: `LAST SESSION TOP 8 - ${snapshot.scanCompletedAtUtc ? new Date(snapshot.scanCompletedAtUtc).toLocaleDateString() : "cached"}`,
-          }));
-        })
-        .catch(() => {
-          showToast("Sin datos de sesión anterior", "info");
-        });
-    }
+    // El último scan 100% completado guardado en servidor es la fuente de "Último scan"
+    // (su hora REAL de fin) y, si la sesión no trae Top 8, también del Top 8 mostrado.
+    fetchLastScanSnapshot()
+      .then((snapshot) => {
+        if (!snapshot) return;
+        if (storedScan) {
+          // Hay un scan parcial en curso: no pisar su cobertura; solo la hora del último completo.
+          const completedAt = snapshot.scanCompletedAtUtc;
+          if (completedAt) {
+            setSystemStatus((current) => ({ ...current, lastScan: { utc: completedAt, local: formatShortDateTime(completedAt) } }));
+          }
+          return;
+        }
+        applyLastSavedSnapshot(snapshot, !hasTop8InSession);
+      })
+      .catch(() => {
+        showToast("No se pudo cargar el último scan guardado (fallo de red o servidor)", "error");
+      });
   }, []);
 
   useEffect(() => {
@@ -455,6 +499,35 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       loadMasterIndicators();
     }, 4 * 60_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  // Vuelta a la app (iPhone en segundo plano): los intervals se congelan mientras está oculta,
+  // así que tras >60 s se refresca todo lo visible en vez de enseñar datos viejos como actuales.
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      const wasHiddenLong = hiddenAt !== null && Date.now() - hiddenAt > RETURN_REFRESH_MS;
+      hiddenAt = null;
+      if (!wasHiddenLong) return;
+      loadMasterIndicators();
+      loadMarketRisk();
+      loadMarketBreadth();
+      if (scanActiveRef.current || pausedScanRef.current) return;
+      fetchLastScanSnapshot()
+        .then((snapshot) => {
+          if (!snapshot) return;
+          const shownScanId = systemStatusRef.current.technical.universeStats.scanId;
+          applyLastSavedSnapshot(snapshot, snapshot.scanId !== shownScanId);
+        })
+        .catch(() => showToast("No se pudo consultar el último scan (fallo de red o servidor)", "error"));
+      if (top8Ref.current.length > 0) refreshVisibleQuotes(top8Ref.current);
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
   // Refresco periódico de las cotizaciones del Top 8 visible (precio + % desde
@@ -563,15 +636,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       await applyAndMaybeContinueSnapshot(snapshot, startedAt, true);
     }
 
-    if (snapshot.snapshotToken && snapshot.coveragePercent === 100) {
-      snapshot = await finalizeScanSnapshot(snapshot.snapshotToken);
-      await applySnapshotResult(Promise.resolve(snapshot), startedAt, {
-        keepScanning: false,
-        suppressToast: false,
-      });
-      return;
-    }
-
+    // No existe endpoint finalize: el propio start/continue que completa guarda en Redis.
     await applySnapshotResult(Promise.resolve(snapshot), startedAt, {
       keepScanning: false,
       suppressToast: false,
@@ -598,22 +663,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     let nextSnapshotToken: string | null = null;
     let nextScanLabel = "TOP 8 DATA UNAVAILABLE";
     let nextSnapshotFields: Partial<ScanState> = {};
+    let zeroCandidates = false;
 
     if (snapshotSettled.status === "fulfilled") {
       const snapshot = snapshotSettled.value;
       statusBase = mergeScanSnapshotUniverseStatus(statusBase, snapshot);
       nextTop8 = buildDashboardTop8FromScanSnapshot(snapshot);
-      // When a complete global scan produces 0 candidates (likely provider failures),
-      // fall back to the last valid Redis snapshot so the panel stays populated.
-      if (snapshot.isGlobalTop8Final && nextTop8.length === 0) {
-        try {
-          const fallback = await fetchLastScanSnapshot();
-          if (fallback) {
-            const fallbackTop8 = buildDashboardTop8FromScanSnapshot(fallback);
-            if (fallbackTop8.length > 0) nextTop8 = fallbackTop8;
-          }
-        } catch { /* keep nextTop8 = [] if fallback also fails */ }
-      }
+      // Scan completo con 0 candidatos: se muestra VACÍO y se dice. Nunca se cuela un scan
+      // anterior con el id/hora del nuevo.
+      zeroCandidates = snapshot.isGlobalTop8Final === true && nextTop8.length === 0;
       nextSnapshotToken = snapshot.snapshotToken ?? null;
       nextSnapshotFields = {
         scanId: snapshot.scanId,
@@ -637,7 +695,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           : snapshot.status === "ERROR"
             ? "ERROR"
             : "NO_REAL_DATA";
-      nextScanLabel = snapshot.isGlobalTop8Final
+      nextScanLabel = zeroCandidates
+        ? "Scan completo sin candidatos — TOP 8 vacío"
+        : snapshot.isGlobalTop8Final
         ? "GLOBAL TOP 8 FINAL completed"
         : snapshot.batchesCompleted > 0
           ? `TOP 8 PARTIAL DIAGNOSTIC - coverage ${snapshot.coveragePercent}%`
@@ -678,19 +738,15 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       }
     }
 
+    const indicatorsOk = masterIndicatorsResult.status === "fulfilled";
     if (masterIndicatorsResult.status === "fulfilled") {
       const mergedIndicators = mergeMasterIndicators(unavailableMasterIndicators, masterIndicatorsResult.value);
       nextIndicators = mergedIndicators.indicators;
       indicatorRealUpdate = mergedIndicators.lastRealDataUpdate;
+      setIndicatorsFeed({ lastSuccessUtc: new Date().toISOString(), lastFetchFailed: false });
     } else {
-      nextIndicators = unavailableMasterIndicators.map((indicator) => ({
-        ...indicator,
-        dataMode: "DATA_UNAVAILABLE",
-        provider: "none",
-        source: "none",
-        cacheStatus: "ERROR",
-        status: "NOT_AVAILABLE",
-      }));
+      // Se conserva el último dato bueno, marcado SIN ACTUALIZAR por la UI.
+      setIndicatorsFeed((current) => ({ ...current, lastFetchFailed: true }));
     }
 
     const lastRealDataUpdate = latestTimestamp(quoteRealUpdate, indicatorRealUpdate, systemStatusRef.current.lastRealDataUpdate);
@@ -705,26 +761,26 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     );
 
     setSystemStatus(nextSystemStatus);
-    setFearGreed({
-      ...unavailableFearGreed,
-      timestamp: startedAt,
-      operationalBlockReasons: ["NO_APPROVED_REAL_FEAR_GREED_SOURCE"],
-    });
     setMasterIndicators(nextIndicators);
     setTop8(nextTop8);
     const nextCachedScanState = {
       ...nextSnapshotFields,
+      savedAtUtc: new Date().toISOString(),
       label: nextScanLabel,
       lastRealDataUpdate,
       lastScanClicked: startedAt,
       scanExecutionMode: nextScanExecutionMode,
     };
     saveSessionCache({
-      masterIndicators: {
-        data: nextIndicators,
-        timestamp: createTimestampPair(),
-        dataMode: deriveIndicatorsDataMode(nextIndicators),
-      },
+      ...(indicatorsOk
+        ? {
+            masterIndicators: {
+              data: nextIndicators,
+              timestamp: createTimestampPair(),
+              dataMode: deriveIndicatorsDataMode(nextIndicators),
+            },
+          }
+        : {}),
       scanState: nextCachedScanState,
       top8Result:
         (nextSnapshotFields.coveragePercent ?? 0) === 100 && nextTop8.length > 0
@@ -749,6 +805,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       showToast(
         nextScanExecutionMode === "ERROR"
           ? "Scan snapshot failed - DATA UNAVAILABLE"
+          : zeroCandidates
+            ? "Scan completado con 0 candidatos — el TOP 8 queda vacío (no se muestra un scan anterior)"
           : nextScanExecutionMode === "GLOBAL_TOP8_FINAL"
             ? "Global TOP 8 final completed"
             : "Partial diagnostic saved - continue scan to reach 100% coverage",
@@ -763,21 +821,23 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   // ─── SCAN ALL — FLOWS en paralelo con FULL, luego AMPLITUD (consolidado) ──
 
-  async function runFlows() {
+  // Devuelve nº de sectores o null si falló. Un fallo conserva el último dato bueno
+  // (status ERROR → el panel lo marca "SIN ACTUALIZAR · dato de …").
+  async function runFlows(): Promise<number | null> {
     setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
     try {
-      const res  = await fetch("/api/sector-leaders-data?mode=intraday");
-      const data = await res.json();
-      if (data.ok) {
-        setFlowsState({
-          status: "DONE", scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
-          marketOpen: data.marketOpen ?? false, spy: data.spy ?? null,
-          sectors: data.sectors ?? [], note: data.note ?? "",
-        });
-      } else {
-        setFlowsState(prev => ({ ...prev, status: "ERROR" }));
-      }
-    } catch { setFlowsState(prev => ({ ...prev, status: "ERROR" })); }
+      const data = await fetchIntradayFlows<IntraDayFlowsState["spy"], IntraDayFlowsState["sectors"][number]>();
+      if (!data.ok) throw new Error(data.error ?? "FLOWS_UNAVAILABLE");
+      setFlowsState({
+        status: "DONE", scannedAt: data.scannedAtUtc ?? null,
+        marketOpen: data.marketOpen ?? false, spy: data.spy ?? null,
+        sectors: data.sectors ?? [], note: data.note ?? "",
+      });
+      return data.sectors?.length ?? 0;
+    } catch {
+      setFlowsState(prev => ({ ...prev, status: "ERROR" }));
+      return null;
+    }
   }
 
   // AUDIT FIX (HIGH): runFull SIN try/catch dejaba isScanning=true para siempre si
@@ -894,10 +954,12 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         setO26ScanProgress(0);
         const breadth = await runBreadthScan((coverage) => { setO26ScanProgress(coverage); });
         setMarketBreadth(breadth);
-        enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => {});
+        enrichBreadthWithLiveQuotes(breadth).then(setMarketBreadth).catch(() => { /* solo precios de watchlist no mostrada */ });
         loadOptimal2026();
         breadthOk = true;
-      } catch { /* los paneles conservan su último estado cacheado */ }
+      } catch {
+        setMarketBreadth((prev) => markMarketBreadthFailed(prev));
+      }
       finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
     }
 
@@ -936,7 +998,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
       const breadth = await runBreadthScan((coverage) => setO26ScanProgress(coverage));
       setMarketBreadth(breadth); // el scan manual también actualiza el panel de Amplitud
       await loadOptimal2026();
-    } catch { /* panel conserva último estado */ }
+    } catch {
+      setMarketBreadth((prev) => markMarketBreadthFailed(prev));
+    }
     finally { setO26ScanProgress(null); o26ScanActiveRef.current = false; }
   }, [loadOptimal2026]);
 
@@ -946,24 +1010,9 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
     if (flowsState.status === "SCANNING") return;
     const savedScroll = window.scrollY;
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: "instant" }));
-    setFlowsState(prev => ({ ...prev, status: "SCANNING" }));
-    try {
-      const res = await fetch("/api/sector-leaders-data?mode=intraday");
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error ?? "Flows scan failed");
-      setFlowsState({
-        status: "DONE",
-        scannedAt: data.scannedAtUtc ?? new Date().toISOString(),
-        marketOpen: data.marketOpen ?? false,
-        spy: data.spy ?? null,
-        sectors: data.sectors ?? [],
-        note: data.note ?? "",
-      });
-      showToast(`Flujos detectados — ${data.sectors?.length ?? 0} sectores analizados`, "success");
-    } catch (error) {
-      setFlowsState(prev => ({ ...prev, status: "ERROR" }));
-      showToast("Error en scan de flujos", "error");
-    }
+    const sectors = await runFlows();
+    if (sectors === null) showToast("Error en scan de flujos — se mantiene el último dato", "error");
+    else showToast(`Flujos detectados — ${sectors} sectores analizados`, "success");
   }
 
   // ── Flujos de Capital — carga al montar y refresca cada 5 min ───────────────
@@ -991,10 +1040,8 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
   // ── Market Risk — semáforo de riesgo en tiempo real (¿entrar HOY?). Refresco frecuente. ──
   useEffect(() => {
-    fetchMarketRisk().then(setMarketRisk).catch(() => {});
-    const interval = setInterval(() => {
-      fetchMarketRisk().then(setMarketRisk).catch(() => {});
-    }, 3 * 60 * 1000); // 3 min
+    loadMarketRisk();
+    const interval = setInterval(loadMarketRisk, 3 * 60 * 1000); // 3 min
     return () => clearInterval(interval);
   }, []);
 
@@ -1074,7 +1121,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
 
       {/* ── MÓDULO 1 — FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
       <ErrorBoundary inline label="Fear & Greed">
-        <FearGreedPanel fearGreed={fearGreed} masterIndicators={masterIndicators} />
+        <FearGreedPanel masterIndicators={masterIndicators} indicatorsFeed={indicatorsFeed} />
       </ErrorBoundary>
 
       {/* ── MÓDULO 2 — RIESGO DE MERCADO HOY — semáforo en tiempo real (¿entrar hoy?) ── */}

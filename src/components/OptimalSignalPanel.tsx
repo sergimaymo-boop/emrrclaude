@@ -214,7 +214,7 @@ export function evaluateOptimalSignal(
     const sectorKey = STOCK_SECTOR[bestCandidate.ticker.toUpperCase()];
     if (sectorKey) {
       const sec = (flowsState.sectors ?? []).find(s => s.key === sectorKey);
-      if (sec && sec.intradayChange > flowThreshold) {
+      if (sec && sec.intradayChange != null && sec.intradayChange > flowThreshold) {
         matchedSector = sec; sectorVerified = true;
       }
     }
@@ -231,7 +231,7 @@ export function evaluateOptimalSignal(
       : !bestCandidate
         ? "Esperando ticket de intersección"
         : matchedSector
-          ? `${matchedSector.name}  +${matchedSector.intradayChange.toFixed(2)}%${sessionLabel}`
+          ? `${matchedSector.name}  +${matchedSector.intradayChange?.toFixed(2) ?? "—"}% desde apertura${sessionLabel}`
           : STOCK_SECTOR[bestCandidate?.ticker?.toUpperCase() ?? ""]
             ? `Sector de ${bestCandidate.ticker} sin flujo positivo hoy`
             : `${bestCandidate.ticker} — sector confirmado por los 2 motores (flujo pendiente)`,

@@ -24,9 +24,19 @@ export interface RallyRunway {
   reasons: string[];
 }
 
-export interface RallyMetrics {
+/** Sesión a la que pertenece el último precio del ticker (contrato backend 25-sep-2026). */
+export interface RallySessionFields {
+  /** 'YYYY-MM-DD' de la sesión del último precio. */
+  lastBarDate?: string | null;
+  /** true = esa sesión seguía abierta: el precio es intradía EN CURSO, no un cierre. */
+  lastBarForming?: boolean;
+  /** Sesiones posteriores a lastBarDate que la fuente reconoce pero no pudo rellenar. */
+  missingSessions?: string[];
+}
+
+export interface RallyMetrics extends RallySessionFields {
   lastClose: number;
-  /** Rentabilidad de la sesión en el momento del scan (último cierre vs anterior), %. Solo informativo. */
+  /** Rentabilidad de la sesión en el momento del scan (último cierre vs anterior), %. null = hueco del proveedor. */
   dayChangePct?: number | null;
   ema20: number | null;
   ema50: number | null;
@@ -48,9 +58,22 @@ export interface RallyMetrics {
 
 export type MarketRegime = "BULLISH" | "BEARISH" | "UNKNOWN";
 
+const GET_TIMEOUT_MS = 8000;
+
+/** GET con AbortController (8 s). Lanza en fallo de red/timeout; devuelve la Response tal cual. */
+export async function getWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), GET_TIMEOUT_MS);
+  try {
+    return await fetch(url, { method: "GET", headers: { accept: "application/json" }, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function fetchMarketRegime(): Promise<MarketRegime> {
   try {
-    const res = await fetch("/api/market-regime", { method: "GET", headers: { accept: "application/json" } });
+    const res = await getWithTimeout("/api/market-regime");
     if (!res.ok) return "UNKNOWN";
     const data = await res.json();
     return (data.regime as MarketRegime) ?? "UNKNOWN";
@@ -153,6 +176,8 @@ export interface RallyScanResponse {
   rallyToken?: string | null;
   top10?: RallyAsset[];
   activeMarkets?: string[];
+  /** Tickers cuya descarga de precios falló durante el scan (>0 → top-10 posiblemente incompleto). */
+  tickersFallidos?: number;
   error?: string;
   message?: string;
 }
@@ -200,19 +225,24 @@ export async function continueRallyScan(rallyToken: string): Promise<RallyScanRe
   });
 }
 
+/**
+ * Último scan persistido. Devuelve null SOLO si el servidor confirma que no hay
+ * ninguno (404 NO_STORED_RALLY_SNAPSHOT); cualquier otro fallo (red, timeout,
+ * 5xx, JSON inválido) LANZA, para que la UI diga "no se pudo cargar" en vez de
+ * "sin escaneo".
+ */
+export async function fetchLastScanFrom(url: string): Promise<RallyScanResponse | null> {
+  const res = await getWithTimeout(url);
+  let data: { ok?: boolean; error?: string } | null = null;
+  try { data = await res.json(); } catch { data = null; }
+  if (res.status === 404 && data?.error === "NO_STORED_RALLY_SNAPSHOT") return null;
+  if (!res.ok || !data) throw new Error(`${url}_HTTP_${res.status}`);
+  if (!data.ok) throw new Error(`${url}_${data.error ?? "NOT_OK"}`);
+  return data as RallyScanResponse;
+}
+
 export async function fetchLastRallyScan(): Promise<RallyScanResponse | null> {
-  try {
-    const res = await fetch("/api/rally-scan/last", {
-      method: "GET",
-      headers: { accept: "application/json" },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.ok) return null;
-    return data as RallyScanResponse;
-  } catch {
-    return null;
-  }
+  return fetchLastScanFrom("/api/rally-scan/last");
 }
 
 export function initialRallyState(): RallyState {
@@ -247,13 +277,125 @@ export interface RallyNewsItem {
   publishedAtUtc: string;
 }
 
-export async function fetchRallyNews(): Promise<Record<string, RallyNewsItem | null>> {
+/** failed=true → la fuente de noticias falló: NO equivale a "sin motivo". */
+export interface RallyNewsResult {
+  failed: boolean;
+  news: Record<string, RallyNewsItem | null>;
+}
+
+export async function fetchNewsFrom(url: string): Promise<RallyNewsResult> {
   try {
-    const res = await fetch("/api/rally-scan/news", { method: "GET", headers: { accept: "application/json" } });
-    if (!res.ok) return {};
+    const res = await getWithTimeout(url);
+    if (!res.ok) return { failed: true, news: {} };
     const data = await res.json();
-    return data?.ok && data.news && typeof data.news === "object" ? data.news : {};
+    if (!data?.ok || !data.news || typeof data.news !== "object") return { failed: true, news: {} };
+    return { failed: false, news: data.news };
   } catch {
-    return {};
+    return { failed: true, news: {} };
   }
+}
+
+export async function fetchRallyNews(): Promise<RallyNewsResult> {
+  return fetchNewsFrom("/api/rally-scan/news");
+}
+
+// ── Honestidad del dato (25-sep-2026): antigüedad del scan y sesión de los precios ──
+
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const TZ = "Atlantic/Canary";
+
+/** 'YYYY-MM-DD' → '25-sep'. */
+export function formatSessionDate(iso: string | null | undefined): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return "—";
+  return `${iso.slice(8, 10)}-${MESES[Number(iso.slice(5, 7)) - 1] ?? "?"}`;
+}
+
+/** Fecha 'YYYY-MM-DD' de un instante en hora de Canarias. */
+function canaryDay(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
+export interface ScanAge {
+  /** "25/09 14:32" en hora de Canarias. */
+  when: string;
+  /** "hace 3 h" */
+  age: string;
+  /** Más de 1 día hábil (L-V) transcurrido desde el día del scan. */
+  stale: boolean;
+}
+
+export function scanAgeInfo(scanCompletedAtUtc: string | null | undefined, now: Date = new Date()): ScanAge | null {
+  if (!scanCompletedAtUtc) return null;
+  const t = new Date(scanCompletedAtUtc);
+  if (Number.isNaN(t.getTime())) return null;
+  const when = t.toLocaleString("es-ES", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const mins = Math.max(0, Math.round((now.getTime() - t.getTime()) / 60000));
+  const age = mins < 60 ? `hace ${mins} min` : mins < 48 * 60 ? `hace ${Math.round(mins / 60)} h` : `hace ${Math.round(mins / 1440)} d`;
+  // Días hábiles transcurridos: L-V estrictamente posteriores al día del scan hasta hoy (inclusive).
+  const start = new Date(`${canaryDay(t)}T12:00:00Z`);
+  const end = new Date(`${canaryDay(now)}T12:00:00Z`);
+  let weekdays = 0;
+  for (let d = new Date(start); d < end && weekdays < 10;) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) weekdays++;
+  }
+  return { when, age, stale: weekdays > 1 };
+}
+
+export interface SessionSummary {
+  /** Sesión mayoritaria de los precios del top-10 (null si el backend no la informa). */
+  date: string | null;
+  /** La sesión mayoritaria seguía abierta en el momento del scan. */
+  forming: boolean;
+  /** Filas sin dato de la última sesión en la fuente. */
+  missingCount: number;
+}
+
+type WithSession = { metrics: RallySessionFields | null };
+
+export function summarizeSessions(assets: WithSession[]): SessionSummary {
+  const counts = new Map<string, { n: number; forming: number }>();
+  let missingCount = 0;
+  for (const a of assets) {
+    const m = a.metrics;
+    if (m?.missingSessions?.length) missingCount++;
+    if (!m?.lastBarDate) continue;
+    const c = counts.get(m.lastBarDate) ?? { n: 0, forming: 0 };
+    c.n++;
+    if (m.lastBarForming) c.forming++;
+    counts.set(m.lastBarDate, c);
+  }
+  let date: string | null = null;
+  let best = { n: 0, forming: 0 };
+  for (const [k, v] of counts) if (v.n > best.n || (v.n === best.n && date != null && k > date)) { date = k; best = v; }
+  return { date, forming: best.n > 0 && best.forming * 2 >= best.n, missingCount };
+}
+
+export interface RowSessionNote {
+  /** El % del día no es fiable para esta fila (hueco de la fuente) → pintar "—". */
+  missing: boolean;
+  /** Etiqueta corta si la fila difiere de la sesión mayoritaria (o le falta el dato). */
+  tag: string | null;
+  /** Explicación completa. */
+  detail: string | null;
+}
+
+export function rowSessionNote(m: RallySessionFields | null | undefined, summary: SessionSummary): RowSessionNote {
+  if (m?.missingSessions?.length) {
+    return {
+      missing: true,
+      tag: "SIN DATO HOY",
+      detail: `Sin dato de la sesión de hoy en la fuente (falta la del ${m.missingSessions.map(formatSessionDate).join(", ")}): el % del día no se puede calcular. Último precio disponible: sesión del ${formatSessionDate(m.lastBarDate)}.`,
+    };
+  }
+  if (!m?.lastBarDate || !summary.date) return { missing: false, tag: null, detail: null };
+  const forming = !!m.lastBarForming;
+  if (m.lastBarDate === summary.date && forming === summary.forming) return { missing: false, tag: null, detail: null };
+  const estado = forming ? "en curso" : "al cierre";
+  return {
+    missing: false,
+    tag: `SES. ${formatSessionDate(m.lastBarDate).toUpperCase()}${forming ? " EN CURSO" : ""}`,
+    detail: `Precio y % de la sesión del ${formatSessionDate(m.lastBarDate)} (${estado}), distinta de la del resto del top-10.`,
+  };
 }

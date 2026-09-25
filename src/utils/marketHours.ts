@@ -157,21 +157,56 @@ function marketGroup(exchange: string): MarketGroup {
   return "UNKNOWN";
 }
 
+// Horario de verano europeo (UE y Reino Unido): del último domingo de marzo al último
+// domingo de octubre, a las 01:00 UTC (25-sep-2026: antes el horario europeo era fijo
+// en UTC y marcaba ABIERTO una hora de más cada día — Londres en verano, el continente
+// en invierno).
+function isEuDaylightSavingTime(date: Date): boolean {
+  const year = date.getUTCFullYear();
+  const start = new Date(lastWeekdayUtc(year, 2, 0).getTime() + 60 * MINUTE);
+  const end = new Date(lastWeekdayUtc(year, 9, 0).getTime() + 60 * MINUTE);
+  return date >= start && date < end;
+}
+
+// Cierres anticipados NYSE a las 13:00 ET: 3 de julio (si es laborable y el 4 no cae en
+// sábado), día siguiente a Thanksgiving y Nochebuena.
+function isUsEarlyClose(date: Date): boolean {
+  const y = date.getUTCFullYear();
+  const key = ymdUtc(date);
+  const thanksgiving = nthWeekdayUtc(y, 10, 4, 4);
+  const early = new Set<string>([ymdUtc(new Date(thanksgiving.getTime() + DAY))]);
+  const july3 = new Date(Date.UTC(y, 6, 3));
+  if (july3.getUTCDay() >= 1 && july3.getUTCDay() <= 4) early.add(ymdUtc(july3));
+  const dec24 = new Date(Date.UTC(y, 11, 24));
+  if (dec24.getUTCDay() >= 1 && dec24.getUTCDay() <= 5) early.add(ymdUtc(dec24));
+  return early.has(key);
+}
+
 function isUnitedStatesOpen(date: Date): MarketHoursStatus {
   if (isWeekendUtc(date) || isUnitedStatesHoliday(date)) return "CLOSED";
-  const openMinute = isUsDaylightSavingTime(date) ? 13 * 60 + 30 : 14 * 60 + 30;
-  const closeMinute = isUsDaylightSavingTime(date) ? 20 * 60 : 21 * 60;
+  const dst = isUsDaylightSavingTime(date);
+  const openMinute = dst ? 13 * 60 + 30 : 14 * 60 + 30;
+  const closeMinute = isUsEarlyClose(date) ? (dst ? 17 * 60 : 18 * 60) : dst ? 20 * 60 : 21 * 60;
   return betweenMinutes(minutesUtc(date), openMinute, closeMinute) ? "OPEN" : "CLOSED";
 }
 
+// Xetra/Euronext/Milán/BME: 09:00–17:30 hora local. Xetra y Milán cierran el 24 y 31 de
+// diciembre (Euronext abre media sesión): se da el grupo por cerrado esos días.
 function isContinentalEuropeOpen(date: Date): MarketHoursStatus {
   if (isWeekendUtc(date) || isContinentalEuropeHoliday(date)) return "CLOSED";
-  return betweenMinutes(minutesUtc(date), 7 * 60, 15 * 60 + 30) ? "OPEN" : "CLOSED";
+  const md = ymdUtc(date).slice(5);
+  if (md === "12-24" || md === "12-31") return "CLOSED";
+  const open = isEuDaylightSavingTime(date) ? 7 * 60 : 8 * 60;
+  return betweenMinutes(minutesUtc(date), open, open + 8 * 60 + 30) ? "OPEN" : "CLOSED";
 }
 
+// LSE: 08:00–16:30 hora de Londres; 24 y 31 de diciembre cierra a las 12:30.
 function isLseOpen(date: Date): MarketHoursStatus {
   if (isWeekendUtc(date) || isLseHoliday(date)) return "CLOSED";
-  return betweenMinutes(minutesUtc(date), 8 * 60, 16 * 60 + 30) ? "OPEN" : "CLOSED";
+  const open = isEuDaylightSavingTime(date) ? 7 * 60 : 8 * 60;
+  const md = ymdUtc(date).slice(5);
+  const close = md === "12-24" || md === "12-31" ? open + 4 * 60 + 30 : open + 8 * 60 + 30;
+  return betweenMinutes(minutesUtc(date), open, close) ? "OPEN" : "CLOSED";
 }
 
 export function isMarketOpen(exchange: string, date = new Date()): MarketHoursStatus {

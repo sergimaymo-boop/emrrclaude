@@ -59,11 +59,13 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
   const amplitud = { analizados: 0, positivos: 0 };   // observable de salud del mercado
 
   // Process ALL assets in parallel — critical to stay within 10s Vercel limit
+  let fallidos = 0;   // tickers cuya descarga falló: no desaparecen en silencio
   const results = await Promise.all(
     batch.map(async (asset) => {
       try {
         const histResult = await fetchEodhdHistoricalBars(asset.providerSymbol, { fromDate: null });
-        if (!histResult.ok || histResult.bars.length < 200) return null;   // LAB-M189: 189+10+1
+        if (!histResult.ok) { fallidos++; return null; }
+        if (histResult.bars.length < 200) return null;   // LAB-M189: 189+10+1
 
         const rallyResult = calculateRallyScore({
           bars: histResult.bars,
@@ -71,6 +73,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           spreadPercent: null,
           region: asset.region ?? (asset.providerSymbol.endsWith(".US") ? "USA" : "Europe"),
           gapDates: histResult.gapDates,
+          lastBarForming: histResult.lastBarForming,
         });
 
         // AMPLITUD (4-sep-2026): se cuenta cada ticker con histórico suficiente y si
@@ -107,6 +110,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
           scanId: null,
         };
       } catch {
+        fallidos++;
         return null;
       }
     })
@@ -117,6 +121,7 @@ export async function runRallyBatch({ eligibleAssets, batchIndex, batchSize, exi
   return {
     candidates: mergeRallyCandidates(existingCandidates, newCandidates),
     providerCalls: batch.length,
+    fallidos,
     amplitud,
   };
 }

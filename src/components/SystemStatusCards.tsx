@@ -11,10 +11,11 @@ function color(value: string): string {
   return "#9ca3af";
 }
 
-// Valores que con mercado cerrado NO son errores reales: la política marca los datos
-// operativos como no-real-time (correcto para bloquear EXEC), pero el scan de cierre
-// completó bien — mostrar "ERROR" en rojo sería un falso negativo alarmante.
-const CLOSED_MASKABLE = new Set(["ERROR", "OFFLINE", "DATA_UNAVAILABLE", "EMPTY", "BLOCKED"]);
+// Con mercado cerrado la política marca los datos operativos como no-real-time (correcto para
+// bloquear EXEC); SOLO esos estados "no disponible" se presentan como CIERRE. ERROR y OFFLINE
+// son fallos reales y NUNCA se enmascaran.
+const CLOSED_MASKABLE = new Set(["DATA_UNAVAILABLE", "EMPTY", "BLOCKED"]);
+const REAL_FAILURES = new Set(["ERROR", "OFFLINE"]);
 
 function Row({ label, value, c }: { label: string; value: string; c?: string }) {
   return (
@@ -31,10 +32,11 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
   const eu = systemStatus.marketMode === "EU_OPEN" || systemStatus.marketMode === "BOTH_OPEN" ? "OPEN" : "CLOSED";
   const us = systemStatus.marketMode === "US_OPEN" || systemStatus.marketMode === "BOTH_OPEN" ? "OPEN" : "CLOSED";
 
-  // Mercados cerrados + scan completo = modo CIERRE: los cálculos usan el último cierre
-  // (correcto y esperado). Solo remapea la PRESENTACIÓN de estados alarmantes; la política
-  // operativa (EXEC bloqueado sin mercado abierto) queda intacta.
-  const closedOk = eu === "CLOSED" && us === "CLOSED" && (u.coveragePercent ?? 0) === 100 && u.universeDiscovered > 0;
+  // Mercados cerrados + scan completo + SIN fallos reales = modo CIERRE (solo presentación;
+  // la política operativa — EXEC bloqueado sin mercado abierto — queda intacta).
+  const hasRealFailure = [systemStatus.apiStatus, systemStatus.operationalDataStatus, systemStatus.cache, systemStatus.dashboardDataMode]
+    .some((v) => REAL_FAILURES.has(v));
+  const closedOk = !hasRealFailure && eu === "CLOSED" && us === "CLOSED" && (u.coveragePercent ?? 0) === 100 && u.universeDiscovered > 0;
   const disp = (v: string) => (closedOk && CLOSED_MASKABLE.has(v) ? "CIERRE" : v);
 
   return (
@@ -51,7 +53,7 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
         {closedOk && (
           <div style={{ margin: "0 0 6px", padding: "5px 8px", background: "rgba(234,179,8,0.07)", border: "1px solid rgba(234,179,8,0.2)", borderRadius: 6, fontSize: 9, color: "#eab308", fontWeight: 600, lineHeight: 1.5 }}>
             ◉ Mercados cerrados — scan completado con datos del ÚLTIMO CIERRE (correcto).
-            Los estados en ámbar indican modo cierre, no fallos.
+            Sin fallos detectados: los estados en ámbar indican modo cierre.
           </div>
         )}
         <Row label="API Status"      value={disp(systemStatus.apiStatus)} />
@@ -80,7 +82,7 @@ export function SystemStatusCards({ systemStatus }: SystemStatusCardsProps) {
         <Row label="EU"              value={eu} />
         <Row label="EEUU"            value={us} />
         <Row label="Actualizado"     value={systemStatus.updatedAt.local} c="#6b7280" />
-        <Row label="Último scan"     value={systemStatus.lastScan.local} c="#6b7280" />
+        <Row label="Último scan"     value={systemStatus.lastScan?.local || "—"} c="#6b7280" />
 
         {/* ── Debug (solo si hay bloqueos) — en modo CIERRE es informativo (ámbar), no alarma ── */}
         {systemStatus.operationalBlockReasons?.length > 0 && (

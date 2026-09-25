@@ -96,7 +96,7 @@ async function handleStart(req, res) {
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
 
-  const { candidates, providerCalls } = await runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
+  const { candidates, providerCalls, fallidos: tickersFallidos } = await runRallyBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
   const batchesCompleted = 1;
   const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
   const isComplete = batchesCompleted >= batchesTotal;
@@ -104,14 +104,14 @@ async function handleStart(req, res) {
   const top10 = assignSuggestedWeights(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
-    await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls });
+    await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls, tickersFallidos });
   }
 
-  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length });
+  const rallyToken = encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length, tickersFallidos });
   const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
   const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, tickersFallidos, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_SCAN_START');
 }
 
 // ─── continue handler ─────────────────────────────────────────────────────────
@@ -145,7 +145,8 @@ async function handleContinue(req, res) {
     exchange: ticker.split('.').slice(1).join('.'), currency: ticker.includes('.US') ? 'USD' : 'EUR',
   }));
   const spyBars = await fetchSpyBars();
-  const { candidates, providerCalls: newCalls } = await runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+  const { candidates, providerCalls: newCalls, fallidos: fallidosLote } = await runRallyBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+  const tickersFallidos = (state.tickersFallidos ?? 0) + (fallidosLote ?? 0);
 
   const newBatchesCompleted = batchesCompleted + 1;
   const newCoveragePercent  = Math.round((newBatchesCompleted / batchesTotal) * 100);
@@ -155,14 +156,14 @@ async function handleContinue(req, res) {
   const top10 = assignSuggestedWeights(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
-    await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls });
+    await saveLastRallySnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls, tickersFallidos });
   }
 
-  const newToken = isComplete ? null : encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length });
+  const newToken = isComplete ? null : encodeToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length, tickersFallidos });
   const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
   const signingWarning = tokenSigning === 'UNSIGNED_FALLBACK' ? 'SCAN_SNAPSHOT_SIGNING_SECRET no configurada — tokens sin firma HMAC (fallback compat). Configúrala en Vercel para blindar la continuación.' : undefined;
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_LEADERS_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, tickersFallidos, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, signingWarning, top10, message: isComplete ? 'Rally Leaders final.' : `Rally scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_SCAN_CONTINUE');
 }
 
 // ─── last handler ─────────────────────────────────────────────────────────────
@@ -220,20 +221,20 @@ async function handleTestStart(req, res) {
   const batchesTotal = Math.ceil(eligibleAssets.length / BATCH_SIZE);
   const universeHash = Buffer.from(eligibleAssets.map(a => a.providerSymbol).join(',')).toString('base64url').slice(0, 16);
 
-  const { candidates, providerCalls, amplitud } = await runRallyTestBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
+  const { candidates, providerCalls, amplitud, fallidos: tickersFallidos } = await runRallyTestBatch({ eligibleAssets, batchIndex: 0, batchSize: BATCH_SIZE, existingCandidates: [], spyBars });
   const batchesCompleted = 1;
   const coveragePercent  = Math.round((batchesCompleted / batchesTotal) * 100);
   const isComplete = batchesCompleted >= batchesTotal;
   const top10 = assignSuggestedWeightsTest(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
-    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls, amplitud });
+    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleAssets.length, actualProviderCalls: providerCalls, amplitud, tickersFallidos });
   }
 
-  const rallyToken = encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length, amplitud });
+  const rallyToken = encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchSize: BATCH_SIZE, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, eligibleTickers: eligibleAssets.map(a => a.providerSymbol), topCandidates: top10, actualProviderCalls: providerCalls, spyBarsLength: spyBars.length, amplitud, tickersFallidos });
   const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, top10, amplitud, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_TEST_START');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleAssets.length, batchesTotal, batchesCompleted, nextBatchIndex: isComplete ? null : 1, coveragePercent, actualProviderCalls: providerCalls, isRallyFinal: isComplete, rallyToken: isComplete ? null : rallyToken, tokenSigning, top10, amplitud, tickersFallidos, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch 1/${batchesTotal} complete.` }, 'RALLY_TEST_START');
 }
 
 async function handleTestContinue(req, res) {
@@ -263,7 +264,8 @@ async function handleTestContinue(req, res) {
   const spyBars = await fetchSpyBarsTest();
   // amplitud acumulada de los lotes anteriores (viene en el token de test)
   const amplitudPrevia = state.amplitud ?? { analizados: 0, positivos: 0 };
-  const { candidates, providerCalls: newCalls, amplitud: amplitudLote } = await runRallyTestBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+  const { candidates, providerCalls: newCalls, amplitud: amplitudLote, fallidos: fallidosLote } = await runRallyTestBatch({ eligibleAssets, batchIndex: nextBatchIndex, batchSize, existingCandidates: topCandidates ?? [], spyBars });
+  const tickersFallidos = (state.tickersFallidos ?? 0) + (fallidosLote ?? 0);
   const amplitud = {
     analizados: amplitudPrevia.analizados + (amplitudLote?.analizados ?? 0),
     positivos:  amplitudPrevia.positivos  + (amplitudLote?.positivos  ?? 0),
@@ -276,13 +278,13 @@ async function handleTestContinue(req, res) {
   const top10 = assignSuggestedWeightsTest(candidates.map((c, i) => ({ ...c, rank: i + 1, scanId })));
 
   if (isComplete) {
-    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls, amplitud });
+    await saveLastRallyTestSnapshot({ ok: true, scanId, scanStartedAtUtc, scanCompletedAtUtc: new Date().toISOString(), coveragePercent: 100, isRallyFinal: true, top10, universeHash, activeMarkets, universeCount: eligibleTickers.length, actualProviderCalls: totalCalls, amplitud, tickersFallidos });
   }
 
-  const newToken = isComplete ? null : encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length, amplitud });
+  const newToken = isComplete ? null : encodeTestToken({ scanId, scanStartedAtUtc, universeHash, activeMarkets, batchSize, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, eligibleTickers, topCandidates: top10, actualProviderCalls: totalCalls, spyBarsLength: spyBars.length, amplitud, tickersFallidos });
   const tokenSigning = isSnapshotSigningConfigured() ? 'SIGNED' : 'UNSIGNED_FALLBACK';
 
-  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, top10, amplitud, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_TEST_CONTINUE');
+  return sendJson(res, isComplete ? 200 : 206, { ok: isComplete, mode: 'RALLY_TEST_SCAN', status: isComplete ? 'RALLY_FINAL' : 'RALLY_SCANNING', scanId, scanStartedAtUtc, scanCompletedAtUtc: isComplete ? new Date().toISOString() : null, universeHash, activeMarkets, universeCount: eligibleTickers.length, batchesTotal, batchesCompleted: newBatchesCompleted, nextBatchIndex: isComplete ? null : nextBatchIndex + 1, coveragePercent: newCoveragePercent, actualProviderCalls: totalCalls, isRallyFinal: isComplete, rallyToken: newToken, tokenSigning, top10, amplitud, tickersFallidos, message: isComplete ? 'Rally-Test final.' : `Rally-Test scan partial — batch ${newBatchesCompleted}/${batchesTotal} complete.` }, 'RALLY_TEST_CONTINUE');
 }
 
 async function handleTestLast(req, res) {

@@ -207,34 +207,60 @@ export async function fetchVisibleTop8Quotes(selectedAssets: Top8Asset[]): Promi
   }, 12000);
 }
 
+// Lanza si la respuesta no trae NINGÚN indicador con precio: el llamante conserva el
+// último dato bueno y lo marca "SIN ACTUALIZAR" en vez de pintar N/A como si fuera actual.
 export async function fetchMasterIndicators(): Promise<MasterIndicatorsApiResponse> {
-  return fetchJsonWithTimeout<MasterIndicatorsApiResponse>("/api/master-indicators", {
-    method: "GET",
-    headers: { accept: "application/json" },
-  }, 12000);
-}
-
-export async function fetchTop8Status(): Promise<Top8StatusApiResponse> {
-  const response = await fetch("/api/top8", {
+  const data = await fetchJsonWithTimeout<MasterIndicatorsApiResponse>("/api/master-indicators", {
     method: "GET",
     headers: { accept: "application/json" },
   });
-
-  return response.json();
+  const hasAnyPrice = Array.isArray(data?.indicators) && data.indicators.some((i) => typeof i.price === "number");
+  if (!data?.ok || !hasAnyPrice) throw new Error("MASTER_INDICATORS_UNAVAILABLE");
+  return data;
 }
 
+export interface IntradayFlowsApiResponse<TSpy = unknown, TSector = unknown> {
+  ok: boolean;
+  error?: string;
+  scannedAtUtc?: string | null;
+  marketOpen?: boolean;
+  spy?: TSpy | null;
+  sectors?: TSector[];
+  note?: string;
+}
+
+export async function fetchIntradayFlows<TSpy = unknown, TSector = unknown>(): Promise<IntradayFlowsApiResponse<TSpy, TSector>> {
+  return fetchJsonWithTimeout<IntradayFlowsApiResponse<TSpy, TSector>>("/api/sector-leaders-data?mode=intraday", {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+}
+
+export async function fetchTop8Status(): Promise<Top8StatusApiResponse> {
+  return fetchJsonWithTimeout<Top8StatusApiResponse>("/api/top8", {
+    method: "GET",
+    headers: { accept: "application/json" },
+  });
+}
+
+// null = el servidor confirma que no hay scan guardado (404). Un fallo de red/servidor LANZA,
+// para que la UI lo diga en vez de confundirlo con "no hay scan".
 export async function fetchLastScanSnapshot(): Promise<ScanSnapshotResponse | null> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch("/api/scan-snapshot/last", {
       method: "GET",
       headers: { accept: "application/json" },
+      signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`SCAN_SNAPSHOT_LAST_HTTP_${response.status}`);
     const data = await response.json();
-    if (!data.ok) return null;
+    if (!data?.ok) return null;
     return { ...data, source: "LAST_SESSION_CACHE" } as ScanSnapshotResponse;
-  } catch {
-    return null;
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -252,14 +278,6 @@ export async function continueScanSnapshot(snapshotToken: string): Promise<ScanS
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({ snapshotToken }),
   }, 30000); // 30s — each batch takes ~9s
-}
-
-export async function finalizeScanSnapshot(snapshotToken: string): Promise<ScanSnapshotResponse> {
-  return fetchJsonWithTimeout<ScanSnapshotResponse>("/api/scan-snapshot/finalize", {
-    method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
-    body: JSON.stringify({ snapshotToken }),
-  });
 }
 
 function numberFromUnknown(value: unknown): number | null {
@@ -431,8 +449,33 @@ export function buildDashboardTop8FromScanSnapshot(response: ScanSnapshotRespons
   }));
 }
 
+// TimestampPair vacío: "Último scan" muestra "—" hasta que exista un scan completado real.
+export const NO_TIMESTAMP: TimestampPair = { utc: "", local: "—" };
+
+export function formatShortDateTime(utc: string | null | undefined): string {
+  if (!utc) return "—";
+  const d = new Date(utc);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-ES", { timeZone: "Atlantic/Canary", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatShortTime(utc: string | null | undefined): string {
+  if (!utc) return "—";
+  const d = new Date(utc);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("es-ES", { timeZone: "Atlantic/Canary", hour: "2-digit", minute: "2-digit" });
+}
+
+function scanCompletionTimestamp(response: ScanSnapshotResponse): TimestampPair | null {
+  const utc = response.scanCompletedAtUtc;
+  if (!utc) return null;
+  const d = new Date(utc);
+  return Number.isNaN(d.getTime()) ? null : { utc: d.toISOString(), local: formatShortDateTime(utc) };
+}
+
 export function mergeScanSnapshotUniverseStatus(systemStatus: SystemStatus, response: ScanSnapshotResponse): SystemStatus {
   const isGlobal = response.isGlobalTop8Final === true && response.coveragePercent === 100;
+  const completedAt = isGlobal ? scanCompletionTimestamp(response) : null;
   const blockedReasons = response.diagnostics?.blockedReasons ?? [response.error ?? "SCAN_SNAPSHOT_INCOMPLETE"];
   const activeUniverseCounts = response.activeUniverseCounts ?? { us: 0, europe: 0 };
   const candidatesAnalysed = response.diagnostics?.processedBatches?.reduce(
@@ -442,6 +485,7 @@ export function mergeScanSnapshotUniverseStatus(systemStatus: SystemStatus, resp
 
   return {
     ...systemStatus,
+    lastScan: completedAt ?? systemStatus.lastScan,
     operationalDataStatus: isGlobal ? "REAL" : response.status === "ERROR" ? "ERROR" : "DATA_UNAVAILABLE",
     operationalDecisionAllowed: false,
     operationalBlockReasons: isGlobal
@@ -686,7 +730,9 @@ export function mergeMasterIndicators(
       provider,
       cacheStatus: apiIndicator.cacheStatus,
       priceTimestamp: timestamp,
-      status: isStale ? "CACHE" : "LIVE",
+      // "LIVE" solo como estado de carga correcta; la etiqueta visible (LIVE/CIERRE/CACHE/
+      // SIN ACTUALIZAR) la decide IndicatorRow según mercado US abierto y salud del feed.
+      status: isStale ? "LAST" : "LIVE",
       operationalDataStatus: isStale ? "LAST_CLOSE" : "REAL",
       operationalDecisionAllowed: false,
       operationalBlockReasons: ["MASTER_INDICATOR_INFORMATIONAL_ONLY"],

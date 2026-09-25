@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import type { MasterIndicator } from "../types";
-import { IndicatorRow } from "./MasterIndicatorsGrid";
+import type { FearGreed, MasterIndicator } from "../types";
+import { IndicatorRow, type IndicatorFeedStatus } from "./MasterIndicatorsGrid";
 import { SegmentedControl } from "./DensityToggle";
+import { formatShortTime } from "../services/realDataRefresh";
 
 interface FearGreedData {
+  ok: boolean;
   score: number;
   rating: string;
   label: string;
@@ -11,40 +13,86 @@ interface FearGreedData {
   sourceLabel?: string;
   cnnAsOfUtc?: string | null;
   components?: Record<string, number | null>;
+  componentsAvailable?: number;
 }
+
+type FgLoadState = "LOADING" | "OK" | "NOT_AVAILABLE" | "FAILED";
 
 // Same 6 indicators shown in "Master Indicators" (SPY excluded), in the exact
 // top-to-bottom order requested: HYG, MOVE, VIX, VVIX, TNX, LQD.
 // Reusing the SAME `masterIndicators` data + the SAME `IndicatorRow` renderer
-// guarantees byte-identical values, colors and LIVE/CACHE status.
+// guarantees byte-identical values, colors and status labels.
 const FG_INDICATOR_ORDER: MasterIndicator["symbol"][] = ["HYG", "MOVE", "VIX", "VVIX", "TNX", "LQD"];
+const FG_TIMEOUT_MS = 8000;
+const RETURN_REFRESH_MS = 60_000;
 
-export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any; masterIndicators?: MasterIndicator[] }) {
+function isInternalSource(d: FearGreedData): boolean {
+  return d.source !== "CNN_BUSINESS";
+}
+
+function internalComponentsCount(d: FearGreedData): number {
+  if (typeof d.componentsAvailable === "number") return d.componentsAvailable;
+  return Object.values(d.components ?? {}).filter((v) => typeof v === "number").length;
+}
+
+export function FearGreedPanel({ masterIndicators, indicatorsFeed }: {
+  fearGreed?: FearGreed;
+  masterIndicators?: MasterIndicator[];
+  indicatorsFeed?: IndicatorFeedStatus;
+}) {
   const [fgData, setFgData] = useState<FearGreedData | null>(null);
+  const [fgFetchedAtUtc, setFgFetchedAtUtc] = useState<string | null>(null);
+  const [fgState, setFgState] = useState<FgLoadState>("LOADING");
+  const [fgReason, setFgReason] = useState<string | null>(null);
   const [showIndicators, setShowIndicators] = useState(false);
 
   useEffect(() => {
-    // AUDIT FIX (F&G "frozen" / "esta mal"): este fetch antes solo se ejecutaba
-    // UNA VEZ al montar el componente — el score y "Cierre de referencia"
-    // quedaban congelados con el valor de cuando se abrió el dashboard, por
-    // eso el usuario seguía viendo el mismo score ("el F&G esta ahora en 42
-    // todavia") sin que se actualizara con el feed en vivo de CNN. El backend
-    // /api/fear-greed SÍ devuelve datos en vivo sin caché (Cache-Control:
-    // no-store / x-vercel-cache: MISS verificado) — el problema era puramente
-    // de refresco en el frontend. Es un indicador de mercado global (no un
-    // ticket de inversión), por lo que debe refrescarse SIEMPRE, sin importar
-    // si los mercados de scan están abiertos o cerrados.
-    function load() {
-      fetch("/api/fear-greed")
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.ok) setFgData(d);
-        })
-        .catch(() => {});
+    // Refresco cada 4 min + al volver a la app tras >60 s oculta. Un fallo NUNCA se traga:
+    // se conserva el último dato bueno marcado "SIN ACTUALIZAR", o "No disponible" si no hubo.
+    let cancelled = false;
+    let inFlight: AbortController | null = null;
+    async function load() {
+      inFlight?.abort();
+      const controller = new AbortController();
+      inFlight = controller;
+      const timeout = window.setTimeout(() => controller.abort(), FG_TIMEOUT_MS);
+      try {
+        const r = await fetch("/api/fear-greed", { headers: { accept: "application/json" }, signal: controller.signal });
+        const d = (await r.json().catch(() => null)) as (FearGreedData & { status?: string; reason?: string; error?: string }) | null;
+        if (cancelled) return;
+        if (!r.ok && !(d && d.ok === false && d.status === "NOT_AVAILABLE")) throw new Error(`HTTP_${r.status}`);
+        if (!d || d.ok !== true || typeof d.score !== "number" || !Number.isFinite(d.score)) {
+          setFgData(null);
+          setFgState("NOT_AVAILABLE");
+          setFgReason(d?.reason ?? d?.error ?? null);
+          return;
+        }
+        setFgData(d);
+        setFgFetchedAtUtc(new Date().toISOString());
+        setFgState("OK");
+        setFgReason(null);
+      } catch {
+        if (cancelled || controller !== inFlight) return;
+        setFgState("FAILED");
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
     load();
     const timer = window.setInterval(load, 4 * 60_000);
-    return () => window.clearInterval(timer);
+    let hiddenAt: number | null = null;
+    function onVisibility() {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      if (hiddenAt !== null && Date.now() - hiddenAt > RETURN_REFRESH_MS) load();
+      hiddenAt = null;
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      inFlight?.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // Gauge color strictly by score range (matches the CNN Fear & Greed scale,
@@ -62,23 +110,44 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
     return "#15803d";                  // 76-100: very strong green
   };
 
+  const feedBanner = indicatorsFeed?.lastFetchFailed ? (
+    <div style={{ fontSize: 9, fontWeight: 700, color: "#eab308", margin: "0 0 6px" }}>
+      {indicatorsFeed.lastSuccessUtc
+        ? `⚠ Indicadores SIN ACTUALIZAR · último dato ${formatShortTime(indicatorsFeed.lastSuccessUtc)}`
+        : masterIndicators?.some((ind) => ind.status === "CACHE")
+          ? "⚠ Indicadores SIN ACTUALIZAR · se muestran datos de caché (ver fecha)"
+          : "⚠ Indicadores no disponibles (fallo de la fuente)"}
+    </div>
+  ) : null;
+
   if (!fgData) {
-    // Fear & Greed unavailable — waiting for /api/fear-greed response
-    // DATA UNAVAILABLE: not used for Score, Ranking or EXEC
+    // Sin dato válido de F&G: nunca se inventa un 50. No usado en Score, Ranking ni EXEC.
+    const unavailable = fgState !== "LOADING";
     return (
       <section className="section-block priority-block" style={{ marginBottom: 14 }}>
         <div className="section-title-row">
-          <h2>Fear &amp; Greed unavailable</h2>
+          <h2>Fear &amp; Greed</h2>
         </div>
         <div className="fear-greed-layout">
-          <div className="fear-score">N/A</div>
+          <div className="fear-score">—</div>
           <div>
-            <p className="metric-label">Sentiment</p>
-            <strong>DATA UNAVAILABLE</strong>
-            <span className="muted-line">not used for Score, Ranking or EXEC · calculando…</span>
-            <span className="muted-line">{fearGreed.operationalDataStatus}</span>
+            <p className="metric-label">Sentimiento</p>
+            <strong style={{ color: unavailable ? "#ef4444" : undefined }}>
+              {!unavailable ? "Cargando…" : fgState === "FAILED" ? "No disponible (fallo de la fuente)" : "No disponible"}
+            </strong>
+            {unavailable && fgReason && <span className="muted-line">{fgReason}</span>}
+            <span className="muted-line">No se usa en Score, Ranking ni EXEC</span>
           </div>
         </div>
+        {masterIndicators && masterIndicators.length > 0 && (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+            {feedBanner}
+            {FG_INDICATOR_ORDER
+              .map((symbol) => masterIndicators.find((ind) => ind.symbol === symbol))
+              .filter((ind): ind is MasterIndicator => Boolean(ind))
+              .map((ind) => <IndicatorRow key={ind.symbol} ind={ind} feed={indicatorsFeed} />)}
+          </div>
+        )}
       </section>
     );
   }
@@ -91,11 +160,17 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
     <section className="section-block" style={{ marginBottom: 14 }}>
       <div className="section-title-row" style={{ marginBottom: 12 }}>
         <h2>Fear &amp; Greed</h2>
-        <span style={{ fontSize: 10, color: "#64748b" }}>
-          {fgData.sourceLabel ?? "Calculado internamente"}
+        <span style={{ fontSize: 10, color: isInternalSource(fgData) ? "#eab308" : "#64748b" }}>
+          {isInternalSource(fgData)
+            ? `Índice interno (CNN no disponible) · ${internalComponentsCount(fgData)}/7 componentes`
+            : fgData.sourceLabel ?? "Fuente: CNN Business"}
         </span>
       </div>
-      {/* DATA UNAVAILABLE fallback — Fear & Greed unavailable — not used for Score, Ranking or EXEC */}
+      {fgState === "FAILED" && (
+        <div style={{ fontSize: 9, fontWeight: 700, color: "#eab308", marginBottom: 8 }}>
+          ⚠ SIN ACTUALIZAR · dato de {formatShortTime(fgFetchedAtUtc)} — la última consulta falló
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         {/* Gauge */}
         <div style={{ position: "relative", width: 100, height: 100, flexShrink: 0 }}>
@@ -162,10 +237,11 @@ export function FearGreedPanel({ fearGreed, masterIndicators }: { fearGreed: any
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {feedBanner}
               {FG_INDICATOR_ORDER
                 .map((symbol) => masterIndicators.find((ind) => ind.symbol === symbol))
                 .filter((ind): ind is MasterIndicator => Boolean(ind))
-                .map((ind) => <IndicatorRow key={ind.symbol} ind={ind} />)}
+                .map((ind) => <IndicatorRow key={ind.symbol} ind={ind} feed={indicatorsFeed} />)}
             </div>
           </div>
         </div>

@@ -242,20 +242,36 @@ async function fetchYahooQuote(eodhdSymbol) {
   const symbol = toYahooSymbol(eodhdSymbol);
   if (!symbol) return { ok: false, provider: "Yahoo", reason: `No Yahoo mapping for ${eodhdSymbol}` };
 
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d&includePrePost=false`;
+  // Cierre anterior DERIVADO de la serie fechada (25-sep-2026): meta.chartPreviousClose
+  // depende del rango pedido y regularMarketChangePercent llegó a venir incoherente con
+  // el precio (VIX −0,26% contra el cierre de hace dos sesiones). Si la sesión previa
+  // viene vacía (hueco del proveedor) no se calcula variación: null, nunca multi-día.
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d&includePrePost=false`;
   const r = await fetchJson(url);
   if (!r.ok) return { ok: false, provider: "Yahoo", reason: r.reason };
 
-  const meta = r.data?.chart?.result?.[0]?.meta;
+  const result = r.data?.chart?.result?.[0];
+  const meta = result?.meta;
   if (!meta) return { ok: false, provider: "Yahoo", reason: "No chart result" };
 
   const price = finiteOrNull(meta.regularMarketPrice);
-  const previousClose = finiteOrNull(meta.previousClose ?? meta.chartPreviousClose);
-  const changePercent = finiteOrNull(meta.regularMarketChangePercent)
-    ?? (price && previousClose && previousClose !== 0 ? ((price - previousClose) / previousClose) * 100 : null);
-
   if (!price) return { ok: false, provider: "Yahoo", reason: "No valid price" };
-  return { ok: true, provider: "Yahoo", price, previousClose, changePercent };
+
+  const ts = result.timestamp ?? [];
+  const closes = result.indicators?.quote?.[0]?.close ?? [];
+  const priceDate = Number.isFinite(meta.regularMarketTime)
+    ? new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 10) : null;
+  let previousClose = null;
+  if (priceDate) {
+    for (let i = ts.length - 1; i >= 0; i--) {
+      if (new Date(ts[i] * 1000).toISOString().slice(0, 10) < priceDate) {
+        previousClose = finiteOrNull(closes[i]);
+        break;
+      }
+    }
+  }
+  const changePercent = previousClose && previousClose > 0 ? ((price - previousClose) / previousClose) * 100 : null;
+  return { ok: true, provider: "Yahoo", price, previousClose, changePercent, priceDate };
 }
 
 async function fetchStooqQuote(eodhdSymbol) {
@@ -408,7 +424,7 @@ async function fetchFMPHistory(eodhdSymbol, lookbackDays, apiKey) {
 // cruda que perder la barra. open/high/low siguen crudos (mismo criterio que
 // EODHD, que solo ajusta el close; ATR los consume así desde siempre).
 function _parseYahooBars(chartResult) {
-  if (!chartResult) return { bars: [], gapDates: [] };
+  if (!chartResult) return { bars: [], gapDates: [], lastBarForming: false };
   const ts = chartResult.timestamp ?? [];
   const q = chartResult.indicators?.quote?.[0] ?? {};
   const adj = chartResult.indicators?.adjclose?.[0]?.adjclose ?? null;
@@ -420,20 +436,29 @@ function _parseYahooBars(chartResult) {
     close:  (adj ? finiteOrNull(adj[i]) : null) ?? finiteOrNull(q.close?.[i]),
     volume: finiteOrNull(q.volume?.[i]) ?? 0,
   }));
+  // Vela EN CURSO (25-sep-2026): con la bolsa abierta Yahoo incluye la vela diaria
+  // aún sin cerrar; su "close" es un precio intradía. Se marca con el horario de
+  // sesión que trae el propio Yahoo, para no presentarlo nunca como un cierre.
+  let lastValid = -1;
+  for (let i = dated.length - 1; i >= 0; i--) if (dated[i].close > 0) { lastValid = i; break; }
+  const reg = chartResult.meta?.currentTradingPeriod?.regular;
+  const lastBarForming = lastValid >= 0 && Number.isFinite(reg?.start) && Number.isFinite(reg?.end)
+    && ts[lastValid] >= reg.start && Date.now() / 1000 < reg.end;
   return {
     bars: dated.filter(b => b.close && b.close > 0),
     gapDates: recentGapDates(dated),
+    lastBarForming,
   };
 }
 
-// Intenta un único par (range, host). Devuelve { bars, gapDates } o null.
+// Intenta un único par (range, host). Devuelve { bars, gapDates, lastBarForming } o null.
 async function _fetchYahooOnce(symbol, range, host) {
   const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`;
   const extraHeaders = { "accept-language": "en-US,en;q=0.9" };
   const r = await fetchJson(`https://${host}${path}`, extraHeaders);
   if (!r.ok) return null;
-  const { bars, gapDates } = _parseYahooBars(r.data?.chart?.result?.[0]);
-  return bars.length > 0 ? { bars, gapDates } : null;
+  const parsed = _parseYahooBars(r.data?.chart?.result?.[0]);
+  return parsed.bars.length > 0 ? parsed : null;
 }
 
 /**
@@ -462,14 +487,14 @@ async function fetchYahooHistory(eodhdSymbol, lookbackDays) {
   // Intentar con la ruta primaria (query1 → query2)
   for (const host of HOSTS) {
     const r = await _fetchYahooOnce(symbol, primaryRange, host);
-    if (r) return { ok: true, provider: "Yahoo", bars: r.bars, gapDates: r.gapDates, range: primaryRange, host };
+    if (r) return { ok: true, provider: "Yahoo", ...r, range: primaryRange, host };
   }
 
   // Fallback "1y": si "2y" falló (ticker raro / throttle puntual), intentar con 1y
   if (needDeep) {
     for (const host of HOSTS) {
       const r = await _fetchYahooOnce(symbol, "1y", host);
-      if (r) return { ok: true, provider: "Yahoo", bars: r.bars, gapDates: r.gapDates, range: "1y", host };
+      if (r) return { ok: true, provider: "Yahoo", ...r, range: "1y", host };
     }
   }
 
