@@ -31,8 +31,8 @@ import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
 // Hobby de Vercel está en su tope de 12 funciones: un api/rally-test.js nuevo no
 // desplegaría. Los handlers de producción de arriba NO se tocan.
 import { runRallyBatch as runRallyTestBatch, fetchSpyBars as fetchSpyBarsTest } from './_lib/rallyBatchProcessorTest.js';
-import { assignSuggestedWeights as assignSuggestedWeightsTest } from './_lib/rallyScoreEngineTest.js';
-import { filterActiveOperableAssets, getActiveMarketsAt, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
+import { assignSuggestedWeights as assignSuggestedWeightsTest, rallyTestReviewInfo } from './_lib/rallyScoreEngineTest.js';
+import { filterActiveOperableAssets, getActiveMarketsAt, marketStatusForExchange, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
 const RALLY_VERSION = 'RALLY_V1';
@@ -170,7 +170,12 @@ async function handleContinue(req, res) {
 async function handleLast(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED', app: APP_NAME, endpoint: 'RALLY_SCAN_LAST' });
 
-  const snapshot = await loadLastRallySnapshot();
+  let snapshot;
+  try {
+    snapshot = await loadLastRallySnapshot({ strict: true });
+  } catch {
+    return res.status(503).json({ ok: false, app: APP_NAME, endpoint: 'RALLY_SCAN_LAST', error: 'SNAPSHOT_STORE_UNAVAILABLE', status: 'RALLY_DATA_UNAVAILABLE', message: 'No se pudo leer el almacén de scans (Redis).', timestampUtc: new Date().toISOString() });
+  }
   if (!snapshot) {
     return res.status(404).json({ ok: false, app: APP_NAME, endpoint: 'RALLY_SCAN_LAST', error: 'NO_STORED_RALLY_SNAPSHOT', status: 'RALLY_DATA_UNAVAILABLE', message: 'No completed Rally scan found.', timestampUtc: new Date().toISOString() });
   }
@@ -290,11 +295,17 @@ async function handleTestContinue(req, res) {
 async function handleTestLast(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED', app: APP_NAME, endpoint: 'RALLY_TEST_LAST' });
 
-  const snapshot = await loadLastRallyTestSnapshot();
+  let snapshot;
+  try {
+    snapshot = await loadLastRallyTestSnapshot({ strict: true });
+  } catch {
+    return res.status(503).json({ ok: false, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', error: 'SNAPSHOT_STORE_UNAVAILABLE', status: 'RALLY_DATA_UNAVAILABLE', message: 'No se pudo leer el almacén de scans (Redis).', timestampUtc: new Date().toISOString() });
+  }
   if (!snapshot) {
     return res.status(404).json({ ok: false, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', error: 'NO_STORED_RALLY_SNAPSHOT', status: 'RALLY_DATA_UNAVAILABLE', message: 'No completed Rally-Test scan found.', timestampUtc: new Date().toISOString() });
   }
-  return res.status(200).json({ ...snapshot, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
+  const review = rallyTestReviewInfo((d) => marketStatusForExchange('NYSE', d) === 'OPEN');
+  return res.status(200).json({ ...snapshot, review, app: APP_NAME, endpoint: 'RALLY_TEST_LAST', source: 'LAST_SESSION_CACHE', retrievedAtUtc: new Date().toISOString() });
 }
 
 // ─── news handler del LABORATORIO (7-sep-2026, SOLO display) ─────────────────

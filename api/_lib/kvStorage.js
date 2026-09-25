@@ -54,14 +54,20 @@ export async function saveLastRallySnapshot(snapshot) {
   }
 }
 
-export async function loadLastRallySnapshot() {
+// strict: lanza si Redis no está configurado o falla (25-sep-2026) — así /last distingue
+// "no hay scan guardado" (null → 404) de "no se pudo leer el almacén" (→ 503).
+export async function loadLastRallySnapshot({ strict = false } = {}) {
   try {
     const redis = getRedis();
-    if (!redis) return null;
+    if (!redis) {
+      if (strict) throw new Error("KV_NOT_CONFIGURED");
+      return null;
+    }
     const data = await redis.get(KV_RALLY_KEY);
     return data ?? null;
   } catch (e) {
     console.error("[kvStorage] read failed:", e?.message ?? e);
+    if (strict) throw e;
     return null;
   }
 }
@@ -84,14 +90,20 @@ export async function saveLastRallyTestSnapshot(snapshot) {
   }
 }
 
-export async function loadLastRallyTestSnapshot() {
+// strict: lanza si Redis no está configurado o falla (25-sep-2026) — así /last distingue
+// "no hay scan guardado" (null → 404) de "no se pudo leer el almacén" (→ 503).
+export async function loadLastRallyTestSnapshot({ strict = false } = {}) {
   try {
     const redis = getRedis();
-    if (!redis) return null;
+    if (!redis) {
+      if (strict) throw new Error("KV_NOT_CONFIGURED");
+      return null;
+    }
     const data = await redis.get(KV_RALLY_TEST_KEY);
     return data ?? null;
   } catch (e) {
     console.error("[kvStorage] read failed:", e?.message ?? e);
+    if (strict) throw e;
     return null;
   }
 }

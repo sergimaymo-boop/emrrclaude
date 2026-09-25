@@ -222,7 +222,7 @@ export function RallyPanel() {
               </span>
             )}
             <SessionLine summary={sessions} />
-            {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
+            {nextReview && <span>Si rebalanceas con este scan, próxima revisión: <b style={{ color: AMBER }}>{nextReview}</b> (84 sesiones)</span>}
             <span>La columna <b style={{ color: AMBER }}>%</b> es el peso sugerido de cada posición sobre el capital del módulo: pondera por el <b style={{ color: "#cbd5e1" }}>momentum 9m</b> del ticker (más momentum → más peso, entre 4% y 20%), validado 2017-2026.</span>
             {/* Leyenda del aviso de motivo: en móvil no hay tooltip, así que el símbolo
                 tiene que explicarse en algún sitio. Solo se muestra si ALGÚN ticker del

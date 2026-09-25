@@ -3,6 +3,8 @@
  * Completely independent from realDataRefresh.ts / TOP 8
  */
 
+import { isMarketOpen } from "../utils/marketHours";
+
 export interface RallyWarningFlag {
   code: string;
   label: string;
@@ -154,12 +156,21 @@ export const RALLY_BACKTEST = {
   },
 } as const;
 
-/** Próxima fecha de revisión recomendada: el propio scan + ~4 meses de mercado (84 sesiones ≈ 121 días naturales). */
+/**
+ * Revisión SI SE REBALANCEA CON ESTE SCAN: 84 sesiones de NYSE después (25-sep-2026;
+ * antes +121 días naturales, presentado como fecha fija aunque se movía con cada scan).
+ * Rally Leaders no tiene rebalanceo real registrado, así que la fecha es condicional.
+ */
 export function estimateNextReview(scanCompletedAtUtc: string | null | undefined): string | null {
   if (!scanCompletedAtUtc) return null;
   const d = new Date(scanCompletedAtUtc);
   if (Number.isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + 121);
+  d.setUTCHours(15, 0, 0, 0);
+  let sessions = 0;
+  for (let guard = 0; guard < 400 && sessions < 84; guard++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (isMarketOpen("United States", d) === "OPEN") sessions++;
+  }
   return d.toISOString().slice(0, 10);
 }
 

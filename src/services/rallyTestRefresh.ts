@@ -167,14 +167,24 @@ export interface RallyTestAsset extends Omit<RallyAsset, "metrics"> {
   metrics: RallyTestMetrics | null;
 }
 
-// Cadencia de revisión del motor LAB-M189 v1.1: ~63 sesiones ≈ 91 días naturales
-// (producción usa 84 sesiones/121 días — por eso NO se reexporta la suya).
-export function estimateNextReview(scanCompletedAtUtc: string | null | undefined): string | null {
-  if (!scanCompletedAtUtc) return null;
-  const d = new Date(scanCompletedAtUtc);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + 91);
-  return d.toISOString().slice(0, 10);
+/**
+ * Calendario de revisión de la CARTERA REAL (25-sep-2026). Lo calcula el servidor
+ * (/api/rally-test/last → review) desde el ÚLTIMO REBALANCEO real, 63 sesiones de NYSE:
+ * antes era "fecha del scan + 91 días" y cada scan empujaba la revisión 3 meses.
+ */
+export interface RallyTestReview {
+  lastRebalance: string;
+  sessionsTotal: number;
+  sessionsElapsed: number;
+  sessionsRemaining: number;
+  nextReviewDate: string | null;
+  due: boolean;
+}
+
+/** 'YYYY-MM-DD' → 'lun, 7 dic 2026'. */
+export function formatReviewDate(iso: string | null | undefined): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "—";
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 import type { RallyScanResponse } from "./rallyRefresh";
@@ -241,8 +251,8 @@ export async function continueRallyTestScan(rallyToken: string): Promise<RallySc
 }
 
 /** null SOLO si el servidor confirma que no hay scan de test; cualquier fallo LANZA. */
-export async function fetchLastRallyTestScan(): Promise<RallyScanResponse | null> {
-  return fetchLastScanFrom("/api/rally-test/last");
+export async function fetchLastRallyTestScan(): Promise<(RallyScanResponse & { review?: RallyTestReview }) | null> {
+  return fetchLastScanFrom("/api/rally-test/last") as Promise<(RallyScanResponse & { review?: RallyTestReview }) | null>;
 }
 
 /**

@@ -40,8 +40,9 @@ import {
   type RallyNewsItem,
   type RallyState,
   type RallyTestAsset,
+  type RallyTestReview,
   continueRallyTestScan,
-  estimateNextReview,
+  formatReviewDate,
   fetchLastRallyTestScan,
   fetchRallyTestNews,
   type SessionSummary,
@@ -71,6 +72,7 @@ export function RallyTestPanel() {
   const [state, setState] = useState<RallyState>(() => initialRallyState());
   const [scanning, setScanning] = useState(false);
   const [lastScanCompletedAt, setLastScanCompletedAt] = useState<string | null>(null);
+  const [review, setReview] = useState<RallyTestReview | null>(null);
   const [tickersFallidos, setTickersFallidos] = useState(0);
   // Amplitud del universo: observable de salud del mercado (4-sep-2026). Solo se
   // MUESTRA — ninguna regla automática la usa (ver §10e: el cortacircuitos de
@@ -96,6 +98,7 @@ export function RallyTestPanel() {
         const last = await fetchLastRallyTestScan();
         if (!mounted.current) return;
         setLoadError(false);
+        setReview(last?.review ?? null);
         if (last?.top10?.length) {
           setState((s) => ({ ...s, status: "RALLY_FINAL", top10: last.top10 ?? [], isRallyFinal: true } as RallyState));
           setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
@@ -186,7 +189,6 @@ export function RallyTestPanel() {
 
   const top10 = state.top10 ?? [];
   const hasData = top10.length > 0;
-  const nextReview = estimateNextReview(lastScanCompletedAt);
   const ageInfo = scanAgeInfo(lastScanCompletedAt, now);
   const sessions = summarizeSessions(top10);
 
@@ -252,7 +254,15 @@ export function RallyTestPanel() {
               </span>
             )}
             <SessionLine summary={sessions} />
-            {nextReview && <span>Próxima revisión recomendada: <b style={{ color: AMBER }}>{nextReview}</b></span>}
+            {review?.nextReviewDate && (review.due ? (
+              <span style={{ color: "#f59e0b", fontWeight: 700 }}>
+                ⚠ REVISIÓN PENDIENTE desde el {formatReviewDate(review.nextReviewDate)}: toca rebalancear al top-5 de este scan ({review.sessionsTotal} sesiones desde tu rebalanceo del {formatReviewDate(review.lastRebalance)})
+              </span>
+            ) : (
+              <span>
+                Próxima revisión: <b style={{ color: AMBER }}>{formatReviewDate(review.nextReviewDate)}</b> · faltan {review.sessionsRemaining} sesiones ({review.sessionsTotal} desde tu rebalanceo del {formatReviewDate(review.lastRebalance)}) — hasta entonces solo se opera si salta un stop
+              </span>
+            ))}
             {amplitud && amplitud.analizados > 0 && (() => {
               // AMPLITUD DEL UNIVERSO — observable de salud del mercado (4-sep-2026).
               // Es INFORMACIÓN, no una regla: el cortacircuitos automático que la usaba

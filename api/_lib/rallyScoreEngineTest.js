@@ -266,6 +266,38 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
   };
 }
 
+// ── Calendario de revisión de la CARTERA REAL que sigue Rally-Test (25-sep-2026) ──
+// La próxima revisión se cuenta desde el ÚLTIMO REBALANCEO real, en sesiones de NYSE
+// (antes: fecha del scan + 91 días, así que cada scan la empujaba 3 meses y nunca
+// llegaba). Un salto de trailing con re-scan (RESCAN2) NO reinicia el reloj: esta
+// fecha solo cambia en la revisión trimestral — actualizarla tras cada una.
+export const RALLY_TEST_LAST_REBALANCE = "2026-09-08";
+export const RALLY_TEST_REVIEW_SESSIONS = 63;
+
+export function rallyTestReviewInfo(isTradingDay, now = new Date()) {
+  const today = now.toISOString().slice(0, 10);
+  const d = new Date(`${RALLY_TEST_LAST_REBALANCE}T15:00:00Z`);
+  let sessions = 0;
+  let elapsed = 0;
+  let nextReviewDate = null;
+  for (let guard = 0; guard < 400 && !nextReviewDate; guard++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (!isTradingDay(d)) continue;
+    sessions++;
+    const iso = d.toISOString().slice(0, 10);
+    if (iso <= today) elapsed++;
+    if (sessions === RALLY_TEST_REVIEW_SESSIONS) nextReviewDate = iso;
+  }
+  return {
+    lastRebalance: RALLY_TEST_LAST_REBALANCE,
+    sessionsTotal: RALLY_TEST_REVIEW_SESSIONS,
+    sessionsElapsed: Math.min(elapsed, RALLY_TEST_REVIEW_SESSIONS),
+    sessionsRemaining: Math.max(0, RALLY_TEST_REVIEW_SESSIONS - elapsed),
+    nextReviewDate,
+    due: nextReviewDate != null && today >= nextReviewDate,
+  };
+}
+
 /**
  * Pesos sugeridos: SOLO los 5 primeros invierten — proporcionales a
  * (score − 40) con topes [10,40] y Σ=100 (bisección determinista, la misma
