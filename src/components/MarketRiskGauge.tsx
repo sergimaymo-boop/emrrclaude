@@ -1,14 +1,21 @@
 /**
- * MarketRiskGauge — SEMÁFORO DE RIESGO EN TIEMPO REAL.
- * Banner en lo MÁS ALTO del dashboard: "¿es un momento seguro para entrar HOY?".
- * Mide el estrés ACTUAL (VIX + crédito/bonos), no predice dirección. Validado por backtest.
+ * MarketRiskGauge — SEMÁFORO DE RIESGO DE MERCADO EN TIEMPO REAL.
+ * Responde "¿cuánto riesgo de caída brusca hay HOY?" (VIX + crédito/bonos), NO "¿es buen momento
+ * para entrar?": no predice dirección ni da señales de entrada o espera. Textos y cifras salen del
+ * backtest 1990-2026 (backtests/vix-risk-2026-09-25.json) vía marketRiskRefresh.ts.
  */
-import type { MarketRisk } from "../services/marketRiskRefresh";
+import { type MarketRisk, VIX_RISK_EVIDENCE } from "../services/marketRiskRefresh";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { isMarketOpen } from "../utils/marketHours";
 import { formatShortTime } from "../services/realDataRefresh";
 
 const EMOJI: Record<string, string> = { BAJO: "🟢", MEDIO: "🟡", ALTO: "🔴", UNKNOWN: "⚪" };
+const pctEs = (v: number) => `${v.toFixed(1).replace(".", ",")}%`;
+const EV = VIX_RISK_EVIDENCE;
+const SCALE_NOTE =
+  `Escala propia de este semáforo (VIX <16 / 16-21 / ≥21 → caída >3% en 5 sesiones el ~${EV.zones.BAJO.sharpDropProb}% / ` +
+  `~${EV.zones.MEDIO.sharpDropProb}% / ~${EV.zones.ALTO.sharpDropProb}% de los días, ${EV.index} ${EV.period}), ` +
+  "distinta de la fila VIX de Indicadores (<15 / 15-20 / >20). Datos históricos, no una promesa.";
 
 export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
   const isNarrow = useIsNarrow(560);
@@ -52,12 +59,18 @@ export function MarketRiskGauge({ risk }: { risk: MarketRisk }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "#e2e8f0", lineHeight: 1.5 }}>
             {risk.sharpDropProb != null ? (
-              <>A este nivel, históricamente <b style={{ color: accent }}>~{risk.sharpDropProb}%</b> de los días sufren una <b>caída brusca (&gt;3%) en 5 días</b>.</>
+              <>{EV.index} {EV.period}: a este nivel de VIX, en el <b style={{ color: accent }}>~{risk.sharpDropProb}%</b> de los días hubo una <b>caída de más del 3%</b> en algún momento de las 5 sesiones siguientes.</>
             ) : risk.loadState === "LOADING" ? "Esperando datos de volatilidad…" : "Sin dato de volatilidad: la fuente no respondió."}
           </div>
-          <div style={{ fontSize: 8.5, color: "#64748b", marginTop: 3 }}>
-            Escala propia de este semáforo (VIX &lt;16 / 16-21 / &gt;21), distinta de la de la fila VIX de Indicadores (&lt;15 / 15-20 / &gt;20).
-          </div>
+          {risk.dip20Typical != null && risk.dip20OneInTen != null && (
+            <div style={{ fontSize: 10, color: "#cbd5e1", lineHeight: 1.45, marginTop: 3 }}>
+              Tras entrar, la caída máxima en las 20 sesiones siguientes fue típicamente del <b>{pctEs(risk.dip20Typical)}</b> y 1 de cada 10 veces superó el <b>{pctEs(risk.dip20OneInTen)}</b>.
+            </div>
+          )}
+          {risk.advice && (
+            <div style={{ fontSize: 10, color: "#cbd5e1", lineHeight: 1.45, marginTop: 3 }}>{risk.advice}</div>
+          )}
+          <div style={{ fontSize: 8.5, color: "#64748b", marginTop: 4, lineHeight: 1.4 }}>{SCALE_NOTE}</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7 }}>
             <Chip label="VIX" value={`${fmt(risk.vix)} (${fmtPc(risk.vixChange)})`} tone={accent} />
             <Chip label="MOVE (bonos)" value={fmt(risk.context.move, 1)} />

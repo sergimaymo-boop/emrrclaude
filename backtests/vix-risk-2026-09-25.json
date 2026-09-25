@@ -1,0 +1,1922 @@
+{
+ "estudio": "Semáforo de riesgo VIX — frecuencia de caídas bruscas y rentabilidad posterior por zona",
+ "generadoUtc": "2026-09-25T14:24:14.826Z",
+ "comando": "node scripts/backtest-vix-risk.mjs --out=backtests/vix-risk-2026-09-25.json",
+ "dataset": {
+  "source": "local",
+  "file": "data/sp500-history.json",
+  "bytes": 26676071,
+  "sha256": "dd45c2d753b0dc9938f322224a0839af53015567a5aff7ff8f419f5b17d32ef7",
+  "fetchedAt": "2026-08-08T21:11:39.876Z",
+  "primeraBarraVix": "1990-01-02",
+  "ultimaBarraIndice": "2026-08-07"
+ },
+ "definiciones": {
+  "zonas": "BAJO: VIX < 16 · MEDIO: 16 ≤ VIX < 21 · ALTO: VIX ≥ 21 (cierre del día t)",
+  "pCaida3_5d": "% de días en que el mínimo intradía de las 5 sesiones siguientes cae más de un 3% bajo el cierre de t",
+  "ret5_ret20": "cierre t+5 / t+20 frente al cierre de t (índice sin dividendos; el contraste SPY sí los incluye)",
+  "peorCaida20d": "mínimo intradía de las 20 sesiones siguientes frente al cierre de t, acotado a 0 (percentiles: p5 = el 5% peor)",
+  "volRealizada20d": "desviación típica muestral de los retornos diarios t+1..t+20, anualizada (×√252)",
+  "episodios": "rachas de días de la misma zona fusionadas si las separan ≤20 sesiones",
+  "esperarALaCalma": "precio del primer cierre con VIX por debajo del nivel frente al precio de t; positivo = esperar obligó a comprar más caro. Sin dividendos ni intereses de caja",
+  "avisoSolape": "las ventanas de 5/20 sesiones se solapan y los días ALTO van en racimos: el número de observaciones independientes es muy inferior al de días"
+ },
+ "panel": {
+  "periodo": "1990-2026",
+  "indice": "S&P 500 (^GSPC)",
+  "BAJO": {
+   "pCaida3_5d": 5,
+   "peorCaida20dTipica": 1.5,
+   "peorCaida20dUnaDeDiez": 4.8
+  },
+  "MEDIO": {
+   "pCaida3_5d": 13,
+   "peorCaida20dTipica": 2.2,
+   "peorCaida20dUnaDeDiez": 7.3
+  },
+  "ALTO": {
+   "pCaida3_5d": 31,
+   "peorCaida20dTipica": 3.4,
+   "peorCaida20dUnaDeDiez": 10.4,
+   "esperarVix21PctMejorPrecio": 13.7
+  }
+ },
+ "muestraCompleta": {
+  "rango": [
+   "1990-01-02",
+   "2026-07-31"
+  ],
+  "BAJO": {
+   "n": 3570,
+   "pctDias": 38.8,
+   "pCaida3_5d": 5.2,
+   "pCaida3_5d_soloCierres": 3.3,
+   "ret5": {
+    "media": 0.1,
+    "mediana": 0.25,
+    "pctPositivas": 58.3
+   },
+   "n20": 3568,
+   "ret20": {
+    "media": 0.56,
+    "mediana": 0.96,
+    "pctPositivas": 64.9,
+    "desviacion": 2.86,
+    "p10": -2.93,
+    "p90": 3.53
+   },
+   "peorCaida20d": {
+    "p5": -6.02,
+    "p10": -4.78,
+    "p25": -3,
+    "mediana": -1.54,
+    "p75": -0.6,
+    "media": -2.17,
+    "pctPeorQue5": 8.9,
+    "pctPeorQue10": 1.6
+   },
+   "volRealizada20dAnualMediana": 9.6
+  },
+  "MEDIO": {
+   "n": 2655,
+   "pctDias": 28.8,
+   "pCaida3_5d": 13.4,
+   "pCaida3_5d_soloCierres": 8.4,
+   "ret5": {
+    "media": 0.2,
+    "mediana": 0.41,
+    "pctPositivas": 58.2
+   },
+   "n20": 2642,
+   "ret20": {
+    "media": 0.62,
+    "mediana": 1.22,
+    "pctPositivas": 62.9,
+    "desviacion": 4.04,
+    "p10": -5.11,
+    "p90": 5.03
+   },
+   "peorCaida20d": {
+    "p5": -9.83,
+    "p10": -7.29,
+    "p25": -4.16,
+    "mediana": -2.15,
+    "p75": -0.83,
+    "media": -3.08,
+    "pctPeorQue5": 18.5,
+    "pctPeorQue10": 4.8
+   },
+   "volRealizada20dAnualMediana": 13
+  },
+  "ALTO": {
+   "n": 2987,
+   "pctDias": 32.4,
+   "pCaida3_5d": 31,
+   "pCaida3_5d_soloCierres": 21.2,
+   "ret5": {
+    "media": 0.3,
+    "mediana": 0.52,
+    "pctPositivas": 56.7
+   },
+   "n20": 2987,
+   "ret20": {
+    "media": 1.16,
+    "mediana": 1.81,
+    "pctPositivas": 62.8,
+    "desviacion": 5.86,
+    "p10": -6.06,
+    "p90": 7.49
+   },
+   "peorCaida20d": {
+    "p5": -13.39,
+    "p10": -10.45,
+    "p25": -6.33,
+    "mediana": -3.43,
+    "p75": -1.32,
+    "media": -4.64,
+    "pctPeorQue5": 34.4,
+    "pctPeorQue10": 11
+   },
+   "volRealizada20dAnualMediana": 19.9
+  },
+  "TODOS": {
+   "n": 9212,
+   "pCaida3_5d": 15.9,
+   "pCaida3_5d_soloCierres": 10.6,
+   "ret5": {
+    "media": 0.19,
+    "mediana": 0.33,
+    "pctPositivas": 57.8
+   },
+   "n20": 9197,
+   "ret20": {
+    "media": 0.77,
+    "mediana": 1.22,
+    "pctPositivas": 63.7,
+    "desviacion": 4.37,
+    "p10": -4.39,
+    "p90": 5.31
+   },
+   "peorCaida20d": {
+    "p5": -10.39,
+    "p10": -7.56,
+    "p25": -4.31,
+    "mediana": -2.14,
+    "p75": -0.81,
+    "media": -3.23,
+    "pctPeorQue5": 19.9,
+    "pctPeorQue10": 5.6
+   },
+   "volRealizada20dAnualMediana": 13.1
+  }
+ },
+ "subperiodos": {
+  "1990-2009": {
+   "rango": [
+    "1990-01-02",
+    "2009-12-31"
+   ],
+   "BAJO": {
+    "n": 1777,
+    "pctDias": 35.2,
+    "pCaida3_5d": 4.8,
+    "pCaida3_5d_soloCierres": 2.8,
+    "ret5": {
+     "media": 0.11,
+     "mediana": 0.21,
+     "pctPositivas": 57.5
+    },
+    "n20": 1777,
+    "ret20": {
+     "media": 0.66,
+     "mediana": 0.9,
+     "pctPositivas": 65.1,
+     "desviacion": 2.41,
+     "p10": -2.74,
+     "p90": 3.47
+    },
+    "peorCaida20d": {
+     "p5": -5.19,
+     "p10": -4.33,
+     "p25": -2.84,
+     "mediana": -1.51,
+     "p75": -0.62,
+     "media": -1.96,
+     "pctPeorQue5": 6.3,
+     "pctPeorQue10": 0.2
+    },
+    "volRealizada20dAnualMediana": 9.3
+   },
+   "MEDIO": {
+    "n": 1330,
+    "pctDias": 26.4,
+    "pCaida3_5d": 13.8,
+    "pCaida3_5d_soloCierres": 8.5,
+    "ret5": {
+     "media": 0.11,
+     "mediana": 0.22,
+     "pctPositivas": 54
+    },
+    "n20": 1330,
+    "ret20": {
+     "media": 0.35,
+     "mediana": 0.69,
+     "pctPositivas": 57.3,
+     "desviacion": 4.09,
+     "p10": -5.35,
+     "p90": 5.19
+    },
+    "peorCaida20d": {
+     "p5": -9.61,
+     "p10": -7.21,
+     "p25": -4.17,
+     "mediana": -2.33,
+     "p75": -0.92,
+     "media": -3.11,
+     "pctPeorQue5": 18.3,
+     "pctPeorQue10": 4.4
+    },
+    "volRealizada20dAnualMediana": 13.2
+   },
+   "ALTO": {
+    "n": 1936,
+    "pctDias": 38.4,
+    "pCaida3_5d": 32.1,
+    "pCaida3_5d_soloCierres": 21.3,
+    "ret5": {
+     "media": 0.2,
+     "mediana": 0.35,
+     "pctPositivas": 55
+    },
+    "n20": 1936,
+    "ret20": {
+     "media": 0.66,
+     "mediana": 1.31,
+     "pctPositivas": 58.8,
+     "desviacion": 6.02,
+     "p10": -6.5,
+     "p90": 7.13
+    },
+    "peorCaida20d": {
+     "p5": -14.12,
+     "p10": -11.18,
+     "p25": -6.55,
+     "mediana": -3.55,
+     "p75": -1.56,
+     "media": -4.92,
+     "pctPeorQue5": 36.1,
+     "pctPeorQue10": 12.6
+    },
+    "volRealizada20dAnualMediana": 20.1
+   },
+   "TODOS": {
+    "n": 5043,
+    "pCaida3_5d": 17.6,
+    "pCaida3_5d_soloCierres": 11.4,
+    "ret5": {
+     "media": 0.14,
+     "mediana": 0.24,
+     "pctPositivas": 55.6
+    },
+    "n20": 5043,
+    "ret20": {
+     "media": 0.58,
+     "mediana": 0.92,
+     "pctPositivas": 60.6,
+     "desviacion": 4.51,
+     "p10": -4.57,
+     "p90": 5.41
+    },
+    "peorCaida20d": {
+     "p5": -10.76,
+     "p10": -7.77,
+     "p25": -4.43,
+     "mediana": -2.3,
+     "p75": -0.9,
+     "media": -3.4,
+     "pctPeorQue5": 20.9,
+     "pctPeorQue10": 6.1
+    },
+    "volRealizada20dAnualMediana": 13.6
+   }
+  },
+  "2010-2026": {
+   "rango": [
+    "2010-01-04",
+    "2026-07-31"
+   ],
+   "BAJO": {
+    "n": 1793,
+    "pctDias": 43,
+    "pCaida3_5d": 5.6,
+    "pCaida3_5d_soloCierres": 3.8,
+    "ret5": {
+     "media": 0.09,
+     "mediana": 0.27,
+     "pctPositivas": 59.2
+    },
+    "n20": 1791,
+    "ret20": {
+     "media": 0.47,
+     "mediana": 1.05,
+     "pctPositivas": 64.8,
+     "desviacion": 3.24,
+     "p10": -3.25,
+     "p90": 3.58
+    },
+    "peorCaida20d": {
+     "p5": -7.9,
+     "p10": -5.29,
+     "p25": -3.1,
+     "mediana": -1.58,
+     "p75": -0.58,
+     "media": -2.38,
+     "pctPeorQue5": 11.4,
+     "pctPeorQue10": 3
+    },
+    "volRealizada20dAnualMediana": 9.9
+   },
+   "MEDIO": {
+    "n": 1325,
+    "pctDias": 31.8,
+    "pCaida3_5d": 13,
+    "pCaida3_5d_soloCierres": 8.3,
+    "ret5": {
+     "media": 0.3,
+     "mediana": 0.58,
+     "pctPositivas": 62.5
+    },
+    "n20": 1312,
+    "ret20": {
+     "media": 0.89,
+     "mediana": 1.79,
+     "pctPositivas": 68.5,
+     "desviacion": 3.97,
+     "p10": -4.78,
+     "p90": 4.91
+    },
+    "peorCaida20d": {
+     "p5": -10.15,
+     "p10": -7.34,
+     "p25": -4.15,
+     "mediana": -2.02,
+     "p75": -0.78,
+     "media": -3.04,
+     "pctPeorQue5": 18.8,
+     "pctPeorQue10": 5.3
+    },
+    "volRealizada20dAnualMediana": 12.7
+   },
+   "ALTO": {
+    "n": 1051,
+    "pctDias": 25.2,
+    "pCaida3_5d": 28.9,
+    "pCaida3_5d_soloCierres": 20.9,
+    "ret5": {
+     "media": 0.48,
+     "mediana": 0.77,
+     "pctPositivas": 59.8
+    },
+    "n20": 1051,
+    "ret20": {
+     "media": 2.09,
+     "mediana": 2.81,
+     "pctPositivas": 70.2,
+     "desviacion": 5.44,
+     "p10": -4.97,
+     "p90": 7.85
+    },
+    "peorCaida20d": {
+     "p5": -11.48,
+     "p10": -9.3,
+     "p25": -5.89,
+     "mediana": -3.04,
+     "p75": -1.06,
+     "media": -4.14,
+     "pctPeorQue5": 31.4,
+     "pctPeorQue10": 8.1
+    },
+    "volRealizada20dAnualMediana": 19.5
+   },
+   "TODOS": {
+    "n": 4169,
+    "pCaida3_5d": 13.8,
+    "pCaida3_5d_soloCierres": 9.5,
+    "ret5": {
+     "media": 0.25,
+     "mediana": 0.42,
+     "pctPositivas": 60.4
+    },
+    "n20": 4154,
+    "ret20": {
+     "media": 1.01,
+     "mediana": 1.53,
+     "pctPositivas": 67.4,
+     "desviacion": 4.17,
+     "p10": -4.07,
+     "p90": 5.21
+    },
+    "peorCaida20d": {
+     "p5": -9.98,
+     "p10": -7.37,
+     "p25": -4.15,
+     "mediana": -1.96,
+     "p75": -0.73,
+     "media": -3.04,
+     "pctPeorQue5": 18.8,
+     "pctPeorQue10": 5
+    },
+    "volRealizada20dAnualMediana": 12.4
+   }
+  },
+  "ultimos5anos (2021-08-07→)": {
+   "rango": [
+    "2021-08-09",
+    "2026-07-31"
+   ],
+   "BAJO": {
+    "n": 371,
+    "pctDias": 29.7,
+    "pCaida3_5d": 6.7,
+    "pCaida3_5d_soloCierres": 3.8,
+    "ret5": {
+     "media": 0.2,
+     "mediana": 0.27,
+     "pctPositivas": 59.8
+    },
+    "n20": 369,
+    "ret20": {
+     "media": 0.99,
+     "mediana": 1.67,
+     "pctPositivas": 68.3,
+     "desviacion": 3.08,
+     "p10": -3.47,
+     "p90": 4.34
+    },
+    "peorCaida20d": {
+     "p5": -6.68,
+     "p10": -5.37,
+     "p25": -3.44,
+     "mediana": -1.62,
+     "p75": -0.51,
+     "media": -2.3,
+     "pctPeorQue5": 13,
+     "pctPeorQue10": 0.8
+    },
+    "volRealizada20dAnualMediana": 10.7
+   },
+   "MEDIO": {
+    "n": 518,
+    "pctDias": 41.4,
+    "pCaida3_5d": 12.7,
+    "pCaida3_5d_soloCierres": 8.3,
+    "ret5": {
+     "media": 0.18,
+     "mediana": 0.45,
+     "pctPositivas": 58.3
+    },
+    "n20": 505,
+    "ret20": {
+     "media": 0.55,
+     "mediana": 1.08,
+     "pctPositivas": 62.2,
+     "desviacion": 3.7,
+     "p10": -4.75,
+     "p90": 4.68
+    },
+    "peorCaida20d": {
+     "p5": -10.01,
+     "p10": -7.57,
+     "p25": -4.33,
+     "mediana": -2.34,
+     "p75": -0.95,
+     "media": -3.19,
+     "pctPeorQue5": 18.8,
+     "pctPeorQue10": 5.1
+    },
+    "volRealizada20dAnualMediana": 13.3
+   },
+   "ALTO": {
+    "n": 361,
+    "pctDias": 28.9,
+    "pCaida3_5d": 28.5,
+    "pCaida3_5d_soloCierres": 21.1,
+    "ret5": {
+     "media": 0.39,
+     "mediana": 0.62,
+     "pctPositivas": 57.1
+    },
+    "n20": 361,
+    "ret20": {
+     "media": 1.43,
+     "mediana": 2.16,
+     "pctPositivas": 60.1,
+     "desviacion": 5.84,
+     "p10": -6.8,
+     "p90": 8.43
+    },
+    "peorCaida20d": {
+     "p5": -12.15,
+     "p10": -10.4,
+     "p25": -7.16,
+     "mediana": -3.45,
+     "p75": -1.29,
+     "media": -4.54,
+     "pctPeorQue5": 38,
+     "pctPeorQue10": 11.9
+    },
+    "volRealizada20dAnualMediana": 20
+   },
+   "TODOS": {
+    "n": 1250,
+    "pCaida3_5d": 15.5,
+    "pCaida3_5d_soloCierres": 10.6,
+    "ret5": {
+     "media": 0.25,
+     "mediana": 0.37,
+     "pctPositivas": 58.4
+    },
+    "n20": 1235,
+    "ret20": {
+     "media": 0.94,
+     "mediana": 1.49,
+     "pctPositivas": 63.4,
+     "desviacion": 4.3,
+     "p10": -4.93,
+     "p90": 5.7
+    },
+    "peorCaida20d": {
+     "p5": -10.31,
+     "p10": -8.21,
+     "p25": -4.72,
+     "mediana": -2.26,
+     "p75": -0.86,
+     "media": -3.32,
+     "pctPeorQue5": 22.7,
+     "pctPeorQue10": 5.8
+    },
+    "volRealizada20dAnualMediana": 13.8
+   }
+  },
+  "1990s": {
+   "rango": [
+    "1990-01-02",
+    "1999-12-31"
+   ],
+   "BAJO": {
+    "n": 1025,
+    "pctDias": 40.5,
+    "pCaida3_5d": 5.2,
+    "pCaida3_5d_soloCierres": 2.7,
+    "ret5": {
+     "media": 0.16,
+     "mediana": 0.27,
+     "pctPositivas": 59.5
+    },
+    "n20": 1025,
+    "ret20": {
+     "media": 0.84,
+     "mediana": 0.99,
+     "pctPositivas": 66.5,
+     "desviacion": 2.33,
+     "p10": -2.29,
+     "p90": 3.62
+    },
+    "peorCaida20d": {
+     "p5": -5.08,
+     "p10": -4.06,
+     "p25": -2.77,
+     "mediana": -1.47,
+     "p75": -0.54,
+     "media": -1.9,
+     "pctPeorQue5": 5.5,
+     "pctPeorQue10": 0.3
+    },
+    "volRealizada20dAnualMediana": 8.8
+   },
+   "MEDIO": {
+    "n": 770,
+    "pctDias": 30.5,
+    "pCaida3_5d": 12.1,
+    "pCaida3_5d_soloCierres": 6.4,
+    "ret5": {
+     "media": 0.25,
+     "mediana": 0.31,
+     "pctPositivas": 56.1
+    },
+    "n20": 770,
+    "ret20": {
+     "media": 1.06,
+     "mediana": 1.07,
+     "pctPositivas": 61.3,
+     "desviacion": 3.9,
+     "p10": -3.49,
+     "p90": 5.82
+    },
+    "peorCaida20d": {
+     "p5": -8.88,
+     "p10": -6.2,
+     "p25": -3.63,
+     "mediana": -2.06,
+     "p75": -0.83,
+     "media": -2.7,
+     "pctPeorQue5": 12.3,
+     "pctPeorQue10": 3.1
+    },
+    "volRealizada20dAnualMediana": 12.5
+   },
+   "ALTO": {
+    "n": 733,
+    "pctDias": 29,
+    "pCaida3_5d": 23.1,
+    "pCaida3_5d_soloCierres": 13.9,
+    "ret5": {
+     "media": 0.53,
+     "mediana": 0.74,
+     "pctPositivas": 61.3
+    },
+    "n20": 733,
+    "ret20": {
+     "media": 1.87,
+     "mediana": 2.1,
+     "pctPositivas": 66.7,
+     "desviacion": 4.64,
+     "p10": -3.97,
+     "p90": 7.28
+    },
+    "peorCaida20d": {
+     "p5": -10.33,
+     "p10": -7.9,
+     "p25": -5.2,
+     "mediana": -2.82,
+     "p75": -0.98,
+     "media": -3.54,
+     "pctPeorQue5": 26.1,
+     "pctPeorQue10": 5.3
+    },
+    "volRealizada20dAnualMediana": 17.9
+   },
+   "TODOS": {
+    "n": 2528,
+    "pCaida3_5d": 12.5,
+    "pCaida3_5d_soloCierres": 7.1,
+    "ret5": {
+     "media": 0.29,
+     "mediana": 0.36,
+     "pctPositivas": 59
+    },
+    "n20": 2528,
+    "ret20": {
+     "media": 1.2,
+     "mediana": 1.25,
+     "pctPositivas": 65,
+     "desviacion": 3.64,
+     "p10": -3.11,
+     "p90": 5.52
+    },
+    "peorCaida20d": {
+     "p5": -8.07,
+     "p10": -5.87,
+     "p25": -3.59,
+     "mediana": -1.96,
+     "p75": -0.71,
+     "media": -2.62,
+     "pctPeorQue5": 13.5,
+     "pctPeorQue10": 2.6
+    },
+    "volRealizada20dAnualMediana": 11.7
+   }
+  },
+  "2000s": {
+   "rango": [
+    "2000-01-03",
+    "2009-12-31"
+   ],
+   "BAJO": {
+    "n": 752,
+    "pctDias": 29.9,
+    "pCaida3_5d": 4.3,
+    "pCaida3_5d_soloCierres": 2.8,
+    "ret5": {
+     "media": 0.05,
+     "mediana": 0.13,
+     "pctPositivas": 54.8
+    },
+    "n20": 752,
+    "ret20": {
+     "media": 0.41,
+     "mediana": 0.82,
+     "pctPositivas": 63,
+     "desviacion": 2.48,
+     "p10": -3.24,
+     "p90": 3.18
+    },
+    "peorCaida20d": {
+     "p5": -5.24,
+     "p10": -4.59,
+     "p25": -3.02,
+     "mediana": -1.53,
+     "p75": -0.7,
+     "media": -2.02,
+     "pctPeorQue5": 7.4,
+     "pctPeorQue10": 0.1
+    },
+    "volRealizada20dAnualMediana": 9.6
+   },
+   "MEDIO": {
+    "n": 560,
+    "pctDias": 22.3,
+    "pCaida3_5d": 16.1,
+    "pCaida3_5d_soloCierres": 11.4,
+    "ret5": {
+     "media": -0.09,
+     "mediana": 0.08,
+     "pctPositivas": 51.1
+    },
+    "n20": 560,
+    "ret20": {
+     "media": -0.62,
+     "mediana": 0.18,
+     "pctPositivas": 51.8,
+     "desviacion": 4.14,
+     "p10": -6.41,
+     "p90": 4.35
+    },
+    "peorCaida20d": {
+     "p5": -10.52,
+     "p10": -8.42,
+     "p25": -5.47,
+     "mediana": -2.92,
+     "p75": -1.06,
+     "media": -3.69,
+     "pctPeorQue5": 26.4,
+     "pctPeorQue10": 6.3
+    },
+    "volRealizada20dAnualMediana": 14.4
+   },
+   "ALTO": {
+    "n": 1203,
+    "pctDias": 47.8,
+    "pCaida3_5d": 37.7,
+    "pCaida3_5d_soloCierres": 25.9,
+    "ret5": {
+     "media": 0,
+     "mediana": 0.11,
+     "pctPositivas": 51.1
+    },
+    "n20": 1203,
+    "ret20": {
+     "media": -0.08,
+     "mediana": 0.65,
+     "pctPositivas": 54,
+     "desviacion": 6.62,
+     "p10": -8.51,
+     "p90": 7.09
+    },
+    "peorCaida20d": {
+     "p5": -17.56,
+     "p10": -12.98,
+     "p25": -7.69,
+     "mediana": -4.19,
+     "p75": -1.89,
+     "media": -5.76,
+     "pctPeorQue5": 42.1,
+     "pctPeorQue10": 17
+    },
+    "volRealizada20dAnualMediana": 22.4
+   },
+   "TODOS": {
+    "n": 2515,
+    "pCaida3_5d": 22.9,
+    "pCaida3_5d_soloCierres": 15.7,
+    "ret5": {
+     "media": -0.01,
+     "mediana": 0.11,
+     "pctPositivas": 52.2
+    },
+    "n20": 2515,
+    "ret20": {
+     "media": -0.05,
+     "mediana": 0.62,
+     "pctPositivas": 56.2,
+     "desviacion": 5.17,
+     "p10": -6.13,
+     "p90": 5.32
+    },
+    "peorCaida20d": {
+     "p5": -13.24,
+     "p10": -9.67,
+     "p25": -5.54,
+     "mediana": -2.82,
+     "p75": -1.14,
+     "media": -4.18,
+     "pctPeorQue5": 28.3,
+     "pctPeorQue10": 9.5
+    },
+    "volRealizada20dAnualMediana": 15.9
+   }
+  },
+  "2010s": {
+   "rango": [
+    "2010-01-04",
+    "2019-12-31"
+   ],
+   "BAJO": {
+    "n": 1387,
+    "pctDias": 55.1,
+    "pCaida3_5d": 5.2,
+    "pCaida3_5d_soloCierres": 3.6,
+    "ret5": {
+     "media": 0.08,
+     "mediana": 0.26,
+     "pctPositivas": 58.9
+    },
+    "n20": 1387,
+    "ret20": {
+     "media": 0.48,
+     "mediana": 0.92,
+     "pctPositivas": 64,
+     "desviacion": 2.62,
+     "p10": -2.9,
+     "p90": 3.32
+    },
+    "peorCaida20d": {
+     "p5": -7.36,
+     "p10": -5.04,
+     "p25": -3.04,
+     "mediana": -1.52,
+     "p75": -0.57,
+     "media": -2.23,
+     "pctPeorQue5": 10.5,
+     "pctPeorQue10": 2.7
+    },
+    "volRealizada20dAnualMediana": 9.5
+   },
+   "MEDIO": {
+    "n": 705,
+    "pctDias": 28,
+    "pCaida3_5d": 14,
+    "pCaida3_5d_soloCierres": 9.1,
+    "ret5": {
+     "media": 0.36,
+     "mediana": 0.65,
+     "pctPositivas": 64.5
+    },
+    "n20": 705,
+    "ret20": {
+     "media": 1.07,
+     "mediana": 2.21,
+     "pctPositivas": 70.8,
+     "desviacion": 4.11,
+     "p10": -5.09,
+     "p90": 5.06
+    },
+    "peorCaida20d": {
+     "p5": -10.37,
+     "p10": -7.36,
+     "p25": -4.28,
+     "mediana": -1.89,
+     "p75": -0.67,
+     "media": -3.03,
+     "pctPeorQue5": 20.4,
+     "pctPeorQue10": 5.5
+    },
+    "volRealizada20dAnualMediana": 12.4
+   },
+   "ALTO": {
+    "n": 424,
+    "pctDias": 16.9,
+    "pCaida3_5d": 31.4,
+    "pCaida3_5d_soloCierres": 21.9,
+    "ret5": {
+     "media": 0.51,
+     "mediana": 0.92,
+     "pctPositivas": 60.1
+    },
+    "n20": 424,
+    "ret20": {
+     "media": 2.09,
+     "mediana": 2.54,
+     "pctPositivas": 71.5,
+     "desviacion": 4.47,
+     "p10": -4.12,
+     "p90": 7.5
+    },
+    "peorCaida20d": {
+     "p5": -10.55,
+     "p10": -8.33,
+     "p25": -5.8,
+     "mediana": -3.38,
+     "p75": -0.94,
+     "media": -3.83,
+     "pctPeorQue5": 30.7,
+     "pctPeorQue10": 5.9
+    },
+    "volRealizada20dAnualMediana": 19
+   },
+   "TODOS": {
+    "n": 2516,
+    "pCaida3_5d": 12.1,
+    "pCaida3_5d_soloCierres": 8.2,
+    "ret5": {
+     "media": 0.23,
+     "mediana": 0.39,
+     "pctPositivas": 60.7
+    },
+    "n20": 2516,
+    "ret20": {
+     "media": 0.92,
+     "mediana": 1.4,
+     "pctPositivas": 67.2,
+     "desviacion": 3.5,
+     "p10": -3.65,
+     "p90": 4.54
+    },
+    "peorCaida20d": {
+     "p5": -9.19,
+     "p10": -6.54,
+     "p25": -3.78,
+     "mediana": -1.79,
+     "p75": -0.65,
+     "media": -2.73,
+     "pctPeorQue5": 16.7,
+     "pctPeorQue10": 4.1
+    },
+    "volRealizada20dAnualMediana": 11.2
+   }
+  },
+  "2020s": {
+   "rango": [
+    "2020-01-02",
+    "2026-07-31"
+   ],
+   "BAJO": {
+    "n": 406,
+    "pctDias": 24.6,
+    "pCaida3_5d": 7.1,
+    "pCaida3_5d_soloCierres": 4.4,
+    "ret5": {
+     "media": 0.14,
+     "mediana": 0.27,
+     "pctPositivas": 60.1
+    },
+    "n20": 404,
+    "ret20": {
+     "media": 0.41,
+     "mediana": 1.6,
+     "pctPositivas": 67.6,
+     "desviacion": 4.8,
+     "p10": -3.91,
+     "p90": 4.3
+    },
+    "peorCaida20d": {
+     "p5": -9.02,
+     "p10": -5.62,
+     "p25": -3.55,
+     "mediana": -1.67,
+     "p75": -0.59,
+     "media": -2.9,
+     "pctPeorQue5": 14.9,
+     "pctPeorQue10": 3.7
+    },
+    "volRealizada20dAnualMediana": 10.9
+   },
+   "MEDIO": {
+    "n": 620,
+    "pctDias": 37.5,
+    "pCaida3_5d": 11.8,
+    "pCaida3_5d_soloCierres": 7.4,
+    "ret5": {
+     "media": 0.23,
+     "mediana": 0.48,
+     "pctPositivas": 60.2
+    },
+    "n20": 607,
+    "ret20": {
+     "media": 0.67,
+     "mediana": 1.24,
+     "pctPositivas": 65.9,
+     "desviacion": 3.78,
+     "p10": -4.25,
+     "p90": 4.66
+    },
+    "peorCaida20d": {
+     "p5": -9.72,
+     "p10": -7.12,
+     "p25": -4.01,
+     "mediana": -2.2,
+     "p75": -0.88,
+     "media": -3.05,
+     "pctPeorQue5": 16.8,
+     "pctPeorQue10": 4.9
+    },
+    "volRealizada20dAnualMediana": 13.1
+   },
+   "ALTO": {
+    "n": 627,
+    "pctDias": 37.9,
+    "pCaida3_5d": 27.3,
+    "pCaida3_5d_soloCierres": 20.3,
+    "ret5": {
+     "media": 0.47,
+     "mediana": 0.72,
+     "pctPositivas": 59.6
+    },
+    "n20": 627,
+    "ret20": {
+     "media": 2.09,
+     "mediana": 3.07,
+     "pctPositivas": 69.4,
+     "desviacion": 6.01,
+     "p10": -5.64,
+     "p90": 8.4
+    },
+    "peorCaida20d": {
+     "p5": -12.35,
+     "p10": -9.68,
+     "p25": -5.96,
+     "mediana": -2.87,
+     "p75": -1.1,
+     "media": -4.35,
+     "pctPeorQue5": 31.9,
+     "pctPeorQue10": 9.6
+    },
+    "volRealizada20dAnualMediana": 19.6
+   },
+   "TODOS": {
+    "n": 1653,
+    "pCaida3_5d": 16.5,
+    "pCaida3_5d_soloCierres": 11.6,
+    "ret5": {
+     "media": 0.3,
+     "mediana": 0.51,
+     "pctPositivas": 60
+    },
+    "n20": 1638,
+    "ret20": {
+     "media": 1.15,
+     "mediana": 1.82,
+     "pctPositivas": 67.6,
+     "desviacion": 5.03,
+     "p10": -4.82,
+     "p90": 6.08
+    },
+    "peorCaida20d": {
+     "p5": -10.66,
+     "p10": -8.22,
+     "p25": -4.62,
+     "mediana": -2.24,
+     "p75": -0.87,
+     "media": -3.51,
+     "pctPeorQue5": 22.1,
+     "pctPeorQue10": 6.4
+    },
+    "volRealizada20dAnualMediana": 14.1
+   }
+  }
+ },
+ "estabilidadAltoVsBajo": {
+  "completa": {
+   "ratioCaidaAltoVsBajo": 6,
+   "ret5Media": {
+    "BAJO": 0.1,
+    "MEDIO": 0.2,
+    "ALTO": 0.3
+   },
+   "ret20Media": {
+    "BAJO": 0.56,
+    "MEDIO": 0.62,
+    "ALTO": 1.16
+   },
+   "ret20Mediana": {
+    "BAJO": 0.96,
+    "MEDIO": 1.22,
+    "ALTO": 1.81
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "1990-2009": {
+   "ratioCaidaAltoVsBajo": 6.7,
+   "ret5Media": {
+    "BAJO": 0.11,
+    "MEDIO": 0.11,
+    "ALTO": 0.2
+   },
+   "ret20Media": {
+    "BAJO": 0.66,
+    "MEDIO": 0.35,
+    "ALTO": 0.66
+   },
+   "ret20Mediana": {
+    "BAJO": 0.9,
+    "MEDIO": 0.69,
+    "ALTO": 1.31
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "2010-2026": {
+   "ratioCaidaAltoVsBajo": 5.2,
+   "ret5Media": {
+    "BAJO": 0.09,
+    "MEDIO": 0.3,
+    "ALTO": 0.48
+   },
+   "ret20Media": {
+    "BAJO": 0.47,
+    "MEDIO": 0.89,
+    "ALTO": 2.09
+   },
+   "ret20Mediana": {
+    "BAJO": 1.05,
+    "MEDIO": 1.79,
+    "ALTO": 2.81
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "ultimos5anos (2021-08-07→)": {
+   "ratioCaidaAltoVsBajo": 4.3,
+   "ret5Media": {
+    "BAJO": 0.2,
+    "MEDIO": 0.18,
+    "ALTO": 0.39
+   },
+   "ret20Media": {
+    "BAJO": 0.99,
+    "MEDIO": 0.55,
+    "ALTO": 1.43
+   },
+   "ret20Mediana": {
+    "BAJO": 1.67,
+    "MEDIO": 1.08,
+    "ALTO": 2.16
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "1990s": {
+   "ratioCaidaAltoVsBajo": 4.4,
+   "ret5Media": {
+    "BAJO": 0.16,
+    "MEDIO": 0.25,
+    "ALTO": 0.53
+   },
+   "ret20Media": {
+    "BAJO": 0.84,
+    "MEDIO": 1.06,
+    "ALTO": 1.87
+   },
+   "ret20Mediana": {
+    "BAJO": 0.99,
+    "MEDIO": 1.07,
+    "ALTO": 2.1
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "2000s": {
+   "ratioCaidaAltoVsBajo": 8.8,
+   "ret5Media": {
+    "BAJO": 0.05,
+    "MEDIO": -0.09,
+    "ALTO": 0
+   },
+   "ret20Media": {
+    "BAJO": 0.41,
+    "MEDIO": -0.62,
+    "ALTO": -0.08
+   },
+   "ret20Mediana": {
+    "BAJO": 0.82,
+    "MEDIO": 0.18,
+    "ALTO": 0.65
+   },
+   "altoNoPeorQueBajo_ret20Media": false,
+   "altoNoPeorQueBajo_ret20Mediana": false,
+   "altoNoPeorQueBajo_ret5Media": false
+  },
+  "2010s": {
+   "ratioCaidaAltoVsBajo": 6,
+   "ret5Media": {
+    "BAJO": 0.08,
+    "MEDIO": 0.36,
+    "ALTO": 0.51
+   },
+   "ret20Media": {
+    "BAJO": 0.48,
+    "MEDIO": 1.07,
+    "ALTO": 2.09
+   },
+   "ret20Mediana": {
+    "BAJO": 0.92,
+    "MEDIO": 2.21,
+    "ALTO": 2.54
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  },
+  "2020s": {
+   "ratioCaidaAltoVsBajo": 3.8,
+   "ret5Media": {
+    "BAJO": 0.14,
+    "MEDIO": 0.23,
+    "ALTO": 0.47
+   },
+   "ret20Media": {
+    "BAJO": 0.41,
+    "MEDIO": 0.67,
+    "ALTO": 2.09
+   },
+   "ret20Mediana": {
+    "BAJO": 1.6,
+    "MEDIO": 1.24,
+    "ALTO": 3.07
+   },
+   "altoNoPeorQueBajo_ret20Media": true,
+   "altoNoPeorQueBajo_ret20Mediana": true,
+   "altoNoPeorQueBajo_ret5Media": true
+  }
+ },
+ "episodios": {
+  "BAJO": {
+   "episodios": 30,
+   "diasMediosPorEpisodio": 119,
+   "peorMediaQuitandoUnEpisodio": {
+    "ret5": {
+     "media": 0.06,
+     "sinEpisodio": "1992-03-30→1996-02-23 (887 días)"
+    },
+    "ret20": {
+     "media": 0.43,
+     "sinEpisodio": "1992-03-30→1996-02-23 (887 días)"
+    }
+   },
+   "ret20MediaDeMediasPorEpisodio": -0.37,
+   "ret20ErrorEstandarEntreEpisodios": 0.41,
+   "ret20PctEpisodiosPositivos": 43.3,
+   "episodiosMasLargos": [
+    {
+     "desde": "1992-03-30",
+     "hasta": "1996-02-23",
+     "dias": 887,
+     "ret20Media": 0.95,
+     "pCaida3_5d": 4.1
+    },
+    {
+     "desde": "2003-12-16",
+     "hasta": "2007-07-19",
+     "dias": 752,
+     "ret20Media": 0.41,
+     "pCaida3_5d": 4.3
+    },
+    {
+     "desde": "2012-07-19",
+     "hasta": "2015-08-19",
+     "dias": 589,
+     "ret20Media": 0.3,
+     "pCaida3_5d": 5.9
+    },
+    {
+     "desde": "2016-03-16",
+     "hasta": "2018-03-16",
+     "dias": 445,
+     "ret20Media": 0.97,
+     "pCaida3_5d": 2.5
+    },
+    {
+     "desde": "2019-02-04",
+     "hasta": "2020-02-20",
+     "dias": 196,
+     "ret20Media": -0.2,
+     "pCaida3_5d": 7.1
+    },
+    {
+     "desde": "2023-11-02",
+     "hasta": "2024-09-26",
+     "dias": 182,
+     "ret20Media": 2.1,
+     "pCaida3_5d": 3.8
+    }
+   ]
+  },
+  "MEDIO": {
+   "episodios": 73,
+   "diasMediosPorEpisodio": 36.4,
+   "peorMediaQuitandoUnEpisodio": {
+    "ret5": {
+     "media": 0.17,
+     "sinEpisodio": "1996-02-15→1997-08-07 (262 días)"
+    },
+    "ret20": {
+     "media": 0.44,
+     "sinEpisodio": "1996-02-15→1997-08-07 (262 días)"
+    }
+   },
+   "ret20MediaDeMediasPorEpisodio": 0.1,
+   "ret20ErrorEstandarEntreEpisodios": 0.49,
+   "ret20PctEpisodiosPositivos": 67.1,
+   "episodiosMasLargos": [
+    {
+     "desde": "1996-02-15",
+     "hasta": "1997-08-07",
+     "dias": 262,
+     "ret20Media": 2.23,
+     "pCaida3_5d": 15.6
+    },
+    {
+     "desde": "2003-04-22",
+     "hasta": "2004-08-20",
+     "dias": 239,
+     "ret20Media": 1.86,
+     "pCaida3_5d": 7.1
+    },
+    {
+     "desde": "1991-01-31",
+     "hasta": "1992-05-07",
+     "dias": 229,
+     "ret20Media": 1.18,
+     "pCaida3_5d": 1.3
+    },
+    {
+     "desde": "2021-02-05",
+     "hasta": "2022-02-09",
+     "dias": 169,
+     "ret20Media": 0.53,
+     "pCaida3_5d": 13.6
+    },
+    {
+     "desde": "2010-10-08",
+     "hasta": "2011-07-26",
+     "dias": 154,
+     "ret20Media": 0.23,
+     "pCaida3_5d": 8.4
+    },
+    {
+     "desde": "2025-05-12",
+     "hasta": "2026-02-27",
+     "dias": 131,
+     "ret20Media": 1.17,
+     "pCaida3_5d": 7.6
+    }
+   ]
+  },
+  "ALTO": {
+   "episodios": 54,
+   "diasMediosPorEpisodio": 55.3,
+   "peorMediaQuitandoUnEpisodio": {
+    "ret5": {
+     "media": 0.27,
+     "sinEpisodio": "1998-07-23→2000-07-05 (455 días)"
+    },
+    "ret20": {
+     "media": 0.99,
+     "sinEpisodio": "2020-02-24→2021-03-24 (260 días)"
+    }
+   },
+   "ret20MediaDeMediasPorEpisodio": 3.25,
+   "ret20ErrorEstandarEntreEpisodios": 0.28,
+   "ret20PctEpisodiosPositivos": 94.4,
+   "episodiosMasLargos": [
+    {
+     "desde": "1998-07-23",
+     "hasta": "2000-07-05",
+     "dias": 455,
+     "ret20Media": 1.58,
+     "pCaida3_5d": 31.4
+    },
+    {
+     "desde": "2008-06-06",
+     "hasta": "2010-02-23",
+     "dias": 390,
+     "ret20Media": 0.01,
+     "pCaida3_5d": 40.8
+    },
+    {
+     "desde": "2000-09-25",
+     "hasta": "2002-02-28",
+     "dias": 324,
+     "ret20Media": -0.45,
+     "pCaida3_5d": 33.3
+    },
+    {
+     "desde": "2020-02-24",
+     "hasta": "2021-03-24",
+     "dias": 260,
+     "ret20Media": 2.97,
+     "pCaida3_5d": 26.2
+    },
+    {
+     "desde": "2002-04-26",
+     "hasta": "2003-06-09",
+     "dias": 239,
+     "ret20Media": -0.33,
+     "pCaida3_5d": 42.3
+    },
+    {
+     "desde": "2021-11-26",
+     "hasta": "2023-01-11",
+     "dias": 235,
+     "ret20Media": 0.11,
+     "pCaida3_5d": 32.8
+    }
+   ]
+  }
+ },
+ "esperarALaCalma": {
+  "completa": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 2987,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 13.7,
+    "diferenciaPrecio": {
+     "media": 5.88,
+     "mediana": 3.31,
+     "p10": -0.64,
+     "p90": 16.32
+    },
+    "esperaSesiones": {
+     "mediana": 25,
+     "p90": 135,
+     "max": 286
+    }
+   },
+   {
+    "esperarHastaVixMenorQue": 16,
+    "n": 2987,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 34.8,
+    "diferenciaPrecio": {
+     "media": 6.64,
+     "mediana": 7.7,
+     "p10": -19.2,
+     "p90": 30.24
+    },
+    "esperaSesiones": {
+     "mediana": 282,
+     "p90": 1249,
+     "max": 1762
+    }
+   }
+  ],
+  "1990-2009": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 1936,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 17.1,
+    "diferenciaPrecio": {
+     "media": 5.81,
+     "mediana": 3.25,
+     "p10": -1.21,
+     "p90": 17.83
+    },
+    "esperaSesiones": {
+     "mediana": 30,
+     "p90": 158,
+     "max": 286
+    }
+   }
+  ],
+  "2010-2026": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 1051,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 7.2,
+    "diferenciaPrecio": {
+     "media": 6.01,
+     "mediana": 3.47,
+     "p10": 0.33,
+     "p90": 13.33
+    },
+    "esperaSesiones": {
+     "mediana": 18,
+     "p90": 102,
+     "max": 194
+    }
+   }
+  ],
+  "ultimos5anos (2021-08-07→)": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 361,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 12.2,
+    "diferenciaPrecio": {
+     "media": 3.63,
+     "mediana": 2.49,
+     "p10": -0.22,
+     "p90": 9.5
+    },
+    "esperaSesiones": {
+     "mediana": 11,
+     "p90": 53,
+     "max": 76
+    }
+   }
+  ],
+  "1990s": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 733,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 8.9,
+    "diferenciaPrecio": {
+     "media": 5.18,
+     "mediana": 3.95,
+     "p10": 0.17,
+     "p90": 12.4
+    },
+    "esperaSesiones": {
+     "mediana": 20,
+     "p90": 82,
+     "max": 129
+    }
+   }
+  ],
+  "2000s": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 1203,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 22.2,
+    "diferenciaPrecio": {
+     "media": 6.19,
+     "mediana": 2.65,
+     "p10": -2.41,
+     "p90": 21.7
+    },
+    "esperaSesiones": {
+     "mediana": 41,
+     "p90": 195,
+     "max": 286
+    }
+   }
+  ],
+  "2010s": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 424,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 7.3,
+    "diferenciaPrecio": {
+     "media": 3.61,
+     "mediana": 2.61,
+     "p10": 0.3,
+     "p90": 8.82
+    },
+    "esperaSesiones": {
+     "mediana": 14,
+     "p90": 87,
+     "max": 110
+    }
+   }
+  ],
+  "2020s": [
+   {
+    "esperarHastaVixMenorQue": 21,
+    "n": 627,
+    "censurados": 0,
+    "pctDiasEnQueEsperarDioMejorPrecio": 7.2,
+    "diferenciaPrecio": {
+     "media": 7.64,
+     "mediana": 4.25,
+     "p10": 0.45,
+     "p90": 19.94
+    },
+    "esperaSesiones": {
+     "mediana": 22,
+     "p90": 131,
+     "max": 194
+    }
+   }
+  ]
+ },
+ "umbrales": {
+  "vixMediana": 17.62,
+  "tercilesVix": [
+   15.22,
+   20.8
+  ],
+  "escala_16_21_panel": {
+   "BAJO": {
+    "n": 3570,
+    "pctDias": 38.8,
+    "pCaida3_5d": 5.2,
+    "ret20Media": 0.56,
+    "peorCaida20dMediana": -1.54
+   },
+   "MEDIO": {
+    "n": 2655,
+    "pctDias": 28.8,
+    "pCaida3_5d": 13.4,
+    "ret20Media": 0.62,
+    "peorCaida20dMediana": -2.15
+   },
+   "ALTO": {
+    "n": 2987,
+    "pctDias": 32.4,
+    "pCaida3_5d": 31,
+    "ret20Media": 1.16,
+    "peorCaida20dMediana": -3.43
+   }
+  },
+  "escala_15_20_indicadores": {
+   "BAJO": {
+    "n": 2947,
+    "pctDias": 32,
+    "pCaida3_5d": 4.4,
+    "ret20Media": 0.62,
+    "peorCaida20dMediana": -1.44
+   },
+   "MEDIO": {
+    "n": 2837,
+    "pctDias": 30.8,
+    "pCaida3_5d": 11.8,
+    "ret20Media": 0.59,
+    "peorCaida20dMediana": -2.13
+   },
+   "ALTO": {
+    "n": 3428,
+    "pctDias": 37.2,
+    "pCaida3_5d": 29.3,
+    "ret20Media": 1.06,
+    "peorCaida20dMediana": -3.28
+   }
+  },
+  "escala_terciles": {
+   "BAJO": {
+    "n": 3069,
+    "pctDias": 33.3,
+    "pCaida3_5d": 4.6,
+    "ret20Media": 0.61,
+    "peorCaida20dMediana": -1.46
+   },
+   "MEDIO": {
+    "n": 3072,
+    "pctDias": 33.3,
+    "pCaida3_5d": 12.8,
+    "ret20Media": 0.56,
+    "peorCaida20dMediana": -2.15
+   },
+   "ALTO": {
+    "n": 3071,
+    "pctDias": 33.3,
+    "pCaida3_5d": 30.3,
+    "ret20Media": 1.14,
+    "peorCaida20dMediana": -3.39
+   }
+  },
+  "tramosFinos": [
+   {
+    "vix": "0-12",
+    "n": 801,
+    "pctDias": 8.7,
+    "pCaida3_5d": 2.1,
+    "ret5Media": 0.14,
+    "ret20Media": 0.7,
+    "ret20Mediana": 1.03,
+    "ret20PctPositivas": 68,
+    "peorCaida20dMediana": -1.17,
+    "volRealizada20dMediana": 7.9
+   },
+   {
+    "vix": "12-14",
+    "n": 1513,
+    "pctDias": 16.4,
+    "pCaida3_5d": 4.8,
+    "ret5Media": 0.11,
+    "ret20Media": 0.56,
+    "ret20Mediana": 0.96,
+    "ret20PctPositivas": 65,
+    "peorCaida20dMediana": -1.47,
+    "volRealizada20dMediana": 9.5
+   },
+   {
+    "vix": "14-16",
+    "n": 1256,
+    "pctDias": 13.6,
+    "pCaida3_5d": 7.7,
+    "ret5Media": 0.08,
+    "ret20Media": 0.47,
+    "ret20Mediana": 0.91,
+    "ret20PctPositivas": 62.9,
+    "peorCaida20dMediana": -2,
+    "volRealizada20dMediana": 10.7
+   },
+   {
+    "vix": "16-18",
+    "n": 1249,
+    "pctDias": 13.6,
+    "pCaida3_5d": 10.2,
+    "ret5Media": 0.19,
+    "ret20Media": 0.67,
+    "ret20Mediana": 1.18,
+    "ret20PctPositivas": 65,
+    "peorCaida20dMediana": -2.08,
+    "volRealizada20dMediana": 11.7
+   },
+   {
+    "vix": "18-21",
+    "n": 1406,
+    "pctDias": 15.3,
+    "pCaida3_5d": 16.1,
+    "ret5Media": 0.21,
+    "ret20Media": 0.58,
+    "ret20Mediana": 1.27,
+    "ret20PctPositivas": 61,
+    "peorCaida20dMediana": -2.24,
+    "volRealizada20dMediana": 14.1
+   },
+   {
+    "vix": "21-25",
+    "n": 1386,
+    "pctDias": 15,
+    "pCaida3_5d": 23.6,
+    "ret5Media": 0.14,
+    "ret20Media": 0.52,
+    "ret20Mediana": 1.04,
+    "ret20PctPositivas": 59,
+    "peorCaida20dMediana": -3.01,
+    "volRealizada20dMediana": 17.2
+   },
+   {
+    "vix": "25-30",
+    "n": 865,
+    "pctDias": 9.4,
+    "pCaida3_5d": 33.6,
+    "ret5Media": 0.28,
+    "ret20Media": 1.09,
+    "ret20Mediana": 1.85,
+    "ret20PctPositivas": 62.7,
+    "peorCaida20dMediana": -3.61,
+    "volRealizada20dMediana": 20.6
+   },
+   {
+    "vix": "30-40",
+    "n": 528,
+    "pctDias": 5.7,
+    "pCaida3_5d": 36.4,
+    "ret5Media": 0.5,
+    "ret20Media": 2.37,
+    "ret20Mediana": 3.42,
+    "ret20PctPositivas": 73.7,
+    "peorCaida20dMediana": -3.43,
+    "volRealizada20dMediana": 24.9
+   },
+   {
+    "vix": ">=40",
+    "n": 208,
+    "pctDias": 2.3,
+    "pCaida3_5d": 55.8,
+    "ret5Media": 0.89,
+    "ret20Media": 2.67,
+    "ret20Mediana": 4.26,
+    "ret20PctPositivas": 61.5,
+    "peorCaida20dMediana": -6.38,
+    "volRealizada20dMediana": 39.6
+   }
+  ]
+ },
+ "contrasteSpyRetornoTotal": {
+  "nota": "SPY con dividendos (cierre ajustado); máximos/mínimos escalados por adj/close",
+  "completa": {
+   "rango": [
+    "1993-01-29",
+    "2026-07-31"
+   ],
+   "BAJO": {
+    "n": 3337,
+    "pctDias": 39.6,
+    "pCaida3_5d": 5.1,
+    "pCaida3_5d_soloCierres": 3.3,
+    "ret5": {
+     "media": 0.15,
+     "mediana": 0.28,
+     "pctPositivas": 59.8
+    },
+    "n20": 3335,
+    "ret20": {
+     "media": 0.75,
+     "mediana": 1.17,
+     "pctPositivas": 67.7,
+     "desviacion": 2.9,
+     "p10": -2.79,
+     "p90": 3.73
+    },
+    "peorCaida20d": {
+     "p5": -6.06,
+     "p10": -4.71,
+     "p25": -2.86,
+     "mediana": -1.46,
+     "p75": -0.59,
+     "media": -2.14,
+     "pctPeorQue5": 8.6,
+     "pctPeorQue10": 1.7
+    },
+    "volRealizada20dAnualMediana": 9.6
+   },
+   "MEDIO": {
+    "n": 2308,
+    "pctDias": 27.4,
+    "pCaida3_5d": 14.9,
+    "pCaida3_5d_soloCierres": 9.1,
+    "ret5": {
+     "media": 0.22,
+     "mediana": 0.48,
+     "pctPositivas": 59.4
+    },
+    "n20": 2295,
+    "ret20": {
+     "media": 0.72,
+     "mediana": 1.44,
+     "pctPositivas": 64.2,
+     "desviacion": 4.1,
+     "p10": -5.19,
+     "p90": 5.18
+    },
+    "peorCaida20d": {
+     "p5": -10.22,
+     "p10": -7.55,
+     "p25": -4.37,
+     "mediana": -2.24,
+     "p75": -0.83,
+     "media": -3.22,
+     "pctPeorQue5": 20.5,
+     "pctPeorQue10": 5.3
+    },
+    "volRealizada20dAnualMediana": 13.4
+   },
+   "ALTO": {
+    "n": 2788,
+    "pctDias": 33.1,
+    "pCaida3_5d": 32.2,
+    "pCaida3_5d_soloCierres": 21.5,
+    "ret5": {
+     "media": 0.34,
+     "mediana": 0.56,
+     "pctPositivas": 57
+    },
+    "n20": 2788,
+    "ret20": {
+     "media": 1.29,
+     "mediana": 2.02,
+     "pctPositivas": 63.7,
+     "desviacion": 5.92,
+     "p10": -6.02,
+     "p90": 7.58
+    },
+    "peorCaida20d": {
+     "p5": -13.85,
+     "p10": -10.77,
+     "p25": -6.4,
+     "mediana": -3.49,
+     "p75": -1.39,
+     "media": -4.76,
+     "pctPeorQue5": 34.6,
+     "pctPeorQue10": 11.9
+    },
+    "volRealizada20dAnualMediana": 20.6
+   },
+   "TODOS": {
+    "n": 8433,
+    "pCaida3_5d": 16.8,
+    "pCaida3_5d_soloCierres": 10.9,
+    "ret5": {
+     "media": 0.23,
+     "mediana": 0.38,
+     "pctPositivas": 58.8
+    },
+    "n20": 8418,
+    "ret20": {
+     "media": 0.92,
+     "mediana": 1.42,
+     "pctPositivas": 65.4,
+     "desviacion": 4.43,
+     "p10": -4.38,
+     "p90": 5.49
+    },
+    "peorCaida20d": {
+     "p5": -10.75,
+     "p10": -7.74,
+     "p25": -4.39,
+     "mediana": -2.14,
+     "p75": -0.8,
+     "media": -3.3,
+     "pctPeorQue5": 20.4,
+     "pctPeorQue10": 6.1
+    },
+    "volRealizada20dAnualMediana": 13.4
+   }
+  }
+ }
+}
