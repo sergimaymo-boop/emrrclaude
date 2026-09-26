@@ -169,10 +169,42 @@ def enviar_email(asunto: str, cuerpo: str) -> bool:
         return False
 
 
+def _llavero(servicio: str):
+    """Lee un secreto del llavero de macOS (nunca del repo ni del chat)."""
+    try:
+        r = subprocess.run(["security", "find-generic-password", "-s", servicio, "-w"],
+                           timeout=10, capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+    except Exception:
+        return None
+
+
+def enviar_telegram(texto: str) -> bool:
+    """Telegram con el MISMO bot del aviso diario (TELEGRAM_BOT_TOKEN/CHAT_ID de
+    Vercel), guardado en el llavero como emrr-telegram-token / emrr-telegram-chat.
+    Best-effort: sin credenciales o con error, el email sigue siendo el canal principal."""
+    token, chat = _llavero("emrr-telegram-token"), _llavero("emrr-telegram-chat")
+    if not token or not chat:
+        log("NOTA: Telegram sin configurar (faltan emrr-telegram-token/chat en el llavero)")
+        return False
+    try:
+        datos = json.dumps({"chat_id": chat, "text": texto}).encode()
+        req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=datos,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            ok = bool(json.load(r).get("ok"))
+        if not ok:
+            log("NOTA: Telegram respondió sin ok")
+        return ok
+    except Exception as e:
+        log(f"NOTA: Telegram no enviado ({str(e)[:160]})")
+        return False
+
+
 def enviar_mensaje(texto: str) -> bool:
-    """iMessage/SMS a través de Messages.app. Best-effort: si el Mac no tiene
-    Messages configurado (o el reenvío de SMS del iPhone está apagado), falla en
-    silencio y el email sigue siendo el canal principal."""
+    """Canales móviles: Telegram + iMessage/SMS (Messages.app). Best-effort: si
+    fallan, el email sigue siendo el canal principal."""
+    enviar_telegram(texto)
     script = f'''
     tell application "Messages"
         set svc to 1st account whose service type = iMessage
@@ -412,6 +444,9 @@ def aviso_tramo(d, estado, dry, force=False):
             {"fecha": datetime.now(timezone.utc).isoformat(), "importe": round(importe, 2),
              "marca_anterior": marca, "nav": round(d["nav"], 2)})
         log(f"AVISO DE TRAMO enviado: {importe:,.0f} € (marca {marca:,.0f} → {d['nav']:,.0f})".replace(",", "."))
+        enviar_mensaje(f"EMRR: la cuenta ha ganado {exceso:,.0f} EUR sobre tu marca. ".replace(",", ".")
+                       + f"Toca invertir un tramo de {importe:,.0f} EUR del efectivo:\n".replace(",", ".")
+                       + "\n".join(filas + manuales) + "\nDetalle en tu Gmail.")
     else:
         log("email del tramo NO enviado — la marca no se mueve, se reintenta.")
 
