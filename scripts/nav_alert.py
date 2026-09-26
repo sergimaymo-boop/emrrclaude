@@ -180,8 +180,9 @@ def _llavero(servicio: str):
 
 
 def enviar_telegram(texto: str) -> bool:
-    """Telegram con el MISMO bot del aviso diario (TELEGRAM_BOT_TOKEN/CHAT_ID de
-    Vercel), guardado en el llavero como emrr-telegram-token / emrr-telegram-chat.
+    """Telegram con el bot personal de Sergi (el de sus avisos de GHH; el de Vercel no
+    se pudo leer el 26-sep: sesión de Vercel CLI caducada), guardado en el llavero
+    como emrr-telegram-token / emrr-telegram-chat.
     Best-effort: sin credenciales o con error, el email sigue siendo el canal principal."""
     token, chat = _llavero("emrr-telegram-token"), _llavero("emrr-telegram-chat")
     if not token or not chat:
@@ -201,9 +202,47 @@ def enviar_telegram(texto: str) -> bool:
         return False
 
 
+def enviar_whatsapp(texto: str) -> bool:
+    """WhatsApp por la Cloud API del número +34 638 58 00 88 (WABA de Global Health,
+    autorizado por Sergi el 26-sep-2026) → su móvil. Meta solo entrega texto libre
+    dentro de las 24 h posteriores a un mensaje del destinatario, así que se usa la
+    plantilla UTILITY ya aprobada `ghh_alerta_sistema` (es) con el texto en {{1}}.
+    Credenciales en el llavero: emrr-wa-token / emrr-wa-phone-id / emrr-wa-to.
+    OJO: la API responde "aceptado", no "entregado" (el email es el canal fiable)."""
+    token, phone_id, to = (_llavero("emrr-wa-token"), _llavero("emrr-wa-phone-id"),
+                           _llavero("emrr-wa-to"))
+    if not (token and phone_id and to):
+        log("NOTA: WhatsApp sin configurar (faltan emrr-wa-* en el llavero)")
+        return False
+    # los parámetros de plantilla no admiten saltos de línea ni >4 espacios seguidos
+    param = " · ".join(l.strip() for l in texto.splitlines() if l.strip())
+    param = " ".join(param.split())[:1000]
+    cuerpo = {"messaging_product": "whatsapp", "to": to, "type": "template",
+              "template": {"name": "ghh_alerta_sistema", "language": {"code": "es"},
+                           "components": [{"type": "body",
+                                           "parameters": [{"type": "text", "text": param}]}]}}
+    try:
+        req = urllib.request.Request(f"https://graph.facebook.com/v21.0/{phone_id}/messages",
+                                     data=json.dumps(cuerpo).encode(),
+                                     headers={"Content-Type": "application/json",
+                                              "Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            ok = bool(json.load(r).get("messages"))
+        if not ok:
+            log("NOTA: WhatsApp respondió sin id de mensaje")
+        return ok
+    except urllib.error.HTTPError as e:
+        log(f"NOTA: WhatsApp no enviado (HTTP {e.code}: {e.read().decode()[:160]})")
+        return False
+    except Exception as e:
+        log(f"NOTA: WhatsApp no enviado ({str(e)[:160]})")
+        return False
+
+
 def enviar_mensaje(texto: str) -> bool:
-    """Canales móviles: Telegram + iMessage/SMS (Messages.app). Best-effort: si
-    fallan, el email sigue siendo el canal principal."""
+    """Canales móviles: WhatsApp + Telegram + iMessage/SMS (Messages.app).
+    Best-effort: si fallan, el email sigue siendo el canal principal."""
+    enviar_whatsapp(texto)
     enviar_telegram(texto)
     script = f'''
     tell application "Messages"
