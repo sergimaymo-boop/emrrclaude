@@ -342,6 +342,26 @@ def valorar(unidades, eurusd, calidad, precios_cache):
     return filas
 
 
+def sanear_unidades(unidades, referencia, calidad, origen):
+    """El OCR de IBK pierde a veces el SEPARADOR DECIMAL de las unidades (foto del
+    10-oct-2026: MU 2,42 → 242; la cartera salió valorada en 192.862 € en los emails
+    de 12 días y el registro vivo heredó las 242 uds). Si las unidades son ~10^k veces
+    las del registro de referencia (k = 1..3, ±2%), se corrigen y se avisa. Una venta
+    real nunca cae en una potencia exacta de 10, así que no tapa un salto de stop."""
+    out = {}
+    for t, u in unidades.items():
+        ref = (referencia.get(t) or {}).get("units")
+        corr = u
+        if finite(ref) and ref > 0 and finite(u) and u > 0 and u != ref:
+            for k in (1, 2, 3):
+                if abs(u / (ref * 10 ** k) - 1) < 0.02:
+                    corr = u / 10 ** k
+                    calidad.append(f"⚠ {t}: {origen} dice {u:g} uds y el registro {ref:g} — separador decimal perdido en el OCR; se usan {corr:g} uds")
+                    break
+        out[t] = corr
+    return out
+
+
 def detectar_eventos(unidades_foto, registro_vivo, filas):
     eventos = []
     for t, info in registro_vivo.items():
@@ -676,6 +696,9 @@ def main():
         calidad.append(f"⚠ No se pudo leer la foto de IBK del servidor ({e}) — se usa el último registro de unidades.")
 
     registro_vivo = state.get("registro") or {t: {"units": v["units"]} for t, v in REGISTRO.items()}
+    # El registro vivo también se sanea contra el REGISTRO de mano (el 10-oct heredó MU=242).
+    registro_vivo = {t: {"units": u} for t, u in sanear_unidades(
+        {t: v["units"] for t, v in registro_vivo.items()}, REGISTRO, calidad, "el registro vivo").items()}
     unidades = {t: v["units"] for t, v in registro_vivo.items()}
     foto_nueva = False
     if foto:
@@ -684,6 +707,7 @@ def main():
             unidades_foto = {}
             for p in foto.get("positions") or []:
                 unidades_foto[base_symbol(p.get("symbol"))] = unidades_foto.get(base_symbol(p.get("symbol")), 0.0) + float(p["quantity"])
+            unidades_foto = sanear_unidades(unidades_foto, {**registro_vivo, **{t: {"units": v["units"]} for t, v in REGISTRO.items()}}, calidad, "la foto de IBK")
             foto_nueva = foto.get("loadedAt") != state.get("lastFotoAt")
         else:
             unidades_foto = None
@@ -705,7 +729,11 @@ def main():
     if unidades_foto and finite(foto.get("valMdoEur")) and foto["valMdoEur"] > 0:
         v_hoy = sum(f["valor"] for f in filas if not f.get("sin_dato"))
         if v_hoy > 0 and abs(v_hoy / foto["valMdoEur"] - 1) > UNITS_VALUE_TOL:
-            calidad.append(f"⚠ Las unidades de la foto no cuadran con su valor de mercado ({eur(v_hoy)} hoy vs {eur(foto['valMdoEur'])} en la foto): revisa la foto.")
+            # 22-oct-2026: una foto cuyas unidades no cuadran con su propio valor de mercado
+            # NO puede convertirse en la verdad (ni valorar, ni detectar stops, ni persistirse).
+            calidad.append(f"⚠ Foto de IBK DESCARTADA: sus unidades no cuadran con su valor de mercado ({eur(v_hoy)} hoy vs {eur(foto['valMdoEur'])} en la foto) — se usa el último registro de unidades; revisa la foto.")
+            unidades_foto = None
+            filas = valorar(unidades, eurusd, calidad, cache)
 
     eventos = detectar_eventos(unidades_foto or {}, registro_vivo, filas) if unidades_foto else \
         detectar_eventos({}, {}, filas)

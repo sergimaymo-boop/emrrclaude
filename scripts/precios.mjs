@@ -36,8 +36,28 @@ const MAX_DIAS_HUECO = 5;            // sesión anterior: fin de semana + festiv
 const num = (x) => typeof x === "number" && Number.isFinite(x) && x > 0;
 const dia = (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
 
-async function serieYahoo(sym) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1mo&interval=1d`;
+/**
+ * ¿Está la sesión ABIERTA y, por tanto, el último dato es EN CURSO? Función pura
+ * (testeable). BUG 3 (22-oct-2026): Yahoo devolvió `marketState` AUSENTE a las
+ * 21:09 UTC (69 min después del cierre de NYSE) y la regla antigua
+ * `estado !== "CLOSED" && estado !== "POST"` daba true con null → el informe de la
+ * cartera real salió rotulado "MERCADO ABIERTO" con el mercado cerrado. Sin estado,
+ * se decide por la FRESCURA de `regularMarketTime`: si el último precio se actualizó
+ * hace menos de 20 min y es de hoy, está en curso; si no, es cierre.
+ */
+export function estadoSesion({ estado, ultimaFecha, hoy, horaMercado, ahora = Date.now() }) {
+  let abierto;
+  if (estado === "REGULAR") abierto = true;
+  else if (estado != null) abierto = ultimaFecha === hoy && estado !== "CLOSED" && !String(estado).startsWith("POST") && !String(estado).startsWith("PRE");
+  else {
+    const edadMs = horaMercado ? ahora - Date.parse(horaMercado) : Infinity;
+    abierto = ultimaFecha === hoy && Number.isFinite(edadMs) && edadMs < 20 * 60 * 1000;
+  }
+  return { abierto, esCierre: !abierto };
+}
+
+async function serieYahoo(sym, range = "1mo") {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=${range}&interval=1d`;
   const r = await fetch(url, { headers: UA });
   if (!r.ok) throw new Error(`${sym}: Yahoo HTTP ${r.status}`);
   const j = await r.json();
@@ -98,13 +118,16 @@ export async function cotizar(simbolos, { contrastar = true } = {}) {
   for (const sym of simbolos) {
     const { barras, precioVivo, estado, horaMercado } = await serieYahoo(sym);
     const ultima = barras[barras.length - 1];
-    const abierto = estado === "REGULAR" || (ultima.d === hoy && estado !== "CLOSED" && estado !== "POST");
+    // ¿el último dato es un CIERRE definitivo o la barra del día en curso? (BUG 2 y BUG 3)
+    const { esCierre } = estadoSesion({ estado, ultimaFecha: ultima.d, hoy, horaMercado });
     // precio actual: el vivo si existe; si no, el último cierre de la serie
     const precio = num(precioVivo) ? precioVivo : ultima.c;
-    // ¿el último dato es un CIERRE definitivo o la barra del día en curso? (BUG 2)
-    const esCierre = !abierto && !(ultima.d === hoy && estado === "REGULAR");
     // referencia anterior: última barra ESTRICTAMENTE anterior a la del día en curso
-    const idxAnt = ultima.d === hoy ? barras.length - 2 : barras.length - 1;
+    // BUG 4 (23-oct-2026): con la última barra de AYER (antes de la apertura o fin de
+    // semana) la referencia era la propia última barra → "hoy" salía 0,00% y se tapaba
+    // el movimiento de la última sesión (MRNA −18,3% del 22-oct). La referencia es
+    // SIEMPRE la barra anterior a la última: el cambio de la sesión más reciente.
+    const idxAnt = barras.length - 2;
     const ant = barras[idxAnt];
     if (!ant) throw new Error(`${sym}: no hay sesión anterior en la serie`);
     if (!num(precio)) throw new Error(`${sym}: precio no válido (${precio})`);   // G5
@@ -145,6 +168,33 @@ export async function cotizarCierres(simbolos, opts = {}) {
   const enCurso = Object.values(c).filter((x) => !x.esCierre).map((x) => x.sym);
   if (enCurso.length) throw new Error(`Se pidieron CIERRES pero el mercado está abierto para: ${enCurso.join(", ")} — usa cotizar() y etiqueta el dato como intradía (BUG 2 del 9-sep-2026)`);
   return c;
+}
+
+/**
+ * MÁXIMOS desde una fecha, para anclar un trailing stop (22-oct-2026). La orden TRAIL
+ * de IBK persigue el MÁXIMO INTRADÍA desde la entrada; el modelo evalúa a CIERRES.
+ * Devuelve por símbolo { maxCierre, fechaMaxCierre, maxIntradia, fechaMaxIntradia, desde }.
+ * El trailing es un SUELO MÓVIL que solo sube: anclarlo a max(base, precio de hoy)
+ * —lo que hacía cartera-informe.mjs— lo convertía en un suelo que BAJA con el precio.
+ */
+export async function maximosDesde(simbolos, desde) {
+  const out = {};
+  for (const sym of simbolos) {
+    const d0 = typeof desde === "string" ? desde : desde[sym];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d0 ?? "")) throw new Error(`${sym}: fecha 'desde' no válida (${d0})`);
+    const { barras } = await serieYahoo(sym, "1y");
+    const tramo = barras.filter((b) => b.d >= d0);
+    if (!tramo.length) throw new Error(`${sym}: sin barras desde ${d0}`);
+    let mc = tramo[0], mi = tramo[0];
+    for (const b of tramo) {
+      if (b.c > mc.c) mc = b;
+      if ((num(b.h) ? b.h : b.c) > (num(mi.h) ? mi.h : mi.c)) mi = b;
+    }
+    out[sym] = { sym, desde: d0, maxCierre: mc.c, fechaMaxCierre: mc.d,
+                 maxIntradia: num(mi.h) ? mi.h : mi.c, fechaMaxIntradia: mi.d, sesiones: tramo.length };
+    await new Promise((r) => setTimeout(r, 220));
+  }
+  return out;
 }
 
 /**
