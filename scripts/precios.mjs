@@ -198,6 +198,26 @@ export async function maximosDesde(simbolos, desde) {
 }
 
 /**
+ * CIERRES DIARIOS FECHADOS desde una fecha (26-oct-2026), para análisis de cartera
+ * (correlaciones, comparación con índices). Misma fuente y filtros que el resto del módulo.
+ * Devuelve { [sym]: [{d, c}] } con la barra del día en curso MARCADA y excluida por defecto.
+ */
+export async function cierresDesde(simbolos, desde, { incluirEnCurso = false } = {}) {
+  const out = {};
+  const hoy = new Date().toISOString().slice(0, 10);
+  for (const sym of simbolos) {
+    const { barras, precioVivo, estado, horaMercado } = await serieYahoo(sym, "1y");
+    const ultima = barras[barras.length - 1];
+    const { esCierre } = estadoSesion({ estado, ultimaFecha: ultima.d, hoy, horaMercado });
+    let serie = barras.filter((b) => b.d >= desde).map((b) => ({ d: b.d, c: b.c }));
+    if (!esCierre && !incluirEnCurso) serie = serie.filter((b) => b.d !== ultima.d);
+    out[sym] = serie;
+    await new Promise((r) => setTimeout(r, 220));
+  }
+  return out;
+}
+
+/**
  * Variación de una CARTERA. posiciones = [{ticker, uds, precio, precioRef}].
  * G6: devuelve la media ponderada (la correcta) y la suma de porcentajes marcada
  * como INVÁLIDA, para que nunca vuelvan a confundirse.
