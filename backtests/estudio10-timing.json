@@ -1,0 +1,276 @@
+{
+ "ranAt": "2026-10-26T13:49:46.325Z",
+ "costBps": 20,
+ "res": {
+  "H1 recortar en CODICIA": {
+   "nombre": "H1 recortar en CODICIA",
+   "episodios": 9,
+   "diasSenal": 292,
+   "base": {
+    "cf": 0.6455898740028772,
+    "tr": 0.5850677392601232,
+    "full": 0.6161779142945096,
+    "mddPeor": 0.5342070453153676
+   },
+   "ov": {
+    "cf": 0.6028530196850758,
+    "tr": 0.5403976130331943,
+    "full": 0.5725402584030372,
+    "mddPeor": 0.5342070453153676
+   },
+   "fasesMejoranMAR": 0,
+   "marBase": 1.1534440058362592,
+   "marOv": 1.0717572211445467,
+   "dCf": -0.04273685431780139,
+   "dTr": -0.0446701262269289,
+   "dMdd": 0,
+   "dMar": -0.08168678469171242,
+   "gates": {
+    "P1": false,
+    "P2": false,
+    "P3": false,
+    "P4": false,
+    "P6": false,
+    "P5": false
+   },
+   "loo": [
+    {
+     "sinEpisodio": 0,
+     "dCf": -0.04273685431780183,
+     "dMdd": -1.1102230246251565e-16
+    },
+    {
+     "sinEpisodio": 1,
+     "dCf": -0.0427368543178015,
+     "dMdd": 0
+    },
+    {
+     "sinEpisodio": 2,
+     "dCf": -0.04273685431780194,
+     "dMdd": -2.220446049250313e-16
+    },
+    {
+     "sinEpisodio": 3,
+     "dCf": -0.04273685431780194,
+     "dMdd": -2.220446049250313e-16
+    },
+    {
+     "sinEpisodio": 4,
+     "dCf": -0.04273685431780172,
+     "dMdd": 0
+    },
+    {
+     "sinEpisodio": 5,
+     "dCf": -0.023821625347444364,
+     "dMdd": 0
+    },
+    {
+     "sinEpisodio": 6,
+     "dCf": -0.04410197872965449,
+     "dMdd": 0
+    },
+    {
+     "sinEpisodio": 7,
+     "dCf": -0.021637608370228767,
+     "dMdd": 0
+    },
+    {
+     "sinEpisodio": 8,
+     "dCf": -0.03894915769932217,
+     "dMdd": 0
+    }
+   ],
+   "pasa": false
+  },
+  "H2 recortar en TENDENCIA BAJISTA": {
+   "nombre": "H2 recortar en TENDENCIA BAJISTA",
+   "episodios": 8,
+   "diasSenal": 357,
+   "base": {
+    "cf": 0.6455898740028772,
+    "tr": 0.5850677392601232,
+    "full": 0.6161779142945096,
+    "mddPeor": 0.5342070453153676
+   },
+   "ov": {
+    "cf": 0.49903394473078,
+    "tr": 0.4799253371140357,
+    "full": 0.4896474193864228,
+    "mddPeor": 0.39196785104022647
+   },
+   "fasesMejoranMAR": 5,
+   "marBase": 1.1534440058362592,
+   "marOv": 1.2492030101115914,
+   "dCf": -0.14655592927209715,
+   "dTr": -0.10514240214608755,
+   "dMdd": -0.1422391942751411,
+   "dMar": 0.09575900427533224,
+   "gates": {
+    "P1": false,
+    "P2": false,
+    "P3": true,
+    "P4": true,
+    "P6": false,
+    "P5": false
+   },
+   "loo": [
+    {
+     "sinEpisodio": 0,
+     "dCf": -0.14655592927209693,
+     "dMdd": -0.1422391942751412
+    },
+    {
+     "sinEpisodio": 1,
+     "dCf": -0.14655592927209732,
+     "dMdd": -0.13740875917003315
+    },
+    {
+     "sinEpisodio": 2,
+     "dCf": -0.14655592927209732,
+     "dMdd": -0.1422391942751411
+    },
+    {
+     "sinEpisodio": 3,
+     "dCf": -0.14655592927209676,
+     "dMdd": -1.1102230246251565e-16
+    },
+    {
+     "sinEpisodio": 4,
+     "dCf": -0.10941049390852298,
+     "dMdd": -0.1422391942751411
+    },
+    {
+     "sinEpisodio": 5,
+     "dCf": -0.1251432107186089,
+     "dMdd": -0.14223919427514142
+    },
+    {
+     "sinEpisodio": 6,
+     "dCf": -0.07477873341743835,
+     "dMdd": -0.14643189819373814
+    },
+    {
+     "sinEpisodio": 7,
+     "dCf": -0.134747636915045,
+     "dMdd": -0.1422391942751411
+    }
+   ],
+   "pasa": false
+  },
+  "H3": {
+   "fases": [
+    {
+     "FROM": 260,
+     "mediaTodos": 0.16402202248876777,
+     "mediaMiedo": 0.20831017452959494,
+     "exceso": 0.04428815204082717,
+     "excesoSinMejorEpisodio": 0.02632954483293176,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 461
+    },
+    {
+     "FROM": 270,
+     "mediaTodos": 0.16624017798546722,
+     "mediaMiedo": 0.23037812794916712,
+     "exceso": 0.0641379499636999,
+     "excesoSinMejorEpisodio": 0.05006454351425105,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 461
+    },
+    {
+     "FROM": 280,
+     "mediaTodos": 0.1648144512981129,
+     "mediaMiedo": 0.21301539618205897,
+     "exceso": 0.04820094488394608,
+     "excesoSinMejorEpisodio": 0.03109530362755078,
+     "episodiosPositivos": 6,
+     "episodios": 8,
+     "n": 461
+    },
+    {
+     "FROM": 290,
+     "mediaTodos": 0.16274872004503665,
+     "mediaMiedo": 0.22395592945970114,
+     "exceso": 0.06120720941466448,
+     "excesoSinMejorEpisodio": 0.04474805203221249,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 461
+    },
+    {
+     "FROM": 300,
+     "mediaTodos": 0.16147421817775318,
+     "mediaMiedo": 0.23226175454572967,
+     "exceso": 0.0707875363679765,
+     "excesoSinMejorEpisodio": 0.05247291150221711,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 457
+    },
+    {
+     "FROM": 310,
+     "mediaTodos": 0.15300245229037043,
+     "mediaMiedo": 0.21027830826844973,
+     "exceso": 0.0572758559780793,
+     "excesoSinMejorEpisodio": 0.041744467019540654,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 451
+    },
+    {
+     "FROM": 320,
+     "mediaTodos": 0.17176582098573662,
+     "mediaMiedo": 0.2021067570413456,
+     "exceso": 0.030340936055608975,
+     "excesoSinMejorEpisodio": 0.014883708294191444,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 449
+    },
+    {
+     "FROM": 330,
+     "mediaTodos": 0.16709209276474102,
+     "mediaMiedo": 0.21792346056834866,
+     "exceso": 0.05083136780360764,
+     "excesoSinMejorEpisodio": 0.03419426864967112,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 446
+    },
+    {
+     "FROM": 340,
+     "mediaTodos": 0.1777541230580198,
+     "mediaMiedo": 0.22238743233133346,
+     "exceso": 0.04463330927331366,
+     "excesoSinMejorEpisodio": 0.030236213509490406,
+     "episodiosPositivos": 6,
+     "episodios": 8,
+     "n": 443
+    },
+    {
+     "FROM": 350,
+     "mediaTodos": 0.16433558587405883,
+     "mediaMiedo": 0.22655404093162138,
+     "exceso": 0.062218455057562544,
+     "excesoSinMejorEpisodio": 0.04316131769740386,
+     "episodiosPositivos": 5,
+     "episodios": 8,
+     "n": 434
+    }
+   ],
+   "excesoMedio": 0.05339217168392861,
+   "fasesConExceso3pp": 10,
+   "excesoSinMejor": 0.03689303306794607,
+   "episodiosPositivosMin": 5,
+   "gates": {
+    "exceso3pp": true,
+    "fases8de10": true,
+    "sinMejor1_5pp": true,
+    "episodios4": true
+   },
+   "pasa": true
+  }
+ }
+}
