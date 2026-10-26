@@ -13,3 +13,10 @@ Diagnóstico post-hoc (no es un gate) del desglose por episodio de MIEDO (exceso
 
 Lectura: codicia extrema NO es señal de venta (coincide con el backtest de Fear & Greed del 25-sep); filtrar por tendencia baja la caída pero cuesta 15 pp/año; "más en miedo" es una señal de ESCALONADO de entrada (cuánto del efectivo del módulo desplegar), no de rentabilidad del motor, y es una propuesta que necesita ganar una 2.ª auditoría seguida y el OK de Sergi.
 Estado hoy (26-oct): SPY a −2,0% de máximos, VIX 18,8 (percentil 72%) → NO es MIEDO según la definición del estudio, aunque CNN marque 20.
+
+## Estudio 11 (27-oct-2026) — entrada escalonada en 3 tramos (gates `31a1c4a`)
+95 entradas (cada 21 sesiones, año de 252), v1.1, 20 y 50 pb. Escalonar (1/3 en s, s+21, s+42; caja al 0%) cuesta **−6,5 pp** de retorno del año
+(68,9% → 62,4%) y NO reduce de forma consistente la probabilidad de año negativo (10,5% → 8,4% a 20 pb; 10,5% → 10,5% a 50 pb). La caída p90 baja de 43% a 33%,
+pero casi solo en las entradas de 2022 en adelante (antes de 2022: 49,6% → 47,3%). Falla T2 y T4 → **NO PASA**. No se propone nada.
+Verificación del catalizador de la caída de chips de oct-2026 (WebSearch): financiación de la IA, tipos, valoraciones y competencia china en memoria (CXMT); 8 sesiones seguidas a la baja del SOX hasta el 16-oct.
+No hay fuente que apoye regulación gubernamental ni hackeos como causa.
