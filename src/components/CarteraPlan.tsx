@@ -7,6 +7,7 @@
  * Norma de la casa: las pérdidas se muestran SOLO en %, nunca en euros.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import type { IBKPortfolio } from "../services/optimal2026Refresh";
 import {
   type CarteraFoto, type PreciosCartera, calcularPlan, carteraDesdeLocal, fetchCarteraServidor, fetchPreciosCartera, sanearUnidades,
@@ -38,6 +39,8 @@ export function CarteraPlan({ portfolio }: { portfolio: IBKPortfolio | null }) {
   const [escaneando, setEscaneando] = useState<number | null>(null);
   const [efectivo, setEfectivo] = useState(0);
   const vivo = useRef(true);
+  // Móvil: solo las columnas que deciden (orden, valor, acciones, importe / variación, valor hoy).
+  const n = useIsNarrow(640);
 
   const local = useMemo(() => carteraDesdeLocal(portfolio), [portfolio]);
   const base = local ?? servidor;
@@ -119,17 +122,17 @@ export function CarteraPlan({ portfolio }: { portfolio: IBKPortfolio | null }) {
           </div>
           <div style={{ overflowX: "auto", padding: "0 6px" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><th style={{ ...th, textAlign: "left" }}>Valor</th><th style={th}>Acciones</th><th style={th}>Cierre foto</th><th style={th}>Cierre scan</th><th style={th}>Variación</th><th style={th}>Valor hoy</th><th style={th}>Scan</th></tr></thead>
+              <thead><tr><th style={{ ...th, textAlign: "left" }}>Valor</th>{!n && <th style={th}>Acciones</th>}{!n && <th style={th}>Cierre foto</th>}{!n && <th style={th}>Cierre scan</th>}<th style={th}>Variación</th><th style={th}>Valor hoy</th><th style={th}>Scan</th></tr></thead>
               <tbody>
                 {plan.resultado.filas.map((f) => (
                   <tr key={f.ticker}>
-                    <td style={{ ...td, textAlign: "left" }}><b>{f.ticker}</b> <span style={{ color: DIM, fontSize: 9.5 }}>{f.name}</span></td>
-                    <td style={td}>{num(f.unidades, f.unidades % 1 ? 2 : 0)}</td>
-                    <td style={td}>{px(f.precioFoto, f.currency)}</td>
-                    <td style={td}>{px(f.precioScan, f.currency)}</td>
+                    <td style={{ ...td, textAlign: "left" }}><b>{f.ticker}</b> {!n && <span style={{ color: DIM, fontSize: 9.5 }}>{f.name}</span>}</td>
+                    {!n && <td style={td}>{num(f.unidades, f.unidades % 1 ? 2 : 0)}</td>}
+                    {!n && <td style={td}>{px(f.precioFoto, f.currency)}</td>}
+                    {!n && <td style={td}>{px(f.precioScan, f.currency)}</td>}
                     <td style={{ ...td, color: colorDe(f.pct), fontWeight: 800 }}>{pct(f.pct)}</td>
                     <td style={td}>{f.valorScanEur != null ? eur(f.valorScanEur) : "—"}</td>
-                    <td style={{ ...td, color: f.enTop5 ? GREEN : RED, fontSize: 9, fontWeight: 800 }}>{f.enTop5 ? "EN TOP-5" : "FUERA"}</td>
+                    <td style={{ ...td, color: f.enTop5 ? GREEN : RED, fontSize: 9, fontWeight: 800 }}>{f.enTop5 ? (n ? "TOP-5" : "EN TOP-5") : "FUERA"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -149,20 +152,20 @@ export function CarteraPlan({ portfolio }: { portfolio: IBKPortfolio | null }) {
           </div>
           <div style={{ overflowX: "auto", padding: "0 6px" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><th style={{ ...th, textAlign: "left" }}>Orden</th><th style={{ ...th, textAlign: "left" }}>Valor</th><th style={th}>Precio</th><th style={th}>Tienes</th><th style={th}>Objetivo</th><th style={th}>Acciones</th><th style={th}>Importe</th><th style={th}>Peso</th></tr></thead>
+              <thead><tr><th style={{ ...th, textAlign: "left" }}>Orden</th><th style={{ ...th, textAlign: "left" }}>Valor</th>{!n && <th style={th}>Precio</th>}{!n && <th style={th}>Tienes</th>}{!n && <th style={th}>Objetivo</th>}<th style={th}>Acciones</th><th style={th}>Importe</th>{!n && <th style={th}>Peso</th>}</tr></thead>
               <tbody>
                 {plan.ordenes.map((o) => {
                   const c = o.accion === "COMPRAR" ? GREEN : o.accion === "VENDER" ? RED : SLATE;
                   return (
                     <tr key={o.ticker}>
                       <td style={{ ...td, textAlign: "left", color: c, fontWeight: 900 }}>{o.accion}</td>
-                      <td style={{ ...td, textAlign: "left" }}><b>{o.ticker}</b> <span style={{ color: DIM, fontSize: 9.5 }}>{o.name}</span></td>
-                      <td style={td}>{px(o.precio, o.currency)}</td>
-                      <td style={td}>{num(o.actuales, o.actuales % 1 ? 2 : 0)}</td>
-                      <td style={td}>{num(o.objetivo, o.objetivo % 1 ? 2 : 0)}</td>
+                      <td style={{ ...td, textAlign: "left" }}><b>{o.ticker}</b> {!n && <span style={{ color: DIM, fontSize: 9.5 }}>{o.name}</span>}{n && <span style={{ color: DIM, fontSize: 9.5 }}> {px(o.precio, o.currency)}</span>}</td>
+                      {!n && <td style={td}>{px(o.precio, o.currency)}</td>}
+                      {!n && <td style={td}>{num(o.actuales, o.actuales % 1 ? 2 : 0)}</td>}
+                      {!n && <td style={td}>{num(o.objetivo, o.objetivo % 1 ? 2 : 0)}</td>}
                       <td style={{ ...td, color: c, fontWeight: 900, fontSize: 12 }}>{o.ordenes === 0 ? "—" : `${o.ordenes > 0 ? "+" : "−"}${num(Math.abs(o.ordenes), Math.abs(o.ordenes) % 1 ? 2 : 0)}`}</td>
                       <td style={{ ...td, color: c }}>{o.accion === "MANTENER" ? "—" : eur(o.importeEur)}</td>
-                      <td style={td}>{o.pesoObjetivo ? `${num(o.pesoObjetivo, 1)}%` : "0%"}</td>
+                      {!n && <td style={td}>{o.pesoObjetivo ? `${num(o.pesoObjetivo, 1)}%` : "0%"}</td>}
                     </tr>
                   );
                 })}
