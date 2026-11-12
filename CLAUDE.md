@@ -358,17 +358,17 @@ KV_REST_API_TOKEN     = <upstash>     # Auto-set by Vercel Upstash integration
 
 ## 10. DASHBOARD SECTION ORDER
 
-Orden DICTADO por Sergi (16-ago-2026) — no reordenar sin su OK. Separación uniforme 14px entre módulos.
+Orden DICTADO por Sergi (16-ago-2026; Cartera IBK subida al 2º puesto el 13-nov-2026) — no reordenar sin su OK. Separación uniforme 14px entre módulos.
 
 | # | Component | Módulo |
 |---|---|---|
 | 0 | `RallyTestPanel` | 🧪 Rally-Test (laboratorio, arriba del todo bajo la cabecera — mandato 18-ago-2026; ver §10e) |
-| 1 | `StickyMiniHeader` | SCAN EMRR (barra superior, intocable) |
-| 2 | `FearGreedPanel` | Fear & Greed |
-| 3 | (riesgo) | Riesgo de mercado |
-| 4 | `MarketBreadthPanel` | Amplitud de mercado |
-| 5 | `SP500Panel` | SP500 |
-| 6 | `PortfolioCard` | Carga de cartera IBK (fotos → OCR → % invertido/efectivo, SIN listado por ticker) |
+| 1 | `PortfolioCard` | 📥 Cartera real IBK — 2º módulo por mandato de Sergi (13-nov-2026): invertido/efectivo + resultado desde la foto + órdenes para igualar el último scan de Rally-Test (§10d) |
+| 2 | `StickyMiniHeader` | SCAN EMRR (barra superior, intocable) |
+| 3 | `FearGreedPanel` | Fear & Greed |
+| 4 | (riesgo) | Riesgo de mercado |
+| 5 | `MarketBreadthPanel` | Amplitud de mercado |
+| 6 | `SP500Panel` | SP500 |
 | 7 | `RallyPanel` | Rally Leaders |
 | 8 | `Optimal2026Panel` | Optimal Supreme |
 | 9 | `IntraDayFlowsPanel` | Flujos de capital |
@@ -430,6 +430,7 @@ cambian si un estudio walk-forward supera los gates pre-registrados (ver §10c).
 
 - **Carga por fotos** (`PortfolioCard` + `src/services/optimal2026Refresh.ts`): OCR client-side (tesseract.js), EXIF + downscale 2200px + PNG antes de OCR (verificado: MÁS preciso que full-res), etiqueta y valor en LÍNEAS DISTINTAS en la UI de IBK, identidad `NAV = VAL.MDO. + EXCESO LIQ. (±3%)` autocorrige, posiciones con separador decimal perdido se reconstruyen por valor÷precio. Foto de cabecera sola (0 posiciones) = carga VÁLIDA. UI: solo % invertido/efectivo + barra — SIN listado por ticker (mandato 16-ago). El input file va SIN atributo accept (compatibilidad iPhone).
 - **Semántica IBK**: invertido = Σ(Posición × Último) = VAL.MDO. · efectivo = EXCESO LIQ. · total = NAV. Posiciones US cotizan en USD, totales de cuenta en EUR → FX implícito = VAL.MDO. / Σ(valores USD).
+- **Resultado y órdenes frente al último scan (13-nov-2026, mandato de Sergi)**: `src/components/CarteraPlan.tsx` + `src/services/carteraPlan.ts` + `GET /api/rally-test/cartera` (action `test-cartera`, `api/_lib/rallyTestCartera.js`: cierres en la fecha de la foto y del scan + EUR/USD, solo sesiones cerradas). Cartera = foto de este dispositivo o, si no hay, el espejo del servidor. Unidades con decimal perdido corregidas contra el VAL.MDO. (`sanearUnidades`). Órdenes = acciones a vender/comprar para igualar los pesos del top-5 con el capital de las posiciones + el efectivo que el usuario elija añadir (0/25/50/100%/cifra); ventas primero; 2 decimales en EE. UU., enteras en Europa. Pérdidas SOLO en %. Botón propio "⟳ Escanear Rally-Test"; el evento `RALLY_TEST_ACTUALIZADO` sincroniza panel y tarjeta. Es información: el protocolo solo rebalancea en la revisión trimestral o si salta un stop, y la tabla lo dice.
 - **Espejo servidor**: al cargar fotos con éxito, POST fire-and-forget a `/api/rally-scan/ibk-portfolio` (Redis 180d). Endpoint sin auth (riesgo aceptado, sin datos identificativos).
 - **Export automático — REHECHO el 25-sep-2026 (decisión de Sergi: sigue RALLY-TEST, su estrategia real desde el 8-sep)**: launchd `com.emrr.cartera-ibk` (cada 5 min) ejecuta `scripts/cartera_ibk_export.py`. Solo propone OPERAR cuando lo manda el protocolo: **revisión trimestral** (fecha del servidor, `/api/rally-test/last → review`) o **salto de stop** (posición que desaparece/reduce en la foto, o cierre bajo el trailing 45%) → plan RESCAN2 sobre el **capital del módulo** (no el NAV) con `Cartera_RallyTest_<fecha>_<hora>.{xlsx,pdf}` por email. El resto de días: email de VALORACIÓN tras el cierre de EE. UU. (y al subir una foto nueva) con las 3 capas de la norma suprema + calidad del dato, pérdidas solo en %. **De la foto solo se usan unidades, NAV y efectivo** (el OCR metía la PyG como precio); precios de Yahoo validados. ⚠ Tras cada rebalanceo trimestral hay que actualizar `ENTRY_DATE`/`BASE_FX`/`REGISTRO` del script y `RALLY_TEST_LAST_REBALANCE` en `api/_lib/rallyScoreEngineTest.js`, y correr `bash scripts/sync-cartera-agent.sh`. Estado/logs en `~/Library/Application Support/CarteraIBK/` (estado v2). FORMATO PERMANENTE: importes € SIN decimales (round() real).
 
