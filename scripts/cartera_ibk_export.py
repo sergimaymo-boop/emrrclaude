@@ -224,14 +224,16 @@ def serie_diaria(ysym, rng="3mo"):
     res = data["chart"]["result"][0]
     ts = res.get("timestamp") or []
     q = (res.get("indicators", {}).get("quote") or [{}])[0]
-    closes, highs = q.get("close") or [], q.get("high") or []
+    closes, highs, lows = q.get("close") or [], q.get("high") or [], q.get("low") or []
     bars, gaps = [], []
     for i, t in enumerate(ts):
         d = datetime.fromtimestamp(t, timezone.utc).date().isoformat()
         c = closes[i] if i < len(closes) else None
         h = highs[i] if i < len(highs) else None
+        lo = lows[i] if i < len(lows) else None
         if finite(c) and c > 0:
-            bars.append({"t": t, "d": d, "c": float(c), "h": float(h) if finite(h) and h > 0 else float(c)})
+            bars.append({"t": t, "d": d, "c": float(c), "h": float(h) if finite(h) and h > 0 else float(c),
+                         "l": float(lo) if finite(lo) and lo > 0 else float(c)})
         else:
             gaps.append(d)
     reg = (res.get("meta", {}).get("currentTradingPeriod") or {}).get("regular") or {}
@@ -244,7 +246,9 @@ def cotizar(ysym, desde=ENTRY_DATE):
     """Precio actual, fecha, si es cierre, cierre anterior VÁLIDO (sin saltar huecos),
     máximos desde `desde` (cierre e intradía) y avisos de calidad."""
     avisos = []
-    s = serie_diaria(ysym, "3mo")
+    # 12-nov-2026: un AÑO de serie. Con "3mo" el máximo desde la entrada se perdía en cuanto
+    # la entrada quedaba a más de 3 meses, y el trailing se anclaba a un pico más bajo.
+    s = serie_diaria(ysym, "1y")
     bars = s["bars"]
     if not bars:
         raise RuntimeError(f"{ysym}: sin barras")
@@ -267,7 +271,22 @@ def cotizar(ysym, desde=ENTRY_DATE):
         avisos.append(f"{ysym}: no se pudo contrastar con otro rango ({e})")
     en_periodo = [b for b in bars if b["d"] >= desde]
     cerrados = en_periodo[:-1] if s["forming"] else en_periodo
+    # SALTO DEL TRAILING POR HISTORIA (12-nov-2026). Antes solo se miraba el precio de HOY
+    # contra el stop: DELL (5-nov) y WDC (6-nov) cerraron bajo su trailing, rebotaron y
+    # dejaron de marcarse. Un trailing tocado ya ha saltado: se recorre la serie desde la
+    # entrada. Modelo = a CIERRES; orden TRAIL de IBK = el MÍNIMO del día toca el nivel
+    # anclado al máximo intradía previo.
+    roto_cierre = roto_intradia = None
+    pk_c = pk_h = 0.0
+    for b in cerrados:
+        if roto_intradia is None and pk_h > 0 and b["l"] <= pk_h * (1 - TRAIL):
+            roto_intradia = {"d": b["d"], "nivel": pk_h * (1 - TRAIL)}
+        if roto_cierre is None and pk_c > 0 and b["c"] <= pk_c * (1 - TRAIL):
+            roto_cierre = {"d": b["d"], "cierre": b["c"], "nivel": pk_c * (1 - TRAIL)}
+        pk_c, pk_h = max(pk_c, b["c"]), max(pk_h, b["h"])
     return {
+        "rotoCierre": roto_cierre,
+        "rotoIntradia": roto_intradia,
         "sym": ysym,
         "precio": last["c"],
         "fecha": last["d"],
@@ -337,7 +356,7 @@ def valorar(unidades, eurusd, calidad, precios_cache):
             "dia": (q["precio"] / q["cierreAnterior"] - 1) if q["cierreAnterior"] else None,
             "stop_ibk": stop_ibk, "stop_modelo": stop_modelo,
             "suelo": (stop_ibk / reg["cost"] - 1) if stop_ibk and reg.get("cost") else None,
-            "roto_modelo": bool(stop_modelo) and q["esCierre"] and q["precio"] <= stop_modelo,
+            "roto_modelo": q.get("rotoCierre") is not None,
         })
     return filas
 
@@ -371,8 +390,13 @@ def detectar_eventos(unidades_foto, registro_vivo, filas):
             eventos.append(("STOP", f"{t}: {antes:g} → {ahora:g} uds en la foto de IBK (¿saltó su trailing o hubo venta?)"))
     for f in filas:
         if f.get("roto_modelo"):
-            eventos.append(("STOP", f"{f['ticker']}: cierre {f['q']['precio']:.2f} por debajo del trailing del 45% "
-                                    f"({f['stop_modelo']:.2f}) — la orden TRAIL de IBK debería haber saltado: revísala"))
+            # Texto ESTABLE: fecha y nivel del primer salto. Antes llevaba el precio del día
+            # y la clave anti-repetición cambiaba con cada cierre → 30 emails "toca operar"
+            # entre el 30-oct y el 12-nov-2026 por un mismo salto.
+            rc, ri = f["q"]["rotoCierre"], f["q"].get("rotoIntradia")
+            ibk = f" La orden TRAIL de IBK habría saltado el {fecha_corta(ri['d'])} al tocar {ri['nivel']:.2f}." if ri else ""
+            eventos.append(("STOP", f"{f['ticker']}: cerró el {fecha_corta(rc['d'])} a {rc['cierre']:.2f}, por debajo de su "
+                                    f"trailing del 45% ({rc['nivel']:.2f}).{ibk} Revisa en IBK si la orden se ejecutó"))
     nuevos = [t for t in unidades_foto if t not in registro_vivo and t not in REGISTRO]
     if nuevos:
         eventos.append(("CAMBIO", f"posiciones nuevas en la foto: {', '.join(nuevos)} — actualiza el registro de la cartera"))
@@ -435,7 +459,9 @@ def informe_valoracion(filas, review, eurusd, foto, estado_prev, calidad, cabece
     base_eur = sum(f["uds"] * f["base"] / f["fxb"] for f in ok if f.get("base"))
     # Coste en € al cambio de la COMPRA (BASE_FX): lo que de verdad salió de la cuenta.
     coste_eur = sum(f["uds"] * f["coste"] / (f["fxb"] if f["cur"] == "USD" else 1.0) for f in ok if f.get("coste"))
-    suelo_eur = sum(f["uds"] * f["stop_ibk"] / (eurusd if f["cur"] == "USD" else 1.0) for f in ok if f.get("stop_ibk"))
+    # Un trailing ya saltado no tiene suelo vigente: esa posición cuenta a su precio de hoy.
+    saltado = lambda f: bool(f["q"].get("rotoCierre") or f["q"].get("rotoIntradia"))
+    suelo_eur = sum(f["uds"] * (f["q"]["precio"] if saltado(f) else f["stop_ibk"]) / (eurusd if f["cur"] == "USD" else 1.0) for f in ok if f.get("stop_ibk"))
     todas_cierre = all(f["q"]["esCierre"] for f in ok)
     fechas = sorted({f["q"]["fecha"] for f in ok})
     L = [cabecera, ""]
@@ -466,6 +492,12 @@ def informe_valoracion(filas, review, eurusd, foto, estado_prev, calidad, cabece
             continue
         antes = prev_stops.get(f["ticker"])
         mov = f" · {pct(f['stop_ibk'] / antes - 1)} desde el último informe" if finite(antes) and antes > 0 else ""
+        rc, ri = f["q"].get("rotoCierre"), f["q"].get("rotoIntradia")
+        if rc or ri:
+            cuando = f"cerró bajo el nivel el {fecha_corta(rc['d'])} ({rc['cierre']:.2f} ≤ {rc['nivel']:.2f})" if rc else \
+                f"el mínimo del {fecha_corta(ri['d'])} tocó {ri['nivel']:.2f}"
+            L.append(f"   {f['ticker']:<5} ⚠ TRAILING SALTADO: {cuando} — comprueba en IBK si la orden se ejecutó (hoy cotiza a {f['q']['precio']:.2f} $)")
+            continue
         dist = f["q"]["precio"] / f["stop_ibk"] - 1
         L.append(f"   {f['ticker']:<5} stop ≈ {f['stop_ibk']:.2f} $ (máx. intradía {f['q']['maxIntradia']:.2f} desde el 8-sep) · el precio está {pct(dist)} por encima{mov}")
     L += ["", "③ SUELO GARANTIZADO (si saltaran hoy todos los stops, sobre lo que pagaste)"]
@@ -474,6 +506,9 @@ def informe_valoracion(filas, review, eurusd, foto, estado_prev, calidad, cabece
         L.append(f"   Cartera: {pct(r)}{eur_si_ganancia(suelo_eur - coste_eur)}")
     for f in ok:
         if f.get("suelo") is None:
+            continue
+        if saltado(f):
+            L.append(f"   {f['ticker']:<5} trailing saltado: sin suelo vigente (hoy {pct(f['sobre_coste'])} sobre coste)")
             continue
         falta = f["coste"] / (1 - TRAIL) / f["q"]["maxIntradia"] - 1 if f["q"]["maxIntradia"] else None
         extra = f" · le falta {pct(falta, 0)} de subida para no poder perder" if falta and falta > 0 else " · ya no puede cerrar en pérdida"

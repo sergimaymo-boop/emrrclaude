@@ -177,7 +177,7 @@ export async function cotizarCierres(simbolos, opts = {}) {
  * El trailing es un SUELO MÓVIL que solo sube: anclarlo a max(base, precio de hoy)
  * —lo que hacía cartera-informe.mjs— lo convertía en un suelo que BAJA con el precio.
  */
-export async function maximosDesde(simbolos, desde) {
+export async function maximosDesde(simbolos, desde, { trail = 0.45 } = {}) {
   const out = {};
   for (const sym of simbolos) {
     const d0 = typeof desde === "string" ? desde : desde[sym];
@@ -186,12 +186,22 @@ export async function maximosDesde(simbolos, desde) {
     const tramo = barras.filter((b) => b.d >= d0);
     if (!tramo.length) throw new Error(`${sym}: sin barras desde ${d0}`);
     let mc = tramo[0], mi = tramo[0];
+    // SALTO POR HISTORIA (12-nov-2026): un trailing tocado ya ha saltado aunque el precio
+    // rebote después (DELL 5-nov y WDC 6-nov cerraron bajo su nivel y luego se recuperaron).
+    // saltoCierre = regla del MODELO (a cierres); saltoIntradia = orden TRAIL del bróker
+    // (el mínimo del día toca el nivel anclado al máximo intradía previo).
+    let pkC = 0, pkH = 0, saltoCierre = null, saltoIntradia = null;
     for (const b of tramo) {
+      const hi = num(b.h) ? b.h : b.c, lo = num(b.l) ? b.l : b.c;
+      if (!saltoIntradia && pkH > 0 && lo <= pkH * (1 - trail)) saltoIntradia = { fecha: b.d, nivel: pkH * (1 - trail) };
+      if (!saltoCierre && pkC > 0 && b.c <= pkC * (1 - trail)) saltoCierre = { fecha: b.d, cierre: b.c, nivel: pkC * (1 - trail) };
+      pkC = Math.max(pkC, b.c); pkH = Math.max(pkH, hi);
       if (b.c > mc.c) mc = b;
-      if ((num(b.h) ? b.h : b.c) > (num(mi.h) ? mi.h : mi.c)) mi = b;
+      if (hi > (num(mi.h) ? mi.h : mi.c)) mi = b;
     }
     out[sym] = { sym, desde: d0, maxCierre: mc.c, fechaMaxCierre: mc.d,
-                 maxIntradia: num(mi.h) ? mi.h : mi.c, fechaMaxIntradia: mi.d, sesiones: tramo.length };
+                 maxIntradia: num(mi.h) ? mi.h : mi.c, fechaMaxIntradia: mi.d, sesiones: tramo.length,
+                 saltoCierre, saltoIntradia };
     await new Promise((r) => setTimeout(r, 220));
   }
   return out;

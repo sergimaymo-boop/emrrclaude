@@ -65,14 +65,24 @@ console.log("\n② TRAILINGS (persiguen el MÁXIMO desde la entrada; IBK ancla a
 console.log("ticker   máx.intradía (fecha)    stop     margen    suelo vs coste   le falta subir");
 const maxs = await maximosDesde(syms, Object.fromEntries(CARTERA.map((p) => [p.t, p.entry])));
 let sueloEur = 0, costeEur = 0;
+const saltados = [];
 for (const p of CARTERA) {
   const m = maxs[p.t];
+  if (m.saltoCierre || m.saltoIntradia) {
+    // un trailing tocado ya ha saltado, aunque el precio haya rebotado después
+    const c = m.saltoCierre, i = m.saltoIntradia;
+    saltados.push(p.t);
+    console.log(`${p.t.padEnd(7)} ⚠ TRAILING SALTADO — ${c ? `cerró el ${c.fecha.slice(5)} a ${c.cierre.toFixed(2)} (nivel ${c.nivel.toFixed(2)})` : ""}${c && i ? " · " : ""}${i ? `la orden TRAIL de IBK habría saltado el ${i.fecha.slice(5)} al tocar ${i.nivel.toFixed(2)}` : ""} · hoy ${q[p.t].precio.toFixed(2)}`);
+    sueloEur += p.uds * q[p.t].precio / fx; costeEur += p.uds * p.coste / p.fx;   // ya no hay suelo: cuenta a precio de hoy
+    continue;
+  }
   const ancla = Math.max(m.maxIntradia, q[p.t].precio);     // el trailing solo SUBE: nunca por debajo del máximo
   const stop = ancla * (1 - TRAIL);
   sueloEur += p.uds * stop / fx; costeEur += p.uds * p.coste / p.fx;
   const falta = (p.coste / (1 - TRAIL) / ancla - 1) * 100;
   console.log(`${p.t.padEnd(7)} ${ancla.toFixed(2).padStart(9)} (${m.fechaMaxIntradia.slice(5)}) ${stop.toFixed(2).padStart(9)} ${f((stop / q[p.t].precio - 1) * 100).padStart(9)} ${f((stop / p.coste - 1) * 100).padStart(14)}   ${falta > 0 ? `${falta.toFixed(0)}%` : "YA ASEGURA GANANCIA ✓"}`);
 }
+if (saltados.length) console.log(`⚠ ${saltados.join(", ")}: según el protocolo de Rally-Test, al saltar un trailing se RE-ESCANEA y se reinvierte todo con los pesos nuevos. Comprueba en IBK si las órdenes TRAIL se ejecutaron y sube una foto nueva.`);
 console.log(`CARTERA: si saltasen TODOS los stops hoy → ${f((sueloEur / costeEur - 1) * 100)} sobre el capital desembolsado`);
 
 // ── CALIDAD DEL DATO (mandato de Sergi) ───────────────────────────────────────
