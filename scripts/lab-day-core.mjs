@@ -146,6 +146,7 @@ function stopWidth(ti, i, scfg) {
   if (!scfg || scfg.tipo === "NONE") return Infinity;
   if (scfg.tipo === "FIJO") return scfg.w;
   if (scfg.tipo === "RATCHET") return scfg.w;      // anchura base; se ciñe por ganancia en ratchetWidth()
+  if (scfg.tipo === "REGIMEN") return scfg.w;      // ESTUDIO 12: anchura base; la efectiva la decide el régimen cada día
   if (scfg.tipo === "ADAPT") {
     const v = vol126(ti, i);
     if (v == null) return 0.30;
@@ -202,6 +203,7 @@ function seleccionDiversificada(scored, i, K, cc) {
  *   signalFn, sigKey,                  — señal (ti,i)→{score,mRaw}|null
  *   wcfg: {modo,...},                  — pesos
  *   scfg: {tipo:"NONE"|"FIJO"|"ADAPT", w|kv} — trailing a cierres
+ *         (ESTUDIO 12: {tipo:"REGIMEN", w, wTight, on, reancla} — anchura según régimen de mercado)
  *   modoStop: "JUMP"|"RESCAN2",        — reinversión al saltar (RESCAN2 = reforma sin reset de reloj)
  *   cooldown: 0,                       — sesiones sin poder recomprar un ticker parado
  *   expoFn: null | (i)=>0..1,          — overlay de exposición (fracción invertida objetivo,
@@ -299,8 +301,20 @@ export function simular(cfg) {
           if (isNum(px)) {
             const hi = cfg.intradia ? cfg.intradia.H[h.ti][i] : null, lo = cfg.intradia ? cfg.intradia.L[h.ti][i] : null;
             const intra = cfg.intradia != null && isNum(hi) && isNum(lo);
+            if (scfg.tipo === "REGIMEN" && scfg.reancla && scfg.on(i - 1) && !scfg.on(i - 2)) {
+              const p0 = T[h.ti].adj[i - 1];
+              if (isNum(p0)) h.peak = p0;
+            }
             if (intra) { if (hi > h.peak) h.peak = hi; } else if (px > h.peak) h.peak = px;
-            const trail = scfg.tipo === "RATCHET" ? ratchetWidth(h, scfg) : h.trail;
+            // ESTUDIO 12 (12-nov-2026) — trailing según RÉGIMEN de mercado. scfg =
+            // {tipo:"REGIMEN", w, wTight, on:(i)=>bool, reancla}. La anchura del cierre i la
+            // decide el estado conocido al cierre i−1 (un día de retraso: la orden se ajusta
+            // antes de la sesión). Con reancla, el primer día de régimen el pico se re-ancla al
+            // cierre previo (como al recolocar una orden TRAIL desde el precio de ese momento).
+            // Con scfg no-REGIMEN el codepath es EXACTAMENTE el original (anclas intactas).
+            const trail = scfg.tipo === "RATCHET" ? ratchetWidth(h, scfg)
+              : scfg.tipo === "REGIMEN" ? (scfg.on(i - 1) ? scfg.wTight : scfg.w)
+              : h.trail;
             const nivel = h.peak * (1 - trail);
             if (intra ? lo <= nivel : px <= nivel) {
               const exitPx = intra ? Math.min(nivel, hi) : px;
@@ -393,16 +407,21 @@ export function fila(name, r) {
 // ─── ANCLAS DE VALIDACIÓN ────────────────────────────────────────────────────
 {
   const sufijo = COST_BPS > 0.003 ? "-50bp" : "";
+  // ESTUDIO 12: si el dataset se ha EXTENDIDO con barras posteriores al canon (2026-09-01),
+  // las anclas se siguen evaluando en esa fecha — el simulador es causal, así que la curva
+  // hasta el canon debe salir BIT A BIT igual. Con el dataset canon, TO_ANCLA === TO.
+  const kAncla = dates.findIndex((d) => d > "2026-09-01");
+  const TO_ANCLA = kAncla < 0 ? TO : kAncla - 1;
   const s2 = JSON.parse(fs.readFileSync(`backtests/rally-test-engine-study2${sufijo}.json`, "utf8"));
   const w2 = s2.results.find((r) => r.name === "M189s10·K5·SCORE·R42");
   const a1 = simular({ FROM: 260, R: 42, K: 5, scfg: { tipo: "NONE" } });
-  const c1 = segMetrics(a1.curve, SPLIT, TO).cagr;
+  const c1 = segMetrics(a1.curve, SPLIT, TO_ANCLA).cagr;
   if (Math.abs(c1 - w2.cells[0].confirm.cagr) > 1e-12) throw new Error(`ANCLA A1 FALLA: ${c1} vs ${w2.cells[0].confirm.cagr}`);
 
   const s3 = JSON.parse(fs.readFileSync(`backtests/rally-test-engine-study3${sufijo}.json`, "utf8"));
   const w3 = s3.results.find((r) => r.name === "F45·RESCAN2·R63");
   const a2 = simular({ FROM: 260, R: 63, K: 5, scfg: { tipo: "FIJO", w: 0.45 }, modoStop: "RESCAN2" });
-  const c2 = segMetrics(a2.curve, SPLIT, TO).cagr;
+  const c2 = segMetrics(a2.curve, SPLIT, TO_ANCLA).cagr;
   if (Math.abs(c2 - w3.cells[0].confirm.cagr) > 1e-12) throw new Error(`ANCLA A2 FALLA: ${c2} vs ${w3.cells[0].confirm.cagr}`);
   console.log("ANCLAS OK — el núcleo reproduce BIT A BIT los ganadores auditados de los estudios 2 y 3 (fase 260).");
 }
