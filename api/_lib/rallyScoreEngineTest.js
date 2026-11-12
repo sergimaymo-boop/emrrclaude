@@ -207,6 +207,18 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
     trendAge++;
   }
 
+  // RSI de Wilder a 14 sesiones (12-nov-2026, estudio 12): SOLO display — alimenta la fila
+  // "los 5 del scan" de la tabla Momento de mercado. No entra en score, pesos ni stop.
+  let rsi14 = null;
+  if (n > 15) {
+    let ag = 0, al = 0;
+    for (let i = 1; i < n; i++) {
+      const d = closes[i] - closes[i - 1], g = Math.max(d, 0), l = Math.max(-d, 0);
+      if (i <= 14) { ag += g / 14; al += l / 14; } else { ag = (ag * 13 + g) / 14; al = (al * 13 + l) / 14; }
+    }
+    rsi14 = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+  }
+
   const p126 = closes[n - 127];
   const mom126 = isNum(p126) && p126 > 0 ? pNow / p126 - 1 : null;
 
@@ -261,6 +273,7 @@ export function calculateRallyScore({ bars, spyBars = [], spreadPercent = null, 
       maxDay21: round1(maxDay21 * 100),
       prox52w: prox52 != null ? round1(prox52 * 100) : null,   // % del máximo de 52 semanas
       ext50: isNum(ema50) && ema50 > 0 ? round1(((pNow - ema50) / ema50) * 100) : null,
+      rsi14: rsi14 != null ? Math.round(rsi14) : null,          // display (estudio 12)
       version: RALLY_ENGINE_VERSION,
     },
   };

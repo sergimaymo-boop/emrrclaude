@@ -27,8 +27,9 @@
  * LOS 5 PRIMEROS DEL SCAN (top-5 del día por la señal M189s10, independiente de la fase)
  *   K1 TOP5_ESTIRADO       media de (precio/EMA50−1) del top-5 en su percentil ≥90% de 252 sesiones
  *   K2 TOP5_NO_ESTIRADO    esa media en su percentil ≤10% de 252 sesiones
- *                          (la definición absoluta ≥30% / ≤5% salió degenerada —1,2% y 29% de los días— y se
- *                          cambió a percentil ANTES de calcular ningún resultado de la estrategia)
+ *                          (K1 absoluto ≥30% salió degenerado: 1,2% de los días. K2 absoluto ≤5% NO lo era
+ *                          —29,3%— y se cambió por simetría, antes de calcular resultados pero sin prueba en git;
+ *                          con la definición original K2 da +7,4 / +3,7 pp. Corregido tras la auditoría del 12-nov.)
  *   K3 TOP5_RSI>=70        RSI14 medio del top-5 ≥ 70
  *   K4 TOP5_RSI<=50        RSI14 medio del top-5 ≤ 50
  * SOLO INFORMATIVO (CNN solo existe desde 2021-01: no hay train, no puede adjudicarse)

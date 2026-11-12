@@ -158,6 +158,7 @@ export interface RallyTestMetrics extends RallySessionFields {
   maxDay21?: number | null;
   prox52w?: number | null;
   ext50?: number | null;
+  rsi14?: number | null;        // RSI de Wilder 14 sesiones (display, estudio 12)
   trailingStop?: number | null;
   version?: string;
 }
@@ -194,6 +195,91 @@ import type { RallyScanResponse } from "./rallyRefresh";
  *  para el lector. `analizados` = tickers con histórico suficiente; `positivos`
  *  = los que tienen tendencia positiva. */
 export interface AmplitudUniverso { analizados: number; positivos: number }
+
+/**
+ * MOMENTO DE MERCADO — contexto del scan (estudio 12, 12-nov-2026). Lo calcula el servidor
+ * al completar el scan de test (api/_lib/rallyTestContext.js). SOLO display: no entra en
+ * score, selección, pesos ni trailing. Cualquier campo puede venir a null (fuente caída):
+ * el panel lo dice, nunca lo rellena.
+ */
+export interface RallyTestContexto {
+  ok: boolean;
+  calculadoUtc: string;
+  spy: { sesion: string; vsEma200Pct: number | null; vsEma50Pct: number | null; cruce: "DORADO" | "MUERTE"; bajoMaximoPct: number | null; rsi14: number | null } | null;
+  vix: { sesion: string; nivel: number | null; percentil: number | null } | null;
+  top5: { n: number; rsiMedio: number | null; estiramientoMedioPct: number | null } | null;
+  avisos: string[];
+}
+
+export interface MomentoFila { clave: string; titulo: string; valor: string; estado: string; tono: "INFO" | "AVISO"; lectura: string }
+
+/**
+ * Textos del ESTUDIO 12 (scripts/estudio12-*.mjs, backtests/estudio12-regimen*.json), ya
+ * corregidos por la auditoría adversarial del 12-nov-2026 (docs/auditoria-semanal/2026-11-12-estudio12.md):
+ *  · trailing y exposición según el ciclo: 0 de 150 y 0 de 24 superan (criterios fijados antes);
+ *  · esperar una señal con el dinero parado pierde siempre;
+ *  · el único "momento favorable" que aguanta es "los líderes están en su media de 50 o por
+ *    debajo", que es sobre todo "la estrategia acaba de caer": se enseña con rango y avisos,
+ *    en tono neutro. NO hay etiqueta de compra/venta ni cifras de RSI en verde.
+ */
+export const RALLY_TEST_MOMENTO = {
+  estudio: "estudio 12 · 10 años de backtest",
+  trailing: "Ninguna de las 150 variantes de trailing según el ciclo (15-35% con codicia, tendencia bajista, VIX alto, sobrecompra…) superó las pruebas, con criterios fijados antes de ejecutar: 89 pierden en los dos periodos y las 16 que más ganan en 2022-26 pierden todas en 2017-21.",
+  exposicion: "Bajar exposición con tendencia bajista, crédito débil o VIX alto recortó la caída máxima 9-15 puntos pero costó de 5 a 38 puntos de rentabilidad al año; con codicia o sobrecompra ni la recortó (0 de 24).",
+  esperar: "Esperar una señal con el dinero parado perdió siempre frente a invertir al recibirlo (0,92-0,99 de la riqueza final). Nada de esta tabla es una orden de compra o de venta.",
+  lideresBajoMedia: "Tras momentos así —casi siempre la estrategia acaba de caer— rindió más que un día cualquiera a 3 meses en 8 de 11 episodios (2022-26: +10,5 pp, con rango honesto de −3 a +26; +5,2 sin marzo de 2026). Falló en 2022. Universo de supervivientes: probablemente inflado. Orientativo, no una regla.",
+  rsiAlto: "RSI medio alto: tras días así la estrategia rindió algo menos que la media a 3 meses pero siguió subiendo; dejar de aportar mientras tanto no mejoró nada.",
+  spySobreventa: "Sobreventa del índice: solo 40 días en 10 años; sin base para una regla.",
+  tendenciaBajista: "Con el S&P bajo su media de 200, ni ceñir el trailing ni bajar exposición mejoró el resultado en 10 años.",
+  vixAlto: "VIX alto = más vaivenes, pero salir o ceñir stops con VIX ≥ 25 restó rentabilidad en el backtest.",
+} as const;
+
+const sig = (v: number, d = 1) => `${v > 0 ? "+" : ""}${v.toFixed(d).replace(".", ",")}%`;
+
+/** Convierte el contexto del servidor en las filas de la tabla. Función pura. */
+export function filasMomento(c: RallyTestContexto | null | undefined): { filas: MomentoFila[] } {
+  if (!c) return { filas: [] };
+  const filas: MomentoFila[] = [];
+  const M = RALLY_TEST_MOMENTO;
+  if (c.spy) {
+    const t = c.spy.vsEma200Pct;
+    const alcista = t != null && t >= 0;
+    filas.push({
+      clave: "tendencia", titulo: "Tendencia S&P 500",
+      valor: t != null ? `${sig(t)} sobre su media de 200 · cruce ${c.spy.cruce === "DORADO" ? "dorado" : "de la muerte"}` : "sin dato",
+      estado: t == null ? "SIN DATO" : alcista ? "ALCISTA" : "BAJISTA", tono: t != null && !alcista ? "AVISO" : "INFO",
+      lectura: alcista ? "Tendencia de fondo positiva. No cambia nada en la cartera." : M.tendenciaBajista,
+    });
+    const r = c.spy.rsi14, dd = c.spy.bajoMaximoPct;
+    const sobreventa = r != null && r <= 30, sobrecompra = r != null && r >= 70;
+    filas.push({
+      clave: "maximos", titulo: "S&P frente a máximos",
+      valor: `${dd != null ? `a ${sig(-dd)} de su máximo de 52 semanas` : "sin dato"}${r != null ? ` · RSI ${r}` : ""}`,
+      estado: sobreventa ? "SOBREVENTA" : sobrecompra ? "SOBRECOMPRA" : "NORMAL", tono: "INFO",
+      lectura: sobreventa ? M.spySobreventa : sobrecompra ? "Sobrecompra del índice: sin efecto consistente sobre la estrategia; no es señal de venta." : "Sin lectura especial.",
+    });
+  }
+  if (c.vix) {
+    const v = c.vix.nivel;
+    filas.push({
+      clave: "vix", titulo: "VIX (volatilidad)",
+      valor: v != null ? `${v.toFixed(1).replace(".", ",")}${c.vix.percentil != null ? ` · percentil ${c.vix.percentil}% de un año` : ""}` : "sin dato",
+      estado: v == null ? "SIN DATO" : v >= 25 ? "TENSIÓN" : v < 15 ? "CALMA" : "NORMAL", tono: v != null && v >= 25 ? "AVISO" : "INFO",
+      lectura: v != null && v >= 25 ? M.vixAlto : "Sin lectura especial.",
+    });
+  }
+  if (c.top5) {
+    const r = c.top5.rsiMedio, e = c.top5.estiramientoMedioPct;
+    const bajoMedia = e != null && e <= 0, rsiAlto = r != null && r >= 70;
+    filas.push({
+      clave: "top5", titulo: `Los ${c.top5.n} invertidos del scan`,
+      valor: `${e != null ? `${sig(e)} de media respecto a su media de 50` : "estiramiento sin dato"}${r != null ? ` · RSI medio ${r}` : ""}`,
+      estado: e == null && r == null ? "SIN DATO" : bajoMedia ? "BAJO SU MEDIA DE 50" : rsiAlto ? "RSI ALTO" : "NORMAL", tono: "INFO",
+      lectura: bajoMedia ? M.lideresBajoMedia : rsiAlto ? M.rsiAlto : "Sin lectura especial.",
+    });
+  }
+  return { filas };
+}
 
 export const RALLY_TEST_BASELINE = {
   formula: "LAB-M189 v1.1 — momentum 189 sesiones saltando las últimas 10 · top-10 mostrado, INVERTIDOS los 5 primeros (pesos por score 10-40%) · revisión ~cada 3 meses (63 sesiones) · trailing stop 45% a cierres: si salta, RE-ESCANEA y reinvierte todo según los pesos nuevos",
@@ -251,8 +337,8 @@ export async function continueRallyTestScan(rallyToken: string): Promise<RallySc
 }
 
 /** null SOLO si el servidor confirma que no hay scan de test; cualquier fallo LANZA. */
-export async function fetchLastRallyTestScan(): Promise<(RallyScanResponse & { review?: RallyTestReview }) | null> {
-  return fetchLastScanFrom("/api/rally-test/last") as Promise<(RallyScanResponse & { review?: RallyTestReview }) | null>;
+export async function fetchLastRallyTestScan(): Promise<(RallyScanResponse & { review?: RallyTestReview; contexto?: RallyTestContexto | null }) | null> {
+  return fetchLastScanFrom("/api/rally-test/last") as Promise<(RallyScanResponse & { review?: RallyTestReview; contexto?: RallyTestContexto | null }) | null>;
 }
 
 /**

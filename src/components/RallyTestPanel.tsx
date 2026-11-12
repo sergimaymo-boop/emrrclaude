@@ -37,6 +37,9 @@ import { useIsNarrow } from "../hooks/useIsNarrow";
 import { registerModuleScan } from "../services/scanBus";
 import {
   RALLY_TEST_BASELINE,
+  RALLY_TEST_MOMENTO,
+  type RallyTestContexto,
+  filasMomento,
   type RallyNewsItem,
   type RallyState,
   type RallyTestAsset,
@@ -78,6 +81,9 @@ export function RallyTestPanel() {
   // MUESTRA — ninguna regla automática la usa (ver §10e: el cortacircuitos de
   // cartera se estudió y se REFUTÓ; esto es el observable que sí quedó en pie).
   const [amplitud, setAmplitud] = useState<{ analizados: number; positivos: number } | null>(null);
+  // Momento de mercado (estudio 12, 12-nov-2026): contexto calculado por el servidor al
+  // completar el scan. Solo se MUESTRA; no cambia la cartera ni el trailing.
+  const [contexto, setContexto] = useState<RallyTestContexto | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   // Motivo del movimiento por ticker (7-sep-2026, solo display; endpoint y caché
   // PROPIOS del laboratorio — ver fetchRallyTestNews). Se carga aparte del scan:
@@ -104,6 +110,7 @@ export function RallyTestPanel() {
           setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
           setTickersFallidos(last.tickersFallidos ?? 0);
           setAmplitud((last as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
+          setContexto(last.contexto ?? null);
         }
       } catch {
         if (mounted.current) setLoadError(true);
@@ -156,6 +163,7 @@ export function RallyTestPanel() {
           setLastScanCompletedAt(res.scanCompletedAtUtc ?? new Date().toISOString());
           setTickersFallidos(res.tickersFallidos ?? 0);
           setAmplitud((res as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
+          setContexto((res as { contexto?: RallyTestContexto | null }).contexto ?? null);
           setScanError(null);
           setLoadError(false);
           ok = true;
@@ -291,6 +299,8 @@ export function RallyTestPanel() {
               <span style={{ color: "#fca5a5" }}>⚠ Motivos del movimiento: <b>noticias no disponibles (fallo de la fuente)</b>.</span>
             )}
           </div>
+
+          <MomentoMercado contexto={contexto} isNarrow={isNarrow} />
 
           <div style={{ padding: isNarrow ? "8px 8px 4px" : "8px 16px 4px" }}>
             {top10.map((a, i) => (
@@ -637,6 +647,67 @@ function MotivoDelMovimiento({ news, newsFailed, dayChangePct }: { news: RallyNe
           </span>
         )}
       </span>
+    </div>
+  );
+}
+
+/**
+ * MOMENTO DE MERCADO (estudio 12, 12-nov-2026) — tabla de CONTEXTO pedida por Sergi:
+ * tendencia del S&P, distancia a máximos, VIX y cómo de estirados están los 5 invertidos,
+ * con lo que el backtest de 10 años dice de cada estado. SOLO informa: el estudio probó
+ * 150 variantes de trailing según el ciclo y 24 de exposición y ninguna superó sus
+ * criterios, así que aquí no hay ninguna regla que mueva la cartera ni el stop.
+ */
+function MomentoMercado({ contexto, isNarrow }: { contexto: RallyTestContexto | null; isNarrow: boolean }) {
+  const { filas } = filasMomento(contexto);
+  const tono = (t: string) => (t === "AVISO" ? WARN : SLATE);
+  const caja: React.CSSProperties = { margin: isNarrow ? "6px 8px 2px" : "6px 16px 2px", border: `1px solid ${AMBER}33`, borderRadius: 8, background: "rgba(168,85,247,0.05)", overflow: "hidden" };
+  const cab: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", padding: "6px 10px", borderBottom: `1px solid ${AMBER}22`, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: AMBER };
+  if (!contexto) {
+    return (
+      <div style={caja}>
+        <div style={{ ...cab, borderBottom: "none" }}>
+          <span>Momento de mercado</span>
+          <span style={{ color: "#64748b", fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>se calcula al escanear: pulsa «Escanear universo» para verlo</span>
+        </div>
+      </div>
+    );
+  }
+  const sesion = contexto.spy?.sesion ?? contexto.vix?.sesion ?? null;
+  return (
+    <div style={caja}>
+      <div style={cab}>
+        <span>Momento de mercado · contexto, no cambia la cartera</span>
+        <span style={{ color: "#64748b", fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>
+          {sesion ? `cierre del ${formatSessionDate(sesion)}` : "sin datos de mercado"} · {RALLY_TEST_MOMENTO.estudio}
+        </span>
+      </div>
+      {filas.map((f) => (
+        <div key={f.clave} style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr auto" : "150px 1fr 118px", gap: isNarrow ? "2px 8px" : 10, alignItems: "baseline", padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 10.5 }}>
+          <span style={{ color: "#cbd5e1", fontWeight: 700 }}>{f.titulo}</span>
+          {isNarrow && <span style={{ color: tono(f.tono), fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>{f.estado}</span>}
+          <span style={{ color: "#94a3b8", gridColumn: isNarrow ? "1 / -1" : undefined }}>
+            <b style={{ color: "#e2e8f0" }}>{f.valor}</b>
+            <span style={{ color: "#64748b" }}> — {f.lectura}</span>
+          </span>
+          {!isNarrow && <span style={{ color: tono(f.tono), fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>{f.estado}</span>}
+        </div>
+      ))}
+      <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr auto" : "150px 1fr 118px", gap: isNarrow ? "2px 8px" : 10, alignItems: "baseline", padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 10.5 }}>
+        <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Trailing stop</span>
+        {isNarrow && <span style={{ color: SLATE, fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>45% · SIN CAMBIOS</span>}
+        <span style={{ color: "#64748b", gridColumn: isNarrow ? "1 / -1" : undefined }}>{RALLY_TEST_MOMENTO.trailing} {RALLY_TEST_MOMENTO.exposicion}</span>
+        {!isNarrow && <span style={{ color: SLATE, fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>45% · SIN CAMBIOS</span>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr auto" : "150px 1fr 118px", gap: isNarrow ? "2px 8px" : 10, alignItems: "baseline", padding: "5px 10px", fontSize: 10.5 }}>
+        <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Si vas a aportar dinero</span>
+        {isNarrow && <span style={{ color: SLATE, fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>SIN REGLA</span>}
+        <span style={{ color: "#64748b", gridColumn: isNarrow ? "1 / -1" : undefined }}>{RALLY_TEST_MOMENTO.esperar}</span>
+        {!isNarrow && <span style={{ color: SLATE, fontWeight: 800, fontSize: 9.5, textAlign: "right" }}>SIN REGLA</span>}
+      </div>
+      {contexto.avisos.length > 0 && (
+        <div style={{ padding: "5px 10px", fontSize: 10, color: WARN }}>⚠ {contexto.avisos.join(" · ")}</div>
+      )}
     </div>
   );
 }
