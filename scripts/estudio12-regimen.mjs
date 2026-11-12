@@ -65,6 +65,10 @@
  * y consistencia. Multiplicidad declarada: 150 + 24 + 9 pruebas; por eso se exige train Y
  * confirm, dos costes, vecinos, episodios y una 2.ª auditoría antes de proponer nada.
  *
+ * FE DE ERRATAS (12-nov-2026, tras la 1.ª ejecución; los gates NO cambian): el tramo de
+ * confirmación de U3 pedía el dato del día TO+1, que no existe → media NaN y la columna
+ * "confirm" salía vacía. Corregido acotando el bucle a TO. U1 y U2 no se ven afectados.
+ *
  * Salida: backtests/estudio12-regimen[-50bp].json
  */
 import fs from "node:fs";
@@ -139,7 +143,7 @@ function carga(e) {
     const exc = [];
     for (const [k, FROM] of PHASES10.entries()) {
       const c = baseSim[k].curve, lo = Math.max(a, FROM + 20), todos = [], senal = [];
-      for (let i = lo; i + 1 + H <= b; i++) { const r = c[i + 1 + H] / c[i + 1] - 1; todos.push(r); if (on[i]) senal.push(r); }
+      for (let i = lo; i + 1 + H <= Math.min(b, TO); i++) { const r = c[i + 1 + H] / c[i + 1] - 1; todos.push(r); if (on[i]) senal.push(r); }
       if (senal.length >= 5) exc.push({ exc: mean(senal) - mean(todos), n: senal.length, mSenal: mean(senal), mTodos: mean(todos), pos: senal.filter((r) => r > 0).length / senal.length });
     }
     return exc;
@@ -202,4 +206,4 @@ for (const r of U3) console.log("   " + fila3(r));
 console.log("   — tras estados de CODICIA (informativo):");
 for (const r of U3codicia) console.log("   " + fila3(r));
 fs.writeFileSync(OUT, JSON.stringify({ ranAt: new Date().toISOString(), costBps: COST_BPS * 1e4, dataset: { from: dates[0], to: dates[TO] }, base, U1, U2, U3, U3codicia }, null, 1));
-console.log(`\nGuardado ${OUT} · ${((Date.now() - t0) / 60000).toFixed(1)} min`);
+console.log(`\nGuardado ${OUT} · ${((Date.now() - t0) / 1000).toFixed(0)} s`);
