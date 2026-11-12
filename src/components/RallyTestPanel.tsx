@@ -38,6 +38,7 @@ import { registerModuleScan } from "../services/scanBus";
 import {
   RALLY_TEST_BASELINE,
   RALLY_TEST_MOMENTO,
+  RALLY_TEST_ACTUALIZADO,
   type RallyTestContexto,
   filasMomento,
   type RallyNewsItem,
@@ -116,7 +117,21 @@ export function RallyTestPanel() {
         if (mounted.current) setLoadError(true);
       }
     })();
-    return () => { mounted.current = false; };
+    // Un scan lanzado desde la tarjeta Cartera IBK también refresca este panel.
+    const onExterno = () => {
+      if (scanningRef.current) return;
+      void fetchLastRallyTestScan().then((last) => {
+        if (!mounted.current || !last?.top10?.length) return;
+        setState((s) => ({ ...s, status: "RALLY_FINAL", top10: last.top10 ?? [], isRallyFinal: true } as RallyState));
+        setLastScanCompletedAt(last.scanCompletedAtUtc ?? null);
+        setTickersFallidos(last.tickersFallidos ?? 0);
+        setAmplitud((last as { amplitud?: { analizados: number; positivos: number } }).amplitud ?? null);
+        setContexto(last.contexto ?? null);
+        setReview(last.review ?? null);
+      }).catch(() => {});
+    };
+    window.addEventListener(RALLY_TEST_ACTUALIZADO, onExterno);
+    return () => { mounted.current = false; window.removeEventListener(RALLY_TEST_ACTUALIZADO, onExterno); };
   }, []);
 
   // Refresco de la antigüedad mostrada ("hace X", DATO ANTIGUO).
@@ -168,6 +183,7 @@ export function RallyTestPanel() {
           setLoadError(false);
           ok = true;
           void cargarNoticias();   // el scan nuevo trae otros tickers: refrescar motivos
+          window.dispatchEvent(new Event(RALLY_TEST_ACTUALIZADO));   // avisa a la tarjeta Cartera IBK
           // A propósito NO se avisa a la banda de alineación de cartera (evento de
           // producción): un scan de laboratorio no debe refrescar nada de producción.
         } else {

@@ -32,6 +32,7 @@ import {
   clearPortfolioFromStorage,
   clearPortfolioHistory,
 } from "../services/optimal2026Refresh";
+import { CarteraPlan } from "./CarteraPlan";
 import { ACCENT, ACCENT_GLOW, ACCENT_BORDER, GREEN, RED, YELLOW, GRAY, TEXT } from "./Optimal2026Panel";
 
 const fmtEurInt = (v: number) => v.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -477,10 +478,10 @@ export function PortfolioCard({ data, onScanAfterLoad }: { data: Optimal2026Resu
         flexWrap: "wrap",
       }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.10em", textTransform: "uppercase", color: ACCENT }}>
-          📥 Carga de cartera IBK
+          📥 Cartera real IBK
         </span>
         <span style={{ fontSize: 8, fontWeight: 600, color: "#94a3b8" }}>
-          {hasPortfolio ? "% invertido vs % en efectivo" : "sube tus capturas IBK → % invertido vs % efectivo"}
+          {hasPortfolio ? "invertido · efectivo · resultado · órdenes frente al último scan" : "sube tus capturas IBK (cabecera + posiciones)"}
         </span>
       </div>
 
@@ -503,6 +504,7 @@ export function PortfolioCard({ data, onScanAfterLoad }: { data: Optimal2026Resu
       ) : (
         <PortfolioUpload onLoad={handlePortfolioLoad} onScanAfterLoad={onScanAfterLoad} />
       )}
+      <CarteraPlan portfolio={portfolio} />
     </section>
   );
 }

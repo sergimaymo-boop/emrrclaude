@@ -306,6 +306,9 @@ export const RALLY_TEST_BASELINE = {
   },
 } as const;
 
+/** Evento del navegador: un scan de Rally-Test acaba de terminar (panel, botón grande o tarjeta Cartera IBK). */
+export const RALLY_TEST_ACTUALIZADO = "emrr:rally-test-actualizado";
+
 const TIMEOUT_MS = 25000;
 
 async function fetchWithTimeout<T>(url: string, init: RequestInit): Promise<T> {

@@ -1119,6 +1119,16 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
         <RallyTestPanel />
       </ErrorBoundary>
 
+      {/* ── MÓDULO 2 — CARTERA REAL IBK (fotos) + resultado y órdenes frente al último
+          scan de Rally-Test. Segundo módulo por mandato de Sergi (13-nov-2026).
+          Extraída de Optimal2026Panel en la reordenación anterior; comparte
+          items/deployPct/isPricesStale con Optimal Supreme vía
+          deriveOptimal2026Display() para que las tarjetas nunca diverjan, y la
+          banda de alineación solo LEE el último scan persistido de Rally. ── */}
+      <ErrorBoundary inline label="Cartera IBK">
+        <PortfolioCard data={optimal2026} onScanAfterLoad={handleOptimal2026Scan} />
+      </ErrorBoundary>
+
       {/* ── MÓDULO 1 — FEAR & GREED + indicadores maestros (VIX/SPY/HYG/MOVE/…) ── */}
       <ErrorBoundary inline label="Fear & Greed">
         <FearGreedPanel masterIndicators={masterIndicators} indicatorsFeed={indicatorsFeed} />
@@ -1140,16 +1150,6 @@ export function DashboardPage({ onLogout }: DashboardPageProps) {
           propio (sp500_*). Envuelto en su ErrorBoundary: si falla, el resto sigue. */}
       <ErrorBoundary inline label="SP500">
         <SP500Panel />
-      </ErrorBoundary>
-
-      {/* ── MÓDULO 5 — CARGA DE CARTERA IBK (CSV/fotos) + banda ⚖ ALINEACIÓN
-          CARTERA ↔ RALLY LEADERS — justo encima de Rally (mandato ago-2026).
-          Extraída de Optimal2026Panel en la reordenación anterior; comparte
-          items/deployPct/isPricesStale con Optimal Supreme vía
-          deriveOptimal2026Display() para que las tarjetas nunca diverjan, y la
-          banda de alineación solo LEE el último scan persistido de Rally. ── */}
-      <ErrorBoundary inline label="Cartera IBK">
-        <PortfolioCard data={optimal2026} onScanAfterLoad={handleOptimal2026Scan} />
       </ErrorBoundary>
 
       {/* ── MÓDULO 6 — RALLY LEADERS: los 10 con la tendencia alcista más sana ──

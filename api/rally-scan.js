@@ -33,6 +33,7 @@ import { assignSuggestedWeights } from './_lib/rallyScoreEngine.js';
 import { runRallyBatch as runRallyTestBatch, fetchSpyBars as fetchSpyBarsTest } from './_lib/rallyBatchProcessorTest.js';
 import { assignSuggestedWeights as assignSuggestedWeightsTest, rallyTestReviewInfo } from './_lib/rallyScoreEngineTest.js';
 import { buildRallyTestContext, withTop5Context as withTop5ContextTest } from './_lib/rallyTestContext.js';
+import { buildCarteraQuotes as buildCarteraQuotesTest } from './_lib/rallyTestCartera.js';
 import { filterActiveOperableAssets, getActiveMarketsAt, marketStatusForExchange, signStateToken, verifyStateToken, isSnapshotSigningConfigured } from './_lib/scanSnapshot.js';
 
 const APP_NAME  = 'EMRR 2.0 / Tendencias';
@@ -448,6 +449,22 @@ async function handleIbkPortfolio(req, res) {
   return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'IBK_PORTFOLIO');
 }
 
+// ─── RALLY-TEST · precios para el plan de la cartera IBK (13-nov-2026) ────────
+// GET /api/rally-test/cartera?tickers=MU,WDC&foto=AAAA-MM-DD&scan=AAAA-MM-DD — solo lectura,
+// sin Redis. Cierres en la fecha de la foto y del scan + EUR/USD (api/_lib/rallyTestCartera.js).
+async function handleTestCartera(req, res) {
+  if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 'RALLY_TEST_CARTERA');
+  if (!isRealApi()) return sendJson(res, 409, { ok: false, error: 'REAL_API_CALLS_DISABLED' }, 'RALLY_TEST_CARTERA');
+  const tickers = String(req.query?.tickers ?? '').split(',').filter(Boolean);
+  if (!tickers.length) return sendJson(res, 400, { ok: false, error: 'TICKERS_REQUIRED' }, 'RALLY_TEST_CARTERA');
+  try {
+    const out = await buildCarteraQuotesTest({ tickers, fechaFoto: req.query?.foto, fechaScan: req.query?.scan }, process.env);
+    return sendJson(res, out.ok ? 200 : 503, out, 'RALLY_TEST_CARTERA');
+  } catch {
+    return sendJson(res, 500, { ok: false, error: 'INTERNAL_ERROR' }, 'RALLY_TEST_CARTERA');
+  }
+}
+
 // ─── main dispatcher ──────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -461,6 +478,7 @@ export default async function handler(req, res) {
   if (action === 'test-continue') return handleTestContinue(req, res);
   if (action === 'test-last')     return handleTestLast(req, res);
   if (action === 'test-news')     return handleTestNews(req, res);
+  if (action === 'test-cartera')  return handleTestCartera(req, res);
   if (action === 'news')          return handleNews(req, res);
-  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'news', 'test-start', 'test-continue', 'test-last', 'test-news'] });
+  return res.status(400).json({ ok: false, error: 'UNKNOWN_ACTION', validActions: ['start', 'continue', 'last', 'ibk-portfolio', 'news', 'test-start', 'test-continue', 'test-last', 'test-news', 'test-cartera'] });
 }
