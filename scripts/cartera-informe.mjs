@@ -20,17 +20,15 @@ import { cotizar, variacionCartera, maximosDesde } from "./precios.mjs";
 // compras del 25-sep (HPE nueva, +2.000 €). base = media ponderada de cierres 8-sep y
 // compra nueva; coste = precio medio real; entry = desde cuándo se persigue el máximo.
 // ⚠ Tras cada rebalanceo hay que actualizar AMBOS ficheros (export.py y este).
+// 13-nov-2026 (foto IBK): vendidas por su trailing INTC (30-oct), DELL (5-nov) y WDC (6-nov).
 const CARTERA = [
   { t: "MRNA", uds: 16.28,  base: 149.34,  coste: 141.94, fx: 1.1578, entry: "2026-09-08" },
-  { t: "MU",   uds: 2.42,   base: 1016.07, coste: 992.30, fx: 1.1579, entry: "2026-09-08" },
-  { t: "DELL", uds: 4.63,   base: 540.77,  coste: 474.80, fx: 1.1580, entry: "2026-09-08" },
-  { t: "WDC",  uds: 5.0004, base: 473.79,  coste: 468.86, fx: 1.1585, entry: "2026-09-08" },
-  { t: "INTC", uds: 17.87,  base: 104.47,  coste: 97.84,  fx: 1.1627, entry: "2026-09-08" },
+  { t: "MU",   uds: 2.4202,   base: 1016.07, coste: 992.30, fx: 1.1579, entry: "2026-09-08" },
   { t: "HPE",  uds: 6.22,   base: 64.17,   coste: 64.17,  fx: 1.139,  entry: "2026-09-25" },
 ];
 // Efectivo de la última foto (10-oct, sin operaciones desde entonces): se muestra solo
 // como contexto del NAV. Si la foto es antigua, el informe lo dice.
-const EFECTIVO_EUR = 12112.87, FOTO_EFECTIVO = "10-oct-2026", TRAIL = 0.45;
+const EFECTIVO_EUR = 15847.97, FOTO_EFECTIVO = "13-nov-2026", TRAIL = 0.45;
 const f = (x, d = 2) => `${x >= 0 ? "+" : ""}${x.toFixed(d)}%`;
 const eur = (x) => `${x.toLocaleString("es-ES", { maximumFractionDigits: 0 })} €`;
 
