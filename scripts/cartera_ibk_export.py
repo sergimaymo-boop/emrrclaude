@@ -82,12 +82,11 @@ BASE_FX = 1.1627   # EUR/USD del 8-sep (valor base 8.383 €)
 # de los cierres del 8-sep y del precio de la compra nueva; fx = cambio EUR/USD efectivo de
 # la mezcla de lotes (1,1627 los del 8-sep, 1,139 los del 25-sep); entry = desde cuándo se
 # persigue el máximo para el trailing.
+# 13-nov-2026 (foto IBK): VENDIDAS por su TRAIL 45% INTC (30-oct), DELL (5-nov; queda un
+# resto de 0,0048 uds, se ignora) y WDC (6-nov). Quedan MRNA, MU y HPE.
 REGISTRO = {
     "MRNA": {"units": 16.28,  "cost": 141.94, "base": 149.34,  "fx": 1.1578, "currency": "USD"},
-    "MU":   {"units": 2.42,   "cost": 992.30, "base": 1016.07, "fx": 1.1579, "currency": "USD"},
-    "DELL": {"units": 4.63,   "cost": 474.80, "base": 540.77,  "fx": 1.1580, "currency": "USD"},
-    "WDC":  {"units": 5.0004, "cost": 468.86, "base": 473.79,  "fx": 1.1585, "currency": "USD"},
-    "INTC": {"units": 17.87,  "cost": 97.84,  "base": 104.47,  "fx": 1.1627, "currency": "USD"},
+    "MU":   {"units": 2.4202, "cost": 992.30, "base": 1016.07, "fx": 1.1579, "currency": "USD"},
     "HPE":  {"units": 6.22,   "cost": 64.17,  "base": 64.17,   "fx": 1.139,  "currency": "USD", "entry": "2026-09-25"},
 }
 YAHOO_SUFFIX = {"US": "", "PA": ".PA", "AS": ".AS", "XETRA": ".DE", "MI": ".MI", "MC": ".MC",
